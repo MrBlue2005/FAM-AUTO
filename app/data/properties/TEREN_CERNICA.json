@@ -1,0 +1,45 @@
+{
+  "id": "TEREN_CERNICA",
+  "name": "Teren Cernica",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-1\\1782743954237-video.mp4",
+      "text": "🏡 TEREN DE VÂNZARE – CERNICA | 30.000 mp | REZIDENȚIAL\n\n📍 Cernica, Ilfov – câteva minute de București\n📐 Suprafață: 30.000 mp | Deschidere: 115 m\n\n✅ Intravilan | Nu necesită PUZ\n📋 POT 60% | CUT 3.0 | H max 10 m\n🏘️ Ideal pentru ansamblu rezidențial, case individuale sau gated community\n🚗 Acces direct din șosea asfaltată | Autostrada A2 în apropiere\n🏬 Vecinătate Fashion House Outlet, depozit Lidl\n🏫 Școală și grădiniță la 500-900 m\n🌳 Parc la 900 m\n\n💶 Preț: 3.600.000 EUR | 120 EUR/mp | FĂRĂ COMISION la tranzactionare\n\n📞 Contactează-ne pentru detalii și vizionare! 0731 026 636\n🔗 https://shorturl.at/vMDje\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-1\\1782743954237-video.mp4"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-2\\1782743957487-cover2.jpg",
+      "text": "🏘️ OPORTUNITATE REZIDENȚIALĂ | CERNICA – 30.000 mp\n\nTeren de excepție pentru dezvoltatori rezidențiali, amplasat strategic în Cernica, la câteva minute de Capitală.\n\n🔑 De ce acest teren?\n• 30.000 mp intravilan – suprafață rară pe piață\n• Deschidere de 115 m la stradă asfaltată\n• Nu necesită PUZ – economisești timp și bani\n• POT 60%, CUT 3.0 – parametri generoși pentru locuire\n• Utilități în apropiere: apă, canalizare, electricitate\n• Acces rapid la A2 – Autostrada Soarelui\n\n🌟 Zona are proiecte rezidențiale deja în curs și cerere mare de locuințe noi.\n\n💰 3.600.000 EUR | ZERO comision la tranzactionare\n\n📞 sună pentru detalii urbanistice! 0731 026 636\n🔗 https://shorturl.at/vMDje\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-2\\1782743957487-cover2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-3\\1782743961460-cover3.jpg",
+      "text": "🔥 CERNICA | TEREN REZIDENȚIAL 30.000 mp – INVESTIȚIE SIGURĂ\n\nPiața imobiliară din Cernica crește an de an. Acest teren îți oferă exact pozițiarea de care ai nevoie pentru un proiect rezidențial de succes.\n\n📌 Amplasament:\n→ Cernica, Ilfov – 10 min de București\n→ Lângă Fashion House Outlet și depozitul Lidl\n→ Acces direct la A2\n→ Transport public în zonă\n\n🏗️ Ce poți construi:\n→ Cartier rezidențial cu case individuale\n→ Gated community cu facilități\n→ Proiect mixt rezidențial-comercial\n\n📋 Parametri: POT 60% | CUT 3 | H 10 m | Nu necesită PUZ\n\n💰 3.600.000 EURO | 120 EUR/mp | Fără comision la tranzactionare\n\n📲 Contactează- ne pentru vizionare! 0731 026 636\n🔗 https://shorturl.at/vMDje\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_CERNICA\\day-3\\1782743961460-cover3.jpg"
+      ]
+    }
+  ]
+}

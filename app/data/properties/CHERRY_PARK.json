@@ -1,0 +1,45 @@
+{
+  "id": "CHERRY_PARK",
+  "name": "Cherry Park Case",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-1\\1782743630485-cover1.jpg",
+      "text": "🏡 Casa ta lângă pădure, la 15 min de București!\n\nComplex Cherry 2 Park – Corbeanca\n✅ 5 camere | 148 mp utili | teren 480 mp\n✅ Clasă energetică A | panouri fotovoltaice + pompă de căldură\n✅ Încălzire prin pardoseală | finisaje premium\n✅ Complex împrejmuit cu poartă cu acces controlat\n\nPreț: 270.000 EUR | 0 comision la tranzactionare\n\n📩 Scrie-ne pentru detalii sau vizionare!\n📞 0731 026 636\n🔗 https://shorturl.at/jcmbB\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-1\\1782743630485-cover1.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-2\\1782743634073-cover2.jpg",
+      "text": "🌳 16 hectare de pădure la ușa ta.\n\nTraiești în liniște fără să renunți la confortul urban. Cherry 2 Park Corbeanca combină aerul curat cu accesul rapid la Mall Băneasa, școli, restaurante și centre de agrement.\n\n🏠 Casă individuală P+1 | 5 camere | 3 băi\n🔋 Eficiență energetică maximă – clase A\n🚗 2 locuri de parcare | curte 480 mp\n\n270.000 EUR | Fără comision la tranzactionare!\n\nContactează-ne pentru o vizionare.\n📞 0731 026 636\n🔗 https://shorturl.at/jcmbB\n \n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-2\\1782743634073-cover2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-3\\1782743637166-cover3.jpg",
+      "text": "⚡ Facturi mici. Confort mare.\n\nCasele din Cherry 2 Park Corbeanca vin echipate cu:\n• Panouri fotovoltaice\n• Pompă de căldură\n• Încălzire în pardoseală pe toată suprafața\n• Ferestre tripan Veka | parchet Krono Original | sanitare Ideal Standard\n\nClasă energetică A - pentru că o casă bună te și economisește.\n\n🏡 148 mp | 5 camere | 3 băi | teren 480 mp | Corbeanca\n💶 270.000 EUR | comision 0 la tranzactionare\n\n📩 Cere mai multe detalii!\n📞 0731 026 636\n🔗 https://shorturl.at/jcmbB",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\CHERRY_PARK\\day-3\\1782743637166-cover3.jpg"
+      ]
+    }
+  ]
+}

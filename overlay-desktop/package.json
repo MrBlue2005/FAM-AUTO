@@ -1,0 +1,51 @@
+{
+  "name": "rx-ai-desktop-overlay",
+  "productName": "R.X. AI Overlay",
+  "version": "0.1.0",
+  "description": "Desktop overlay pentru statusul campaniilor R.X. AI Studio.",
+  "author": "R.X. AI Studio",
+  "main": "main.js",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "icon": "node scripts/generate-icon.js",
+    "dev": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "node scripts/build.js",
+    "dist:signed": "node scripts/build.js --signed"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3",
+    "rcedit": "^5.0.2"
+  },
+  "build": {
+    "appId": "com.rxai.overlay",
+    "productName": "R.X. AI Overlay",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "build/icon.png",
+      "renderer/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "RX-AI-Overlay-${version}.${ext}"
+    }
+  },
+  "allowScripts": {
+    "electron@34.5.8": true
+  }
+}
