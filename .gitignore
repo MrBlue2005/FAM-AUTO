@@ -1,0 +1,27 @@
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+.tmp/
+chrome-profile/
+chrome-profile-jobs/
+chrome-profile-cherry-park-corbeanca/
+chrome-profile*/
+FAM-AUTO/
+dashboard-v2/dist/
+overlay-desktop/dist/
+overlay-desktop/out/
+.env
+.env.production
+dashboard-v2/.env.*
+!dashboard-v2/.env.production.example
+logs/
+app/data/schedules.json
+app/uploads/
+dashboard-v2/.env
+debug.log
+*.vsix

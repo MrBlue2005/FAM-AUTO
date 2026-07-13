@@ -1,0 +1,44 @@
+{
+  "id": "TITULESCU_REDUCERE",
+  "name": "Titulescu Reducere 7.5%",
+  "transactionType": "sale",
+  "active": false,
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-1\\1782744652618-cover1.jpg",
+      "text": "🏙️ Apartament 3 camere de vânzare pe Șos. Nicolae Titulescu – la 2 minute de metrou Basarab!\n\n64 mp | Etaj 11 | Complet mobilat | Bloc anvelopat\n\nLocație excelentă.\n\nReducere 7.5% 30 de zile! - Prețul: 125.000 EUR\n✅ Comision 0 la tranzacționare\n\n🔗 https://shorturl.at/aOBkp\n📞 0731 026 636\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-1\\1782744652618-cover1.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-2\\1782744655433-cover2.jpg",
+      "text": "🚇 Metroul Basarab la 2 minute. Gara de Nord aproape. Centrul orașului la îndemână.\n\nPe Șoseaua Nicolae Titulescu ai acces rapid la orice zonă importantă din București – fără trafic, fără pierdere de timp.\n\nO locație care contează, indiferent dacă locuiești sau investești.\n\nReducere 7.5% 30 de zile! - Prețul: 125.000 EUR\n✅ Comision 0 la tranzactionare\n\n🔗 https://shorturl.at/aOBkp\n📞 0731 026 636\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-2\\1782744655433-cover2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-3\\1782744658493-cover3.jpg",
+      "text": "🔇 Bloc stradal... dar apartamentul e complet pe spate.\n\nEtajul 11. Fără zgomot din trafic. Cu lumină multă și o vedere aerisită.\n\nUneori, cel mai mare lux nu e suprafața – e liniștea când ajungi acasă.\n\nReducere 7.5% 30 de zile! - Prețul: 125.000 EUR\n✅ Comision 0 la tranzactionare\n\n\n🔗 https://shorturl.at/aOBkp\n📞 0731 026 636\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TITULESCU_REDUCERE\\day-3\\1782744658493-cover3.jpg"
+      ]
+    }
+  ]
+}

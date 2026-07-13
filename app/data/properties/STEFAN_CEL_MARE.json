@@ -1,0 +1,45 @@
+{
+  "id": "STEFAN_CEL_MARE",
+  "name": "AP Stefan cel mare",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-1\\1782896387064-STEFAN_C_M.jpg",
+      "text": "Ai visat vreodată la o grădină privată în centrul Bucureștiului? ✅ Apartament 3 camere | 166 mp utili | Etaj 5 | Sector 2\n\nO terasă generoasă, 2 locuri de parcare subterane și 3 boxe - toate într-un complex rezidențial premium (Central Residence, Vasile Lascăr 216-218), finalizat în 2020.\n\n499.900 EUR | Comision 0 la tranzactionare!\n\n🔗 https://shorturl.at/v7No5\n📞 0731 026 636\n\n#ApartamentBucuresti #VanzareApartament #StefanCelMare #VasileLascar #ZoneRealEstate #ImobiliareBucuresti #CentralResidence #TerasaPrivata\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-1\\1782896387064-STEFAN_C_M.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-2\\1782896394791-STEFAN_C_M_2.jpg",
+      "text": "Pardoseală cu încălzire prin tehnologia Rehau, parchet stratificat de calitate, gresie și faianță Marazzi, geam tripan - fiecare detaliu a fost gândit pentru confort maxim.\n\n🏠 3 camere | 2 băi | Complet mobilat și utilat | Ultrafinisat\n\n499.900 EUR | Comision 0 la tranzactionare!\n\n🔗 https://shorturl.at/v7No5\n📞 0731 026 636 \n\n#ApartamentPremium #FinisajeLux #Sector2 #ZoneRealEstate #ImobiliareBucuresti #VanzareApartament #Marazzi #Rehau\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-2\\1782896394791-STEFAN_C_M_2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-3\\1782896398508-STEFAN_C_M_3.jpg",
+      "text": "Metrou Ștefan cel Mare la 1,2 km, Piața Romană și Universitate la 1,3 km, Grădina Icoanei la 7 minute pe jos. Totul la îndemână, în inima Sectorului 2.\n\n📍 Vasile Lascăr 216-218 | Complex cu pază 24/7, videointerfon, lift | Parcare subterană pe 2 niveluri\n\n499.900 EUR | Comision 0 la tranzactionare!\n\n🔗 https://shorturl.at/v7No5\n📞 0731 026 636\n\n#Sector2Bucuresti #MetroStefanCelMare #CentruBucuresti #ZoneRealEstate #ImobiliareLux #VanzareApartament #ApartamentBucuresti\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\STEFAN_CEL_MARE\\day-3\\1782896398508-STEFAN_C_M_3.jpg"
+      ]
+    }
+  ]
+}

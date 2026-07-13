@@ -1,0 +1,45 @@
+{
+  "id": "GHENCEA_REDUCERE",
+  "name": "Teren Ghencea Reducere",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-1\\1783515873814-ghencea_REDUCERE_1.jpg",
+      "text": "🏠 Pentru cine este acest teren?\n\n👷 Cel care vrea să construiască propria casă în București\n📈 Investitorul care caută teren cu potențial rezidențial\n🌿 Cel care apreciază utilitățile gata trase și accesul facil\n\nDocumentația urbanistică este în curs de actualizare.\n\nREDUCERE 10% 30 DE ZILE!\n\n✅ 134.900 EUR | Comision 0 la tranzactionare\n🔗 https://shorturl.at/myAyJ\n📞 0733 776 260",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-1\\1783515873814-ghencea_REDUCERE_1.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-2\\1783515876533-ghencea_reducere_2.jpg",
+      "text": "📌 Terenurile bine poziționate nu stau mult pe piață.\n\n378 mp | Deschidere 17 m | Utilități | Prelungirea Ghencea\n\nDacă ai un proiect în minte, hai să discutăm. Suntem disponibili pentru vizionări și detalii.\n\nREDUCERE 10% 30 DE ZILE!\n\n✅ 134.900 EUR | Comision 0 la tranzactionare!\n🔗 https://shorturl.at/myAyJ\n📞 0733 776 260",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-2\\1783515876533-ghencea_reducere_2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-3\\1783515882086-ghencea_resducere_3.jpg",
+      "text": "📍 Prelungirea Ghencea – o zonă care crește.\n\nAcces rapid spre Bd. Prelungirea Ghencea, Drumul Taberei, centre comerciale, școli și transport public.\n\nO locație bine conectată pentru orice proiect rezidențial.\n\nREDUCERE 10% 30 DE ZILE!\n\n✅ 134.900 EUR | Comision 0 la tranzactionare\n🔗 https://shorturl.at/myAyJ\n📞 0733 776 260\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\GHENCEA_REDUCERE\\day-3\\1783515882086-ghencea_resducere_3.jpg"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "MARASESTI_VANZARE",
+  "name": "Marasesti Vanzare",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-1\\1782743757250-cover1.jpg",
+      "text": "Unii cumpără metri pătrați. Tu poți cumpăra o adresă.\n\nBd. Mărășești 74 - o clădire cu arhitectură distinctă, fațadă originală și o prezență care se simte de la distanță.\n\n📐 266 mp utili | Demisol + Parter\n🚪 7 camere | 5 grupuri sanitare\n🌿 Curte proprie accesibilă + 1 loc parcare\n📏 Înălțime interioară peste 3,5 m\n🏆 Renovată 2024\n\nPotrivită pentru: clinică, birouri premium, sediu de companie, centru educațional.\n\nPreț: 611.800 EUR\n✅ Comision 0 la tranzacționare\n\n🔗 https://shorturl.at/xM5NP\n📞 Detalii și vizionări: 0733 776 260\n\n#vanzareBucuresti #UnitriiBucuresti #spatiiBusinessBucuresti #imobiliarecomerciale #ZoneRealEstate\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-1\\1782743757250-cover1.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-2\\1782743760472-cover2.jpg",
+      "text": "7 camere. 5 băi. Plafoane de 3,5 m. Și o saună.\n\nAsta nu-i un spațiu obișnuit - e o proprietate gândită pentru un business cu pretenții.\n\n📍 Bd. Mărășești 74 | 266 mp | D+P\n🏗️ Demisol: depozitare, arhivă, zonă tehnică\n🏠 Parter: recepție, cabinete, birouri, sală de meeting\n🌿 Curte privată accesibilă clienților\n🧖 Saună + cramă - detalii rare la această adresă\n❄️ Aer condiționat | Centrală proprie | Parchet + gresie\n\nPreț: 611.800 EUR\n✅ Comision 0 la tranzacționare\n\n🔗 https://shorturl.at/xM5NP\n📞 Detalii și vizionări: 0733 776 260\n\n#clinicaBucuresti #birouriPremiumBucuresti #investitiiImobiliare #spatiiMedicale #ZoneRealEstate\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-2\\1782743760472-cover2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-3\\1782743763235-cover3.jpg",
+      "text": "O proprietate bună e la adresa potrivită. Asta e la Unirii.\n\nBd. Mărășești 74 - centrul Bucureștiului la pași distanță, fără să plătești prețuri de Centru.\n\n📍 3 min. metrou Piața Unirii\n🚌 Acces direct la multiple linii de transport\n🏥 Vecinătate cu servicii medicale deja consacrate\n🛍️ Unirea Shopping Center la 5 min. pe jos\n🌳 Parcul Bibescu Vodă la 300 m\n\nPentru un business, locația înseamnă vizibilitate constantă și clienți care te găsesc ușor.\n\n📐 266 mp | 7 camere | Curte | Parcare\n\nPreț: 611.800 EUR\n✅ Comision 0 la tranzacționare\n\n🔗 https://shorturl.at/xM5NP\n📞 Detalii și vizionări: 0733 776 260\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\MARASESTI_VANZARE\\day-3\\1782743763235-cover3.jpg"
+      ]
+    }
+  ]
+}

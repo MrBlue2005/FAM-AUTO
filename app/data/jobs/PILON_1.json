@@ -1,0 +1,71 @@
+{
+  "id": "PILON_1",
+  "title": "Pilon 1",
+  "company": "ZONE Real Estate",
+  "active": true,
+  "facebookProfileId": "",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-1\\1783066116908-ziua_1.png",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-1\\1783066116908-ziua_1.png"
+      ],
+      "text": "La ZONE Real Estate nu căutăm oameni \"talentați din naștere\" - căutăm oameni dispuși să-și facă temele în fiecare zi.\n\nVrei să-ți construiești o carieră pe bază de disciplină, nu de noroc? Hai în echipa ZONE Real Estate."
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-2\\1783066123329-ChatGPT_Image_Jun_30__2026__01_32_02_PM.png",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-2\\1783066123329-ChatGPT_Image_Jun_30__2026__01_32_02_PM.png"
+      ],
+      "text": "Consultanții de succes nu \"se descurcă din mers\" - își planifică ziua pe blocuri: prospectare, apeluri, vizionări, follow-up.\n\nLa ZONE Real Estate te învățăm exact cum să-ți structurezi timpul ca să ai rezultate constante, nu doar zile bune întâmplător.\n\nVrei o rutină care chiar produce rezultate? Aplică acum și hai să-ți construim sistemul tău de zi.\n\n"
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-3\\1783066128980-ChatGPT_Image_Jun_30__2026__01_35_05_PM.png",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-3\\1783066128980-ChatGPT_Image_Jun_30__2026__01_35_05_PM.png"
+      ],
+      "text": "Cariera ta în imobiliare nu începe cu un contract semnat. Începe cu un telefon ridicat.\n\nMulți așteaptă \"momentul perfect\" sau clientul perfect. Consultanții buni ridică telefonul chiar și când nu au chef.\n\nVrei să înveți cum să transformi un apel într-o vânzare? Vino la noi în echipă.\n"
+    },
+    {
+      "day": 4,
+      "title": "Ziua 4",
+      "variant": "D",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-4\\1783066135259-ChatGPT_Image_Jun_30__2026__01_37_40_PM.png",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-4\\1783066135259-ChatGPT_Image_Jun_30__2026__01_37_40_PM.png"
+      ],
+      "text": "Un \"nu\" nu este despre tine. Este despre momentul clientului.\n\nÎn imobiliare, refuzul e parte din job, nu o excepție. Diferența o fac cei care nu lasă un \"nu\" să decidă cum le va fi ziua de mâine.\n\nVrei un mentor care te ajută să transformi refuzurile în lecții, nu în blocaje? Hai la noi.\n\n"
+    },
+    {
+      "day": 5,
+      "title": "Ziua 5",
+      "variant": "E",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-5\\1783066140824-ChatGPT_Image_Jun_30__2026__01_42_18_PM.png",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\PILON_1\\day-5\\1783066140824-ChatGPT_Image_Jun_30__2026__01_42_18_PM.png"
+      ],
+      "text": "Clienții cumpără de la oameni în care au încredere.\nÎncrederea nu se construiește dintr-un discurs de vânzare, ci din transparență, ascultare activă și promisiuni respectate.\n\nLa ZONE Real Estate te învățăm cum să fii consultantul la care clienții se întorc - și pe care îl recomandă altora.\n\nVrei să înveți arta relației cu clientul, nu doar tehnici de vânzare? Aplică acum.\n\n"
+    }
+  ],
+  "transactionType": "job",
+  "campaignCategory": "jobs"
+}

@@ -1,0 +1,45 @@
+{
+  "id": "TEREN_BRANESTI",
+  "name": "Teren Branesti",
+  "transactionType": "sale",
+  "active": true,
+  "facebookProfileId": "main",
+  "posts": [
+    {
+      "day": 1,
+      "title": "Ziua 1",
+      "variant": "A",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-1\\1782803125888-cover1.jpg",
+      "text": "🏭 TEREN INDUSTRIAL DE VÂNZARE – BRĂNEȘTI | 21.500 mp | Lângă MAKITA\n\n📍 Intravilan, zona industrială Brănești – acces direct din strada I.C. Brătianu\n📐 Suprafață: 21.500 mp | Deschidere: 37,4 m | Lungime: 594 m\n\n✅ PUZ aprobat – POT 50%, CUT 0.8, înălțime max. 21 m\n⚡ Post TRAFO la capătul terenului\n🚌 Stație autobuz în apropiere\n🏗️ Ideal pentru hale industriale, depozite, producție\n\n💶 Preț: 645.000 EUR  – 30 EUR/mp | FĂRĂ COMISION la tranzactionare!\n\n📞 Contactează-ne pentru vizionare și detalii suplimentare!\n    0731 026 636\n🔗 https://shorturl.at/3LfHk\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-1\\1782803125888-cover1.jpg"
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Ziua 2",
+      "variant": "B",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-2\\1782743508810-cover2.jpg",
+      "text": "📦 INVESTIȚIE INDUSTRIALĂ | TEREN 21.500 mp – BRĂNEȘTI, JUD. ILFOV\n\nTeren intravilan de vânzare în cea mai dinamică zonă industrială din Ilfov, vizavi de fabrica MAKITA.\n\n🔑 Date cheie:\n• 21.500 mp suprafață totală\n• Deschidere de 37,4 m la stradă\n• POT 50% | CUT 0.8 | H max 21 m\n• PUZ aprobat – poți construi imediat\n• Post TRAFO disponibil pe teren\n• Opțiune de extindere cu încă 10.000 mp\n\n💶 645.000 EURO - 30 EUR/mp | FĂRĂ COMISION la tranzactionare\n\nZona este bine conectată la rețeaua de transport și beneficiază de infrastructură industrială deja dezvoltată.\n\n📞 Detalii și programare vizionare – 0731 026 636\n🔗 https://shorturl.at/3LfHk\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-2\\1782743508810-cover2.jpg"
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Ziua 3",
+      "variant": "C",
+      "active": true,
+      "published": false,
+      "imagePath": "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-3\\1782743511910-cover3.jpg",
+      "text": "🔥 OPORTUNITATE RARĂ – TEREN INDUSTRIAL BRĂNEȘTI\n\n21.500 mp în intravilanul comunei Brănești, perfect poziționat pentru o hală industrială sau un centru logistic.\n\n📌 Localizare strategică:\n→ Vizavi de MAKITA\n→ Acces ușor din șos. I.C. Brătianu\n→ Stație autobuz în zonă\n→ Lângă pădure – mediu plăcut de lucru\n\n📋 Parametri urbanistici:\n→ PUZ aprobat\n→ POT 50% / CUT 0.8 / H max 21 m\n→ Post TRAFO disponibil\n\n💰 645.000 EUR |  0 comision la tranzactionare \n\nPosibilitate de achiziție suplimentară a 10.000 mp lipiți de teren.\n\n📲 Sună acum: 0731 026 636\n🔗 https://shorturl.at/3LfHk\n",
+      "media": [
+        "C:\\Users\\admin\\Desktop\\Facebook Automation\\app\\uploads\\TEREN_BRANESTI\\day-3\\1782743511910-cover3.jpg"
+      ]
+    }
+  ]
+}
