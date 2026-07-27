@@ -33,6 +33,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 const API_KEY = process.env.API_KEY || '';
 const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const OVERLAY_ACCESS_TOKEN = crypto.createHmac(
+  'sha256',
+  process.env.ADMIN_PASSWORD_SCRYPT || API_KEY || crypto.randomBytes(32)
+).update('rx-propulse-overlay-v1').digest('hex');
 const authSessions = new Map();
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()).filter(Boolean);
 const dashboardDist = path.join(__dirname, '..', 'dashboard-v2', 'dist');
@@ -41,6 +45,12 @@ const overlayDesktopExe = path.join(
   overlayDesktopRoot,
   'dist',
   'RX-AI-Overlay-0.1.0.exe'
+);
+const overlayDesktopUnpackedExe = path.join(
+  overlayDesktopRoot,
+  'dist',
+  'win-unpacked',
+  'R.X. AI Overlay.exe'
 );
 const overlayElectronBin = path.join(
   overlayDesktopRoot,
@@ -68,18 +78,35 @@ function requestSession(req, now = Date.now()) {
   return session && session.expiresAt >= now ? { token, session } : null;
 }
 
+function secureTokenMatch(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return actualBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+function parseScryptEncoding(encoded) {
+  const value = String(encoded || '');
+  const legacy = value.match(/^([a-f0-9]{32,}):([a-f0-9]{64,})$/i);
+  if (legacy) return { saltHex: legacy[1], expectedHex: legacy[2], options: undefined };
+  const versioned = value.match(/^scrypt\$(\d+)\$(\d+)\$(\d+)\$([a-f0-9]{32,})\$([a-f0-9]{64,})$/i);
+  if (!versioned) return null;
+  const N = Number(versioned[1]); const r = Number(versioned[2]); const p = Number(versioned[3]);
+  if (N < 16384 || N > 131072 || (N & (N - 1)) !== 0 || r < 8 || r > 16 || p < 1 || p > 4) return null;
+  return { saltHex: versioned[4], expectedHex: versioned[5], options: { N, r, p, maxmem: 256 * 1024 * 1024 } };
+}
+
 function validateEnvironment() {
   const errors = [];
   if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) errors.push('PORT trebuie sa fie intre 1 si 65535.');
   if (IS_PRODUCTION && !AUTH_ENABLED) errors.push('AUTH_ENABLED=true este obligatoriu in productie.');
-  if (AUTH_ENABLED && !process.env.ADMIN_PASSWORD_SCRYPT && !process.env.ADMIN_PASSWORD_SHA256) {
+  if (AUTH_ENABLED && !process.env.ADMIN_PASSWORD_SCRYPT) {
     errors.push('Configureaza ADMIN_PASSWORD_SCRYPT pentru autentificarea administratorului.');
   }
-  if (process.env.ADMIN_PASSWORD_SHA256 && !/^[a-f0-9]{64}$/i.test(process.env.ADMIN_PASSWORD_SHA256)) {
-    errors.push('ADMIN_PASSWORD_SHA256 trebuie sa contina exact 64 de caractere hexazecimale.');
+  if (process.env.ADMIN_PASSWORD_SCRYPT && !parseScryptEncoding(process.env.ADMIN_PASSWORD_SCRYPT)) {
+    errors.push('ADMIN_PASSWORD_SCRYPT nu are un format Scrypt valid.');
   }
-  if (process.env.ADMIN_PASSWORD_SCRYPT && !/^[a-f0-9]{32,}:[a-f0-9]{64,}$/i.test(process.env.ADMIN_PASSWORD_SCRYPT)) {
-    errors.push('ADMIN_PASSWORD_SCRYPT trebuie sa fie in format saltHex:hashHex.');
+  if (process.env.OPERATOR_PASSWORD_SCRYPT && !parseScryptEncoding(process.env.OPERATOR_PASSWORD_SCRYPT)) {
+    errors.push('OPERATOR_PASSWORD_SCRYPT nu are un format Scrypt valid.');
   }
   if (errors.length) throw new Error(`Configuratie server invalida:\n- ${errors.join('\n- ')}`);
 }
@@ -94,7 +121,14 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'");
   next();
 });
-app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)), credentials: false }));
+app.use(cors((req, callback) => {
+  const origin = req.get('origin');
+  const electronOverlay = origin === 'null' && req.path === '/api/overlay/status';
+  callback(null, {
+    origin: !origin || electronOverlay || allowedOrigins.includes(origin),
+    credentials: true,
+  });
+}));
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/healthz', (req, res) => {
@@ -119,12 +153,22 @@ app.use('/api', (req, res, next) => {
   if (bucket.count > 300) return res.status(429).json({ error: 'Prea multe requesturi. Incearca din nou peste un minut.' });
   const authRoute = req.path.startsWith('/auth/');
   const apiKeyAuthenticated = Boolean(API_KEY && req.get('x-api-key') === API_KEY);
-  if (!AUTH_ENABLED && API_KEY && !apiKeyAuthenticated) return res.status(401).json({ error: 'Cheie API invalida sau lipsa.' });
+  const overlayAuthenticated = req.method === 'GET'
+    && req.path === '/overlay/status'
+    && secureTokenMatch(req.get('x-overlay-token'), OVERLAY_ACCESS_TOKEN);
+  if (!AUTH_ENABLED && API_KEY && !apiKeyAuthenticated && !overlayAuthenticated) return res.status(401).json({ error: 'Cheie API invalida sau lipsa.' });
   if (AUTH_ENABLED && !authRoute) {
     const authenticatedSession = requestSession(req, now);
-    if (!apiKeyAuthenticated && !authenticatedSession) return res.status(401).json({ error: 'Sesiune invalida sau expirata.' });
-    req.user = apiKeyAuthenticated ? { username: 'api-key', role: 'admin' } : authenticatedSession.session;
+    if (!apiKeyAuthenticated && !overlayAuthenticated && !authenticatedSession) return res.status(401).json({ error: 'Sesiune invalida sau expirata.' });
+    req.user = apiKeyAuthenticated
+      ? { username: 'api-key', role: 'admin' }
+      : overlayAuthenticated
+        ? { username: 'desktop-overlay', role: 'operator' }
+        : authenticatedSession.session;
     const mutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+    if (!apiKeyAuthenticated && mutation && req.get('x-rx-csrf') !== '1') {
+      return res.status(403).json({ error: 'Cererea nu a trecut verificarea CSRF.' });
+    }
     const operatorAction = ['/robot/', '/queue/'].some((route) => req.path.startsWith(route));
     if (mutation && !operatorAction && req.user.role !== 'admin') return res.status(403).json({ error: 'Aceasta actiune necesita rol de administrator.' });
   }
@@ -348,21 +392,22 @@ app.get('/api/dashboard/summary', (req, res) => {
   });
 });
 
-function securePasswordMatch(password, expectedHash) {
-  if (!expectedHash) return false;
-  const actual = crypto.createHash('sha256').update(String(password || '')).digest('hex');
-  const expected = String(expectedHash).toLowerCase();
-  return actual.length === expected.length && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
-}
-
 function secureScryptMatch(password, encoded) {
-  if (!encoded) return false;
-  const [saltHex, expectedHex] = String(encoded).split(':');
-  if (!saltHex || !expectedHex || !/^[a-f0-9]+$/i.test(saltHex) || !/^[a-f0-9]+$/i.test(expectedHex)) return false;
+  const parsed = parseScryptEncoding(encoded);
+  if (!parsed) return false;
+  const { saltHex, expectedHex, options } = parsed;
   const expected = Buffer.from(expectedHex, 'hex');
-  const actual = crypto.scryptSync(String(password || ''), Buffer.from(saltHex, 'hex'), expected.length);
+  const actual = crypto.scryptSync(String(password || ''), Buffer.from(saltHex, 'hex'), expected.length, options);
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
+
+const dummySalt = crypto.randomBytes(16);
+const DUMMY_PASSWORD_SCRYPT = `scrypt$32768$8$1$${dummySalt.toString('hex')}$${crypto.scryptSync(
+  crypto.randomBytes(32),
+  dummySalt,
+  64,
+  { N: 32768, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }
+).toString('hex')}`;
 
 const loginBuckets = new Map();
 
@@ -379,6 +424,8 @@ function allowLoginAttempt(req, username) {
   return bucket.count <= 10;
 }
 
+app.use('/api/auth', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); return next(); });
+
 app.get('/api/auth/status', (req, res) => {
   const authenticatedSession = requestSession(req);
   const session = authenticatedSession?.session;
@@ -389,20 +436,18 @@ app.post('/api/auth/login', (req, res) => {
   const username = String(req.body?.username || '');
   if (!allowLoginAttempt(req, username)) return res.status(429).json({ error: 'Prea multe incercari de autentificare. Reincearca peste 15 minute.' });
   const candidates = [
-    { username: process.env.ADMIN_USERNAME || 'admin', hash: process.env.ADMIN_PASSWORD_SHA256, scrypt: process.env.ADMIN_PASSWORD_SCRYPT, role: 'admin' },
-    { username: process.env.OPERATOR_USERNAME || 'operator', hash: process.env.OPERATOR_PASSWORD_SHA256, scrypt: process.env.OPERATOR_PASSWORD_SCRYPT, role: 'operator' },
+    { username: process.env.ADMIN_USERNAME || 'admin', scrypt: process.env.ADMIN_PASSWORD_SCRYPT, role: 'admin' },
+    { username: process.env.OPERATOR_USERNAME || 'operator', scrypt: process.env.OPERATOR_PASSWORD_SCRYPT, role: 'operator' },
   ];
-  const user = candidates.find((candidate) => candidate.username === username && (
-    secureScryptMatch(req.body?.password, candidate.scrypt)
-    || securePasswordMatch(req.body?.password, candidate.hash)
-  ));
-  if (!user) return res.status(401).json({ error: 'Utilizator sau parola incorecta.' });
+  const user = candidates.find((candidate) => candidate.username === username);
+  const passwordMatches = secureScryptMatch(req.body?.password, user?.scrypt || DUMMY_PASSWORD_SCRYPT);
+  if (!user || !passwordMatches) return res.status(401).json({ error: 'Utilizator sau parola incorecta.' });
   loginBuckets.delete(`${req.ip}:${username.toLowerCase()}`);
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
   authSessions.set(token, { username, role: user.role, expiresAt });
   res.setHeader('Set-Cookie', `rx_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200${IS_PRODUCTION ? '; Secure' : ''}`);
-  return res.json({ token, username, role: user.role, expiresAt });
+  return res.json({ username, role: user.role, expiresAt });
 });
 app.post('/api/auth/logout', (req, res) => {
   const token = requestSession(req)?.token || String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -814,28 +859,46 @@ app.get('/api/overlay/status', (req, res) => {
 });
 
 function spawnOverlay(command, args = [], options = {}) {
-  const child = spawn(command, args, {
-    cwd: overlayDesktopRoot,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: false,
-    shell: options.shell === true,
-  });
+  return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env, ...(options.env || {}) };
+    delete childEnv.ELECTRON_RUN_AS_NODE;
+    const child = spawn(command, args, {
+      cwd: overlayDesktopRoot,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      shell: options.shell === true,
+      env: childEnv,
+    });
 
-  child.unref();
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve({ pid: child.pid });
+    });
+  });
 }
 
-app.post('/api/overlay/desktop/open', (req, res) => {
+app.post('/api/overlay/desktop/open', async (req, res) => {
   try {
+    if (fs.existsSync(overlayDesktopUnpackedExe)) {
+      const launched = await spawnOverlay(overlayDesktopUnpackedExe, [], { env: { RX_OVERLAY_TOKEN: OVERLAY_ACCESS_TOKEN } });
+      res.json({ ok: true, mode: 'unpacked-exe', ...launched });
+      return;
+    }
+
     if (fs.existsSync(overlayDesktopExe)) {
-      spawnOverlay(overlayDesktopExe);
-      res.json({ ok: true, mode: 'portable-exe' });
+      const launched = await spawnOverlay(overlayDesktopExe, [], { env: { RX_OVERLAY_TOKEN: OVERLAY_ACCESS_TOKEN } });
+      res.json({ ok: true, mode: 'portable-exe', ...launched });
       return;
     }
 
     if (fs.existsSync(overlayElectronBin)) {
-      spawnOverlay(overlayElectronBin, ['.'], { shell: process.platform === 'win32' });
-      res.json({ ok: true, mode: 'electron-dev' });
+      const launched = await spawnOverlay(overlayElectronBin, ['.'], {
+        shell: process.platform === 'win32',
+        env: { RX_OVERLAY_TOKEN: OVERLAY_ACCESS_TOKEN },
+      });
+      res.json({ ok: true, mode: 'electron-dev', ...launched });
       return;
     }
 
@@ -847,7 +910,6 @@ app.post('/api/overlay/desktop/open', (req, res) => {
     res.status(500).json({ ok: false, error: error.message });
   }
 });
-
 /* MEDIA */
 
 function listMediaFiles(dir, baseDir = dir) {

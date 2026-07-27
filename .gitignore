@@ -1,12 +1,14 @@
 
 # Playwright
 node_modules/
+.npm-cache/
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
 .tmp/
+.vs/
 chrome-profile/
 chrome-profile-jobs/
 chrome-profile-cherry-park-corbeanca/
@@ -20,7 +22,11 @@ overlay-desktop/out/
 dashboard-v2/.env.*
 !dashboard-v2/.env.production.example
 logs/
+app/data/groups.json
+app/data/runtimeConfig.json
 app/data/schedules.json
+app/data/properties/
+app/data/jobs/
 app/uploads/
 dashboard-v2/.env
 debug.log

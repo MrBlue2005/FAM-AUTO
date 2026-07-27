@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AppLayout from './AppLayout';
 
 import Dashboard from '../pages/Dashboard';
@@ -18,8 +18,10 @@ import DesktopOverlay from '../pages/DesktopOverlay';
 import ToastViewport from '../components/ToastViewport';
 import AuthGate from '../components/AuthGate';
 import DesktopNotifications from '../components/DesktopNotifications';
+import AppLauncher from '../pages/AppLauncher';
+import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
-function DashboardApp() {
+function DashboardApp({ auth }) {
   const [activePage, setActivePage] = useState('dashboard');
   const [editRequest, setEditRequest] = useState(null);
   const [dirtyEditor, setDirtyEditor] = useState(false);
@@ -81,7 +83,7 @@ function DashboardApp() {
 
   return (
     <>
-      <AuthGate><AppLayout activePage={activePage} onChangePage={handleChangePage}>{renderPage()}</AppLayout></AuthGate>
+      <AppLayout activePage={activePage} auth={auth} onChangePage={handleChangePage}>{renderPage()}</AppLayout>
       <ToastViewport />
       <DesktopNotifications />
     </>
@@ -89,9 +91,20 @@ function DashboardApp() {
 }
 
 export default function App() {
+  useEffect(() => {
+    document.title = ['/dashboard', '/overlay'].includes(window.location.pathname)
+      ? `${PROPULSE_NAME} — ${PROPULSE_MOTTO}`
+      : 'R.X. AI Studio';
+  }, []);
   if (window.location.pathname === '/overlay') {
     return <DesktopOverlay />;
   }
 
-  return <DashboardApp />;
+  return (
+    <AuthGate>
+      {(auth) => ['/dashboard', '/overlay'].includes(window.location.pathname)
+        ? <DashboardApp auth={auth} />
+        : <AppLauncher auth={auth} />}
+    </AuthGate>
+  );
 }

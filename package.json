@@ -14,10 +14,13 @@
     "check": "npm test && npm --prefix dashboard-v2 run lint && npm --prefix dashboard-v2 run build && npm run test:e2e",
     "check:production": "node --env-file-if-exists=.env scripts/production-check.js",
     "auth:hash": "node scripts/generate-password-hash.js",
+    "auth:setup": "node scripts/setup-auth.js",
     "server": "node --env-file-if-exists=.env server/server.js",
     "overlay:dev": "npm --prefix overlay-desktop run dev",
     "overlay:pack": "npm --prefix overlay-desktop run pack",
-    "overlay:dist": "npm --prefix overlay-desktop run dist"
+    "overlay:dist": "npm --prefix overlay-desktop run dist",
+    "studio": "node scripts/start-studio.js",
+    "setup:new-pc": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-new-pc.ps1"
   },
   "keywords": [],
   "author": "",
@@ -34,6 +37,7 @@
     "multer": "^2.2.0"
   },
   "overrides": {
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "brace-expansion": "5.0.8"
   }
 }

@@ -1,117 +1,100 @@
-# Set up FAM-AUTO on another Windows PC
+# Instalare RX AI Studio pe alt PC Windows
 
-This procedure replaces an outdated checkout safely without deleting it first.
+## 1. Instaleaza uneltele
 
-## 1. Prerequisites
+Instaleaza Git, Node.js 22.12+ (LTS recomandat), Google Chrome si GitHub CLI:
 
-Install:
+```powershell
+winget install --id Git.Git -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id GitHub.cli -e
+```
 
-- Git;
-- Node.js LTS or Node.js 24+;
-- Google Chrome;
-- GitHub CLI (optional, useful for authentication and pull requests).
-
-Check the tools:
+Redeschide PowerShell si verifica:
 
 ```powershell
 git --version
 node --version
-npm --version
+npm.cmd --version
+gh --version
 ```
 
-## 2. Preserve the old checkout
+Daca `npm` nu este recunoscut, reinstaleaza Node.js LTS si redeschide terminalul. Daca `npm.ps1` este blocat, foloseste `npm.cmd`.
 
-First inspect the old project for work that exists only on that PC:
-
-```powershell
-Set-Location C:\path\to\old\FAM-AUTO
-git status --short --branch
-git diff
-```
-
-If there are unique changes, commit/push them to a separate branch or copy the entire folder to a backup location. Do not run `git reset --hard` and do not delete the old folder before this check.
-
-Close the dashboard, API, robot, overlay, VS Code, and terminals using the old checkout. Rename the old folder to something such as `FAM-AUTO-backup-2026-07-12`.
-
-## 3. Clone the current project
+## 2. Cloneaza sursa
 
 ```powershell
-Set-Location C:\path\to\parent
+Set-Location D:\
 git clone https://github.com/MrBlue2005/FAM-AUTO.git
 Set-Location FAM-AUTO
-git switch agent/release-1.1.0
 git status --short --branch
 ```
 
-Expected branch: `agent/release-1.1.0`.
+Pentru un checkout vechi cu modificari locale, ruleaza intai `git status` si fa backup. Nu folosi `git reset --hard` si nu sterge folderul vechi pana nu ai salvat modificarile si datele operationale.
 
-## 4. Install dependencies
-
-```powershell
-npm ci
-npm --prefix dashboard-v2 ci
-npm --prefix overlay-desktop ci
-npx playwright install
-```
-
-## 5. Create local configuration
+## 3. Ruleaza instalarea automata
 
 ```powershell
-Copy-Item .env.example .env
-Copy-Item dashboard-v2\.env.example dashboard-v2\.env
+npm.cmd run setup:new-pc
 ```
 
-The defaults are suitable for local development. If authentication is enabled later, place secrets only in the local `.env` files.
+Scriptul verifica uneltele, ruleaza `npm ci` pentru toate cele patru componente, creeaza configuratiile locale, executa `prisma db push`, instaleaza Chromium pentru Playwright, solicita parola si ruleaza verificarile de baza. Astfel este creata automat si tabela `PropertyRecord`.
 
-## 6. Restore Facebook login safely
-
-The Facebook/Chrome profile is intentionally absent from GitHub. Choose one option:
-
-- run the profile setup flow and log in manually on the new PC; or
-- transfer the profile privately from the old PC while Chrome and the robot are fully closed.
-
-Never upload the profile to GitHub, cloud storage shared publicly, or a pull request.
-
-## 7. Verify and start
+Pentru CI sau verificarea unei clone fara prompt:
 
 ```powershell
-npm test
-npm --prefix dashboard-v2 run build
+npm.cmd run setup:new-pc -- -NonInteractive
 ```
 
-Start the API:
+Optiuni: `-SkipBrowserInstall` si `-SkipChecks`.
+
+## 4. Porneste studioul
 
 ```powershell
-npm run server
+npm.cmd run studio
 ```
 
-Start the dashboard in another terminal:
+Deschide `http://127.0.0.1:5173`. Nu amesteca `localhost` cu `127.0.0.1`; acelasi hostname pastreaza sesiunea unica intre aplicatii.
+
+Servicii: API `127.0.0.1:3000`, launcher/dashboard `127.0.0.1:5173`, generator `127.0.0.1:3100`. Opreste-le cu `Ctrl+C`.
+
+## 5. Date mutate separat
+
+GitHub contine sursa, lockfile-urile si documentatia, nu datele private. Foloseste exportul de backup din dashboard pentru grupuri, campanii si configuratie. Transfera sau recreeaza separat profilurile Chrome/Facebook, cu procesele inchise.
+
+Nu publica `.env`, `dev.db`, fisierele JSON operationale din `app/data`, `app/uploads`, `logs` sau `chrome-profile*`.
+
+## 6. Probleme frecvente
+
+### `PropertyRecord` nu exista
 
 ```powershell
-npm --prefix dashboard-v2 run dev
+npm.cmd --prefix property-copywriter run db:push
 ```
 
-Open `http://localhost:5173` and keep real publishing disabled for the first verification.
+### Loginul apare de doua ori
 
-## 8. Rebuild the overlay
+Redeschide numai `http://127.0.0.1:5173`, verifica URL-urile din cele trei fisiere `.env` si reporneste studioul.
+
+### `Failed to fetch` sau API oprit
+
+Verifica `http://127.0.0.1:3000/readyz`. Daca nu raspunde, elibereaza porturile 3000/3100/5173 si porneste din radacina repository-ului.
+
+### Overlay-ul nu porneste
 
 ```powershell
-npm run overlay:dist
+npm.cmd run overlay:dist
 ```
 
-Expected output:
+Dashboardul prefera executabilul rapid din `overlay-desktop\dist\win-unpacked`. Fara certificat de semnare, Windows poate afisa SmartScreen.
 
-```text
-overlay-desktop\dist\RX-AI-Overlay-0.1.0.exe
+### Audit de securitate
+
+```powershell
+npm.cmd audit
+npm.cmd --prefix dashboard-v2 audit
+npm.cmd --prefix property-copywriter audit
+npm.cmd --prefix overlay-desktop audit
 ```
 
-The build has the custom R.X. AI icon. Without a code-signing certificate, Windows may still display an unknown-publisher warning.
-
-## 9. Resume with Codex
-
-Open the freshly cloned repository in Codex and use this prompt:
-
-> Read AGENTS.md and docs/HANDOFF.md completely, inspect git status, and continue from the documented next work without discarding local changes.
-
-After the clean checkout works and all needed local-only data has been restored, the backup folder can be archived or removed manually.
-
+Rezultat asteptat: `found 0 vulnerabilities` pentru fiecare.

@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model PropertyRecord {
+  id              String   @id @default(cuid())
+  sourceUrl       String
+  title           String?
+  extractedData   Json
+  correctedData   Json
+  generationOptions Json
+  descriptions    Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([updatedAt])
+}

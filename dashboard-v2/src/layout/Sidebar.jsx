@@ -6,14 +6,16 @@ import {
   CalendarClock,
   ChartNoAxesCombined,
   GalleryHorizontalEnd,
+  Grid2X2,
   LayoutDashboard,
+  LogOut,
   Megaphone,
   Radio,
   Settings,
   FileSpreadsheet,
   UsersRound,
 } from 'lucide-react';
-import AnimatedBrand from '../components/AnimatedBrand';
+import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
 const primaryItems = [
   { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard },
@@ -30,11 +32,11 @@ const primaryItems = [
 ];
 
 const secondaryItems = [
-  { id: 'robot', label: 'Robot Center', Icon: Bot },
+  { id: 'robot', label: 'Propulse Control', Icon: Bot },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
-export default function Sidebar({ activePage, onChangePage }) {
+export default function Sidebar({ activePage, auth, onChangePage }) {
   function renderItem(item) {
     const Icon = item.Icon;
 
@@ -63,14 +65,29 @@ export default function Sidebar({ activePage, onChangePage }) {
           <span className="brand-cut brand-cut-sub" />
         </div>
         <div className="studio-brand-copy">
-          <p>Command center</p>
-          <h1>
-            <AnimatedBrand className="sidebar-brand-wordmark" />
-          </h1>
+          <p>{PROPULSE_MOTTO}</p>
+          <h1 className="propulse-sidebar-name">{PROPULSE_NAME}</h1>
         </div>
       </div>
 
       <nav className="sidebar-nav">
+        <button className="sidebar-item" onClick={() => window.location.assign('/')}>
+          <span className="sidebar-icon">
+            <Grid2X2 size={17} strokeWidth={2.35} />
+          </span>
+          <strong>Aplicații</strong>
+        </button>
+
+        {auth?.authRequired && (
+          <button className="sidebar-item" onClick={auth.logout}>
+            <span className="sidebar-icon">
+              <LogOut size={17} strokeWidth={2.35} />
+            </span>
+            <strong>Deconectare</strong>
+          </button>
+        )}
+        <div className="sidebar-separator" />
+
         {primaryItems.map(renderItem)}
 
         <div className="sidebar-separator" />
@@ -79,8 +96,8 @@ export default function Sidebar({ activePage, onChangePage }) {
       </nav>
 
       <div className="sidebar-footer">
-        <span>R.X. AI STUDIO</span>
-        <strong>Engine Online</strong>
+        <span>{PROPULSE_NAME}</span>
+        <strong>{PROPULSE_MOTTO}</strong>
       </div>
     </aside>
   );

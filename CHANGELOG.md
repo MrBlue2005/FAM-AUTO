@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a one-command Windows bootstrap for all applications, Prisma schema creation, Playwright browsers, Scrypt authentication, and baseline verification; removed operational JSON from Git tracking while preserving local data.
+
+- Made the desktop overlay launch reliably and quickly by preferring the unpacked executable, stripping the inherited Electron-as-Node flag, confirming process spawn, adding dashboard feedback/fallback, and granting a scoped in-memory read token for authenticated status polling.
+- Branded the Facebook posting application and robot as `RX PROPULSE TOOL` with the motto `Stay active. Stay visible.` across the launcher, dashboard, control center, sidebar, and live overlay.
+- Added a login page before the studio launcher, protected both applications with shared HttpOnly sessions and CSRF checks, moved password storage to versioned Scrypt hashes, and added a safe local auth setup command.
+- Replaced the vulnerable generator ESLint bundle with an explicit ESLint 10 toolchain, resolving all npm audit findings while retaining Next.js, TypeScript, and React Hooks rules.
+- Integrated a studio launcher that opens either the existing dashboard/robot or the property description generator.
+- Made the dashboard sidebar independently scrollable on short screens while preserving the current robot workflow.
+- Added the standalone `property-copywriter` application with secure Zonere extraction, structured social copy, local history, and OpenAI/demo generation.
+- Added catalog and shortlink handling, a dark creative theme, and a manual ChatGPT generation workflow.
+- Kept campaign schedules consistent when a property or job is deleted by removing the campaign from mixed schedules and deleting schedules that become empty.
 - Refreshed both GitHub branches from one clean VPS-ready snapshot after the Queue fixes, retaining the complete overlay source and documentation while excluding generated executables.
 - Fixed property progress to span all pending groups and made property/group history deduplication independent of the campaign content-day variant.
 - Fixed live Queue revalidation so deactivated, deleted, deselected, excluded, or newly processed tasks are skipped before posting, including history created through another Facebook profile.

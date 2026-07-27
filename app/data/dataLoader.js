@@ -8,7 +8,7 @@ function loadGroups() {
   const groupsPath = path.join(dataPath, 'groups.json');
 
   if (!fs.existsSync(groupsPath)) {
-    throw new Error('groups.json nu există în app/data');
+    return [];
   }
 
   const data = fs.readFileSync(groupsPath, 'utf8');
@@ -20,7 +20,7 @@ function loadProperties() {
   const propertiesDir = path.join(dataPath, 'properties');
 
   if (!fs.existsSync(propertiesDir)) {
-    throw new Error('Folderul app/data/properties nu există');
+    return [];
   }
 
   const files = fs

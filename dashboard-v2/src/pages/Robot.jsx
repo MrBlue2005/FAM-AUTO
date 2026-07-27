@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import ProfileStartModal from '../components/ProfileStartModal';
+import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
 function formatEta(seconds) {
   if (!seconds && seconds !== 0) return '-';
@@ -69,8 +70,9 @@ export default function Robot() {
     <div className="management-page">
       <header className="management-header">
         <div>
-          <h1>Robot Center</h1>
-          <p>Control complet pentru robot, progres, ETA si feed live.</p>
+          <span className="hero-eyebrow">{PROPULSE_MOTTO}</span>
+          <h1>{PROPULSE_NAME}</h1>
+          <p>Control complet pentru robotul de postări, progres, ETA și feed live.</p>
         </div>
 
         <span className={`robot-pill ${status}`}>{status}</span>

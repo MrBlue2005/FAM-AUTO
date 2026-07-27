@@ -10,7 +10,8 @@ const rootPath = path.join(__dirname, '..');
 
 function passwordScrypt(password) {
   const salt = crypto.randomBytes(16);
-  return `${salt.toString('hex')}:${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+  const options = { N: 32768, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
+  return `scrypt$${options.N}$${options.r}$${options.p}$${salt.toString('hex')}$${crypto.scryptSync(password, salt, 64, options).toString('hex')}`;
 }
 
 async function freePort() {
@@ -38,7 +39,11 @@ async function waitFor(url, child, getOutput) {
 
 test('production server requires auth and shuts down cleanly', { timeout: 60000 }, async () => {
   const port = await freePort();
-  const password = 'production-test-password';
+const password = 'production-test-password';
+  const passwordHash = passwordScrypt(password);
+  const overlayToken = crypto.createHmac('sha256', passwordHash)
+    .update('rx-propulse-overlay-v1')
+    .digest('hex');
   const storageRoot = path.join(rootPath, '.tmp', 'server-test', String(port));
   let output = '';
   const child = spawn(process.execPath, ['server/server.js'], {
@@ -50,7 +55,7 @@ test('production server requires auth and shuts down cleanly', { timeout: 60000 
       PORT: String(port),
       AUTH_ENABLED: 'true',
       ADMIN_USERNAME: 'admin',
-      ADMIN_PASSWORD_SCRYPT: passwordScrypt(password),
+      ADMIN_PASSWORD_SCRYPT: passwordHash,
       RX_DATA_PATH: path.join(storageRoot, 'data'),
       RX_LOGS_PATH: path.join(storageRoot, 'logs'),
       RX_UPLOADS_PATH: path.join(storageRoot, 'uploads'),
@@ -73,7 +78,15 @@ test('production server requires auth and shuts down cleanly', { timeout: 60000 
     const unauthorized = await fetch(`http://127.0.0.1:${port}/api/properties`);
     assert.equal(unauthorized.status, 401);
     const unauthorizedMedia = await fetch(`http://127.0.0.1:${port}/uploads/private-file.png`);
-    assert.equal(unauthorizedMedia.status, 401);
+assert.equal(unauthorizedMedia.status, 401);
+    const overlayStatus = await fetch(`http://127.0.0.1:${port}/api/overlay/status`, {
+      headers: { 'x-overlay-token': overlayToken },
+    });
+    assert.equal(overlayStatus.status, 200);
+    const overlayTokenCannotReadOtherApis = await fetch(`http://127.0.0.1:${port}/api/properties`, {
+      headers: { 'x-overlay-token': overlayToken },
+    });
+    assert.equal(overlayTokenCannotReadOtherApis.status, 401);
 
     const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
@@ -83,13 +96,28 @@ test('production server requires auth and shuts down cleanly', { timeout: 60000 
     assert.equal(login.status, 200);
     const setCookie = login.headers.get('set-cookie');
     assert.match(setCookie, /rx_session=.*HttpOnly.*SameSite=Strict.*Secure/i);
-    const { token } = await login.json();
-    assert.ok(token);
+    const loginBody = await login.json();
+    assert.equal(loginBody.username, 'admin');
+    assert.equal(loginBody.role, 'admin');
+    assert.equal('token' in loginBody, false);
 
+    const sessionCookie = setCookie.split(';')[0];
     const authorized = await fetch(`http://127.0.0.1:${port}/api/properties`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: { cookie: sessionCookie },
     });
     assert.equal(authorized.status, 200);
+    const csrfRejected = await fetch(`http://127.0.0.1:${port}/api/groups`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie },
+      body: '[]',
+    });
+    assert.equal(csrfRejected.status, 403);
+    const csrfAccepted = await fetch(`http://127.0.0.1:${port}/api/groups`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: '[]',
+    });
+    assert.equal(csrfAccepted.status, 200);
     const authorizedMedia = await fetch(`http://127.0.0.1:${port}/uploads/private-file.png`, {
       headers: { cookie: setCookie.split(';')[0] },
     });

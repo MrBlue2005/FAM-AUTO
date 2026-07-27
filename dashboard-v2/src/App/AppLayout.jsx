@@ -3,10 +3,10 @@ import Topbar from '../layout/Topbar';
 import Toolbar from '../layout/Toolbar';
 import StatusBar from '../layout/StatusBar';
 
-export default function AppLayout({ activePage, onChangePage, children }) {
+export default function AppLayout({ activePage, auth, onChangePage, children }) {
   return (
     <div className="app-shell">
-      <Sidebar activePage={activePage} onChangePage={onChangePage} />
+      <Sidebar activePage={activePage} auth={auth} onChangePage={onChangePage} />
 
       <div className="main-shell">
         <Topbar activePage={activePage} onChangePage={onChangePage} />

@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
 const protocolName = 'rx-ai-overlay';
 const appUserModelId = 'com.rxai.overlay';
 const appIconPath = path.join(__dirname, 'build', 'icon.png');
+const runtimeOverlayToken = process.env.RX_OVERLAY_TOKEN || '';
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(appUserModelId);
@@ -29,6 +30,7 @@ const sizePresets = {
 const defaultSettings = {
   apiUrl: 'http://127.0.0.1:3000/api',
   apiKey: '',
+  overlayToken: runtimeOverlayToken,
   sizePreset: 'medium',
   width: sizePresets.medium.width,
   height: sizePresets.medium.height,
@@ -69,6 +71,7 @@ function normalizeSettings(settings = {}) {
   return {
     ...defaultSettings,
     ...settings,
+    overlayToken: runtimeOverlayToken,
     sizePreset,
     width: presetSize.width,
     height: presetSize.height,
@@ -92,11 +95,12 @@ function readSettings() {
 
 function writeSettings(nextSettings) {
   const settings = normalizeSettings(nextSettings);
+  const persistedSettings = { ...settings };
+  delete persistedSettings.overlayToken;
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
+  fs.writeFileSync(settingsPath(), JSON.stringify(persistedSettings, null, 2));
   return settings;
 }
-
 function applyWindowSettings(settings) {
   if (!overlayWindow) return;
 

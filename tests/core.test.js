@@ -194,6 +194,25 @@ test('weekly schedule computes the next local weekday and skips elapsed times', 
   assert.equal(nextWednesday.getDate(), 15);
 });
 
+test('deleting a campaign reference updates mixed schedules and removes empty schedules', () => {
+  const schedules = [
+    { id: 'ONLY_PROPERTY', campaignCategory: 'real_estate', campaignIds: ['P1'] },
+    { id: 'MIXED_PROPERTIES', campaignCategory: 'real_estate', campaignIds: ['P1', 'P2'] },
+    { id: 'JOB_WITH_SAME_ID', campaignCategory: 'jobs', campaignIds: ['P1'] },
+  ];
+
+  const result = DataManager.pruneSchedulesForCampaign(schedules, 'P1', 'real_estate');
+
+  assert.equal(result.removedCount, 1);
+  assert.equal(result.updatedCount, 1);
+  assert.deepEqual(result.schedules.map((schedule) => schedule.id), [
+    'MIXED_PROPERTIES',
+    'JOB_WITH_SAME_ID',
+  ]);
+  assert.deepEqual(result.schedules[0].campaignIds, ['P2']);
+  assert.deepEqual(result.schedules[1].campaignIds, ['P1']);
+});
+
 test('Excel report contains summary, aggregate, and detailed result sheets', async () => {
   const history = [
     { propertyId: 'P1', propertyName: 'Campanie test', groupId: 'G1', groupName: 'Grup test', day: 1, status: 'posted', views: 120, date: '2026-07-12T10:00:00.000Z' },

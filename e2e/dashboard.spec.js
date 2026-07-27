@@ -184,14 +184,14 @@ test('campaign schedules persist safely through the API', async () => {
 });
 
 test('dashboard CTA navigates to Live Feed', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: 'Dashboard' }).last()).toBeVisible();
   await page.getByRole('button', { name: /Deschide Live Feed/ }).click();
   await expect(page.getByRole('heading', { name: 'Live Feed' }).last()).toBeVisible();
 });
 
 test('property and job editors expose media workflows', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/dashboard');
   await page.getByRole('button', { name: 'Proprietati' }).first().click();
   await expect(page.getByRole('button', { name: /Trage media aici/ })).toHaveCount(3);
   await expect(page.getByRole('button', { name: /Alege din Media Library/ })).toHaveCount(3);
@@ -201,7 +201,7 @@ test('property and job editors expose media workflows', async ({ page }) => {
 });
 
 test('scheduler page exposes weekly and safety controls', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/dashboard');
   await page.getByRole('button', { name: 'Programari' }).click();
   await expect(page.getByRole('heading', { name: 'Programari campanii' }).last()).toBeVisible();
   await expect(page.getByText('Zilele saptamanii')).toBeVisible();
@@ -213,7 +213,7 @@ test('scheduler page exposes weekly and safety controls', async ({ page }) => {
 });
 
 test('smoke property, job, and queue are visible in the dashboard', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/dashboard');
 
   await page.getByRole('button', { name: 'Proprietati' }).first().click();
   await expect(page.getByText('Smoke test property', { exact: true })).toBeVisible();
@@ -226,4 +226,39 @@ test('smoke property, job, and queue are visible in the dashboard', async ({ pag
   await expect(queueTask.getByText('Smoke test property', { exact: true })).toBeVisible();
   await expect(queueTask.getByText('Smoke test group', { exact: true })).toBeVisible();
   await expect(queueTask.getByText('Doar pregatire', { exact: true })).toBeVisible();
+});
+
+test('sidebar scrolls to Propulse Control and Settings on short screens', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await page.goto('/dashboard');
+
+  const sidebarNav = page.locator('.sidebar-nav');
+  const dimensions = await sidebarNav.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
+
+  await sidebarNav.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+
+  const settingsBox = await page.getByRole('button', { name: 'Settings' }).boundingBox();
+  expect(settingsBox).not.toBeNull();
+  expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(560);
+});
+test('overlay button confirms a fast desktop launch without opening duplicates', async ({ page }) => {
+  let launchRequests = 0;
+  await page.route(`${apiBaseUrl}overlay/desktop/open`, async (route) => {
+    launchRequests += 1;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, mode: 'unpacked-exe', pid: 1234 }),
+    });
+  });
+
+  await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Overlay' }).click();
+  await expect(page.getByText('RX Propulse Overlay a fost deschis.')).toBeVisible();
+  expect(launchRequests).toBe(1);
 });

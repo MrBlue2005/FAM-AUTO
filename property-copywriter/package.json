@@ -1,0 +1,57 @@
+{
+  "name": "property-copywriter",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 -p 3100",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1 -p 3100",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "7.9.0",
+    "@prisma/client": "7.9.0",
+    "dotenv": "17.2.3",
+    "next": "16.2.12",
+    "openai": "6.49.0",
+    "playwright": "1.62.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.2.12",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.8.0",
+    "prisma": "7.9.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "find-my-way": "9.7.0",
+    "postcss": "8.5.23",
+    "sharp": "0.35.3",
+    "valibot": "1.4.2"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.9.0": true,
+    "better-sqlite3@12.11.1": true,
+    "prisma@7.9.0": true,
+    "sharp@0.35.3": true,
+    "unrs-resolver@1.12.2": true
+  }
+}

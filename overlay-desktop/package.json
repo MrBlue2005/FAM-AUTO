@@ -46,6 +46,12 @@
     }
   },
   "allowScripts": {
-    "electron@34.5.8": true
+    "electron@43.1.0": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "fast-uri": "3.1.4",
+    "tar": "7.5.22"
   }
 }
