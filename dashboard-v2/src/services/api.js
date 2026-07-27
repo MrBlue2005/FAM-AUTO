@@ -1,6 +1,5 @@
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY || '';
-const getAuthToken = () => window.localStorage.getItem('rx-auth-token') || '';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 function getMediaUrl(reference) {
@@ -18,7 +17,10 @@ function getMediaUrl(reference) {
 }
 
 async function downloadExport(type) {
-  const response = await fetch(`${API_URL}/export/${encodeURIComponent(type)}`, { headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}), ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) } });
+  const response = await fetch(`${API_URL}/export/${encodeURIComponent(type)}`, {
+    credentials: 'include',
+    headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}) },
+  });
   if (!response.ok) throw new Error('Exportul nu a putut fi generat.');
   const blob = await response.blob();
   const url = URL.createObjectURL(blob); const link = document.createElement('a');
@@ -26,7 +28,10 @@ async function downloadExport(type) {
 }
 
 async function downloadFile(endpoint, fallbackName) {
-  const response = await fetch(`${API_URL}${endpoint}`, { headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}), ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) } });
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    credentials: 'include',
+    headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}) },
+  });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.error || 'Fisierul nu a putut fi generat.');
@@ -45,9 +50,16 @@ async function downloadFile(endpoint, fallbackName) {
 }
 
 async function request(endpoint, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
   const response = await fetch(`${API_URL}${endpoint}`, {
-    headers: { 'Content-Type': 'application/json', ...(API_KEY ? { 'x-api-key': API_KEY } : {}), ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
     ...options,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+      ...(['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? { 'x-rx-csrf': '1' } : {}),
+      ...(options.headers || {}),
+    },
   });
 
   if (!response.ok) {
@@ -199,7 +211,8 @@ export const api = {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_URL}/media/upload`);
       if (API_KEY) xhr.setRequestHeader('x-api-key', API_KEY);
-      if (getAuthToken()) xhr.setRequestHeader('Authorization', `Bearer ${getAuthToken()}`);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('x-rx-csrf', '1');
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
       };

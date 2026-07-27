@@ -10,8 +10,8 @@ import {
   RefreshCw,
   UsersRound,
 } from 'lucide-react';
-import AnimatedBrand from '../components/AnimatedBrand';
 import { api } from '../services/api';
+import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
 function formatEta(seconds) {
   if (!seconds && seconds !== 0) return '-';
@@ -114,7 +114,7 @@ export default function DesktopOverlay() {
   }, []);
 
   useEffect(() => {
-    document.title = 'R.X. AI Overlay';
+    document.title = `${PROPULSE_NAME} — ${PROPULSE_MOTTO}`;
     let ignore = false;
 
     api.getOverlayStatus()
@@ -168,7 +168,7 @@ export default function DesktopOverlay() {
   }
 
   function openDashboard() {
-    window.open(window.location.origin, '_blank');
+    window.open(new URL('/dashboard', window.location.origin), '_blank');
   }
 
   const robot = data?.robot || {};
@@ -209,10 +209,8 @@ export default function DesktopOverlay() {
     <main className="overlay-shell">
       <header className="overlay-header">
         <div className="overlay-brand-title">
-          <span className="brand-kicker">Desktop overlay</span>
-          <h1>
-            <AnimatedBrand className="overlay-brand-wordmark" />
-          </h1>
+          <span className="brand-kicker">{PROPULSE_MOTTO}</span>
+          <h1 className="propulse-overlay-name">{PROPULSE_NAME}</h1>
         </div>
 
         <button className="overlay-icon-button" onClick={openDashboard} title="Deschide dashboard">

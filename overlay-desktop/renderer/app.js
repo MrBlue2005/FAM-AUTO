@@ -1,6 +1,7 @@
 const defaultSettings = {
   apiUrl: 'http://127.0.0.1:3000/api',
   apiKey: '',
+  overlayToken: '',
   sizePreset: 'medium',
   width: 780,
   height: 640,
@@ -132,6 +133,7 @@ function apiUrl(path) {
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (state.settings.apiKey) headers['x-api-key'] = state.settings.apiKey;
+  if (state.settings.overlayToken) headers['x-overlay-token'] = state.settings.overlayToken;
 
   const response = await fetch(apiUrl(path), {
     headers,

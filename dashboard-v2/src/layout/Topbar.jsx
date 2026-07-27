@@ -1,4 +1,4 @@
-import { Bell, ExternalLink, Search, Settings } from 'lucide-react';
+import { Bell, ExternalLink, LoaderCircle, Search, Settings } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 
@@ -14,7 +14,7 @@ const titles = {
   livefeed: 'Live Feed',
   analytics: 'Analytics',
   reports: 'Rapoarte',
-  robot: 'Robot Center',
+  robot: 'RX Propulse Control',
   settings: 'Settings',
 };
 
@@ -54,6 +54,7 @@ function formatDate(value) {
 
 export default function Topbar({ activePage, onChangePage }) {
   const [openPanel, setOpenPanel] = useState(null);
+  const [overlayOpening, setOverlayOpening] = useState(false);
   const [query, setQuery] = useState('');
   const actionsRef = useRef(null);
   const [data, setData] = useState({
@@ -147,6 +148,9 @@ export default function Topbar({ activePage, onChangePage }) {
   }
 
   async function openOverlay() {
+    if (overlayOpening) return;
+    setOverlayOpening(true);
+
     const width = 780;
     const height = 640;
     const left = Math.max(window.screenX + window.outerWidth - width - 24, 0);
@@ -155,31 +159,35 @@ export default function Topbar({ activePage, onChangePage }) {
 
     try {
       const result = await api.openDesktopOverlay();
-
       if (result?.ok) {
+        window.dispatchEvent(new CustomEvent('rx:toast', {
+          detail: { message: 'RX Propulse Overlay a fost deschis.', type: 'success' },
+        }));
         return;
       }
-    } catch {
-      // Fallback below handles cases where the backend cannot launch the desktop app.
-    }
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('rx:toast', {
+        detail: {
+          message: error.message || 'Overlayul desktop nu a putut fi pornit. Deschid varianta web.',
+          type: 'error',
+        },
+      }));
 
-    const fallbackTimer = window.setTimeout(() => {
-      window.open(
+      const popup = window.open(
         overlayUrl,
         'rx-ai-web-overlay',
         `popup=yes,width=${width},height=${height},left=${left},top=${top}`
       );
-    }, 900);
-
-    window.addEventListener('blur', () => window.clearTimeout(fallbackTimer), { once: true });
-
-    window.location.href = 'rx-ai-overlay://open';
+      if (!popup) window.open(overlayUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setOverlayOpening(false);
+    }
   }
 
   return (
     <header className="topbar">
       <div>
-        <h2>{titles[activePage] || 'R.X. AI STUDIO'}</h2>
+        <h2>{titles[activePage] || 'RX PROPULSE TOOL'}</h2>
       </div>
 
       <div className="topbar-actions" ref={actionsRef}>
@@ -248,9 +256,11 @@ export default function Topbar({ activePage, onChangePage }) {
           Setari
         </button>
 
-        <button onClick={openOverlay}>
-          <ExternalLink size={16} strokeWidth={2.35} />
-          Overlay
+        <button onClick={openOverlay} disabled={overlayOpening}>
+          {overlayOpening
+            ? <LoaderCircle className="spin" size={16} strokeWidth={2.35} />
+            : <ExternalLink size={16} strokeWidth={2.35} />}
+          {overlayOpening ? 'Pornesc…' : 'Overlay'}
         </button>
       </div>
     </header>

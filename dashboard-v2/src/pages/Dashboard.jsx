@@ -13,6 +13,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
 const initialData = {
   activeProperties: 0,
@@ -129,9 +130,9 @@ export default function Dashboard({ onChangePage }) {
     <div className="dashboard-v2-grid dashboard-command-center">
       <section className="dashboard-hero">
         <div>
-          <span className="hero-eyebrow"><Activity size={14} /> Command center live</span>
-          <h1>Automation Command Center</h1>
-          <p>Campanii, queue, validari si robot intr-un singur ecran operational.</p>
+          <span className="hero-eyebrow"><Activity size={14} /> {PROPULSE_MOTTO}</span>
+          <h1>{PROPULSE_NAME}</h1>
+          <p>Motorul operațional care menține campaniile active și proprietățile vizibile.</p>
           <small className="dashboard-updated">Actualizat la {formatTime(data.updatedAt)}</small>
         </div>
 
@@ -208,7 +209,7 @@ export default function Dashboard({ onChangePage }) {
           <p className="mission-message">{data.robot?.lastMessage || 'Robotul este pregatit pentru urmatoarea rulare.'}</p>
 
           <button className="card-link-button" onClick={() => onChangePage('robot')}>
-            Deschide Robot Center <ArrowRight size={16} />
+            Deschide Propulse Control <ArrowRight size={16} />
           </button>
         </article>
 

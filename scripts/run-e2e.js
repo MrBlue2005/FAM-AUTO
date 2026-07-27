@@ -3,8 +3,10 @@ const path = require('path');
 
 const rootPath = path.join(__dirname, '..');
 const serverOutput = new Map();
+const childProcessEnv = { ...process.env };
+delete childProcessEnv.NO_COLOR;
 
-function startNode(name, args, env = process.env) {
+function startNode(name, args, env = childProcessEnv) {
   const child = spawn(process.execPath, args, {
     cwd: rootPath,
     env,
@@ -59,11 +61,11 @@ async function stopChild(child) {
 }
 
 async function run() {
-  const e2eApiUrl = 'http://127.0.0.1:3100/api';
+  const e2eApiUrl = 'http://127.0.0.1:3110/api';
   const e2eDashboardUrl = 'http://127.0.0.1:5175';
   const storageEnv = {
-    ...process.env,
-    PORT: '3100',
+    ...childProcessEnv,
+    PORT: '3110',
     CORS_ORIGINS: 'http://127.0.0.1:5175',
     RX_DATA_PATH: path.join(rootPath, '.tmp', 'e2e', 'data'),
     RX_LOGS_PATH: path.join(rootPath, '.tmp', 'e2e', 'logs'),
@@ -79,18 +81,18 @@ async function run() {
     '--port',
     '5175',
     '--strictPort',
-  ], { ...process.env, VITE_API_URL: e2eApiUrl });
+  ], { ...childProcessEnv, VITE_API_URL: e2eApiUrl });
 
   try {
     await Promise.all([
-      waitForUrl('http://127.0.0.1:3100/readyz', api),
+      waitForUrl('http://127.0.0.1:3110/readyz', api),
       waitForUrl(e2eDashboardUrl, dashboard),
     ]);
 
     const playwrightCli = require.resolve('@playwright/test/cli');
     const testRunner = spawn(process.execPath, [playwrightCli, 'test', ...process.argv.slice(2)], {
       cwd: rootPath,
-      env: { ...process.env, E2E_API_URL: e2eApiUrl, E2E_DASHBOARD_URL: e2eDashboardUrl },
+      env: { ...childProcessEnv, E2E_API_URL: e2eApiUrl, E2E_DASHBOARD_URL: e2eDashboardUrl },
       stdio: 'inherit',
       windowsHide: true,
     });

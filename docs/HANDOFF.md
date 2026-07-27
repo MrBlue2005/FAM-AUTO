@@ -1,11 +1,11 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-07-13
+Last updated: 2026-07-27
 
 ## Repository state
 
 - Remote: `https://github.com/MrBlue2005/FAM-AUTO`
-- Working branch: `agent/release-1.1.0`
+- Working branch: `integration/launcher-copywriter-20260727`
 - Documented implementation: clean VPS-ready snapshot shared by `main` and `agent/release-1.1.0`
 - The complete overlay source and documentation remain tracked; generated executables under `overlay-desktop/dist/` remain local-only.
 - Previous draft pull request: `https://github.com/MrBlue2005/FAM-AUTO/pull/1` (superseded by the clean snapshot)
@@ -17,6 +17,14 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ### Dashboard and workflow
 
+- The Facebook posting application is branded `RX PROPULSE TOOL` with the motto `Stay active. Stay visible.` in the launcher, dashboard, robot controls, sidebar, browser title, and desktop overlay.
+
+- A shared login page now protects the studio launcher, dashboard/robot, description generator, and their API routes before access is granted.
+- Authentication uses versioned Scrypt hashes, a 12-hour HttpOnly/SameSite session cookie, login throttling, CSRF checks, no client-side token storage, and fail-closed generator checks.
+- `npm run auth:setup` enables local authentication and writes only the password hash to the Git-ignored `.env`.
+- Integrated studio launcher at `/` with separate entries for the dashboard/robot and description generator.
+- Dashboard routes remain under `/dashboard` and the sidebar scrolls independently on short screens.
+- `npm run studio` starts the API, dashboard/launcher, and property-copywriter together.
 - Operational dashboard navigation and CTA buttons.
 - Dashboard summary and live API status.
 - Property and job creation with media drag-and-drop.
@@ -31,6 +39,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
+- Deleting a property or job now removes its reference from mixed schedules and deletes schedules left without campaigns.
 - Scheduled runs default to TEST mode; LIVE schedules require an explicit publishing confirmation and overlapping robot runs are skipped.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.
 - The scheduler profile selector loads configured Facebook profiles from `GET /api/facebook-profiles` and filters them by campaign category.
@@ -50,7 +59,21 @@ Always verify these values with `git status` and `git log`; this document descri
 - Playwright Facebook workflow with profile setup, queue planning, posting verification, pause/resume, and stop controls.
 - Local-first defaults: API bound to `127.0.0.1`, restricted CORS, publishing disabled unless configured.
 
+### Property description generator
+
+- Standalone Next.js application in `property-copywriter/`, served locally on port 3100.
+- Its header uses the shared RX emblem in the generator green palette; the launcher displays red and green application-specific RX logos on the corresponding cards, with accessible labeling and reduced-motion support.
+- Secure Zonere listing extraction, including catalog and shortlink support.
+- Editable structured property data and formatted social-media descriptions.
+- OpenAI/demo generation plus a manual ChatGPT copy/paste workflow.
+- Reusable description models are managed from `/templates`. The selected model is sent in full to GPT together with explicit matching rules; inapplicable criteria are omitted, relevant data absent from the model may be added in the same style, and validated property data always takes precedence. History stores a snapshot, so editing or deleting a model does not alter previous generations.
+- Local Prisma/SQLite history and dedicated unit tests.
+- Integrated verification passes: lint, typecheck, 21 unit tests, production build, and the complete 13-test studio E2E suite, including login coverage.
+- Full npm audit is clean. The vulnerable `eslint-config-next` bundle was replaced with explicit ESLint 10, TypeScript, React Hooks, and Next.js plugin configuration, preserving lint coverage without vulnerable legacy minimatch dependencies.
+
 ### Desktop overlay
+
+- Desktop overlay launch now prefers the fast unpacked executable, confirms process creation, survives the Codex Electron-as-Node environment, and uses a process-only token restricted to `GET /api/overlay/status`.
 
 - Electron overlay connected to the local API.
 - Custom R.X. AI icon in the executable, window, and Windows taskbar.
@@ -60,11 +83,17 @@ Always verify these values with `git status` and `git log`; this document descri
 - Adaptive polling and optional API-key support for the backend connection.
 - Digital-signing workflow is prepared, but no certificate is currently available.
 
+## Reproducible clone baseline
+
+- `npm.cmd run setup:new-pc` installs root, dashboard, copywriter, and overlay dependencies from lockfiles; creates missing local env files; initializes Prisma/SQLite; installs Playwright Chromium; configures the Scrypt login; and runs baseline checks.
+- Operational groups, runtime configuration, schedules, property/job campaigns, uploads, logs, databases, and browser profiles are excluded from Git. Existing files remain local; new clones start safely with empty data and publishing disabled.
+- All four npm dependency audits report zero vulnerabilities after pinning the fixed overlay transitive packages.
+- GitHub CLI 2.96.0 is installed and authenticated locally as `MrBlue2005`.
 ## Important local-only state
 
 GitHub does not restore these items:
 
-- `.env` and `dashboard-v2/.env`;
+- `.env`, `dashboard-v2/.env`, and `property-copywriter/.env`;
 - Chrome/Facebook login profiles such as `chrome-profile/`;
 - `node_modules/` directories;
 - dashboard and overlay build output;
@@ -78,7 +107,8 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 - Development is currently Windows-first and uses PowerShell.
 - API default: `http://127.0.0.1:3000/api`.
-- Dashboard default: `http://localhost:5173`.
+- Studio launcher default: `http://127.0.0.1:5173`; dashboard route: `/dashboard`.
+- Property copywriter default: `http://127.0.0.1:3100`.
 - Real Facebook publishing must remain off during ordinary development and automated tests.
 - E2E tests use `.tmp/e2e/` storage and never read or overwrite local operational data or logs.
 - The scheduler only evaluates due work while the API is running; keep the API process active for unattended scheduled runs.
@@ -88,12 +118,14 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
-2. Transfer operational media and other persistent data separately after the VPS storage paths are selected.
-3. Exercise scheduling with representative TEST campaigns over several weekdays and review missed/skipped run behavior in normal operation.
-4. Add or extend E2E coverage for property/job creation, media reuse, queue changes, saved runs, Excel export, and backup/restore.
-5. Obtain a trusted Windows code-signing certificate before publishing the overlay as a production release.
-6. After the VPS deployment is verified, define the normal feature-branch and pull-request flow from the clean baseline.
+1. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
+2. Run the integrated studio E2E suite and verify launcher navigation on this PC.
+3. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
+4. Transfer operational media and other persistent data separately after the VPS storage paths are selected.
+5. Exercise scheduling with representative TEST campaigns over several weekdays and review missed/skipped run behavior in normal operation.
+6. Add or extend E2E coverage for property/job creation, media reuse, queue changes, saved runs, Excel export, and backup/restore.
+7. Obtain a trusted Windows code-signing certificate before publishing the overlay as a production release.
+8. After the VPS deployment is verified, define the normal feature-branch and pull-request flow from the clean baseline.
 
 ## Continuing from another computer
 

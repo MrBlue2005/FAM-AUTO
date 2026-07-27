@@ -28,21 +28,12 @@ const defaultRuntimeConfig = {
       category: 'jobs',
       useSavedLoginIdentity: true,
     },
-    {
-      id: 'cherry_park_corbeanca',
-      label: 'Cherry Park Corbeanca',
-      profilePath: 'chrome-profile-cherry-park-corbeanca',
-      category: 'real_estate',
-      useSavedLoginIdentity: true,
-    },
   ],
   postingIdentityByCategory: {
     real_estate: 'default',
     jobs: 'jobs_page',
   },
-  postingIdentityByProfile: {
-    cherry_park_corbeanca: 'cherry_park_corbeanca_page',
-  },
+  postingIdentityByProfile: {},
   queueExcludedTaskIds: [],
   queueRetryTaskIds: [],
   queueOrder: [],
@@ -56,11 +47,6 @@ const defaultRuntimeConfig = {
       id: 'jobs_page',
       label: 'Pagina joburi',
       actorName: '',
-    },
-    {
-      id: 'cherry_park_corbeanca_page',
-      label: 'Cherry Park Corbeanca',
-      actorName: 'Cherry Park Corbeanca',
     },
   ],
 };
@@ -124,6 +110,47 @@ function saveSchedules(schedules) {
   return schedules;
 }
 
+function pruneSchedulesForCampaign(schedules, campaignId, campaignCategory) {
+  const normalizedCategory = campaignCategory === 'jobs' ? 'jobs' : 'real_estate';
+  let updatedCount = 0;
+  let removedCount = 0;
+
+  const nextSchedules = (Array.isArray(schedules) ? schedules : []).flatMap((schedule) => {
+    const scheduleCategory = schedule?.campaignCategory === 'jobs' ? 'jobs' : 'real_estate';
+    const campaignIds = Array.isArray(schedule?.campaignIds) ? schedule.campaignIds : [];
+
+    if (scheduleCategory !== normalizedCategory || !campaignIds.includes(campaignId)) {
+      return [schedule];
+    }
+
+    const remainingCampaignIds = campaignIds.filter((id) => id !== campaignId);
+
+    if (!remainingCampaignIds.length) {
+      removedCount += 1;
+      return [];
+    }
+
+    updatedCount += 1;
+    return [{
+      ...schedule,
+      campaignIds: remainingCampaignIds,
+      updatedAt: new Date().toISOString(),
+    }];
+  });
+
+  return { schedules: nextSchedules, updatedCount, removedCount };
+}
+
+function removeCampaignFromSchedules(campaignId, campaignCategory) {
+  const result = pruneSchedulesForCampaign(getSchedules(), campaignId, campaignCategory);
+
+  if (result.updatedCount || result.removedCount) {
+    saveSchedules(result.schedules);
+  }
+
+  return result;
+}
+
 /* PROPERTIES */
 
 function getProperties() {
@@ -162,6 +189,8 @@ function deleteProperty(propertyId) {
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
+
+  removeCampaignFromSchedules(propertyId, 'real_estate');
 
   return getProperties();
 }
@@ -204,6 +233,8 @@ function deleteJob(jobId) {
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
+
+  removeCampaignFromSchedules(jobId, 'jobs');
 
   return getJobs();
 }
@@ -445,6 +476,7 @@ module.exports = {
 
   getSchedules,
   saveSchedules,
+  pruneSchedulesForCampaign,
 
   getProperties,
   saveProperty,
