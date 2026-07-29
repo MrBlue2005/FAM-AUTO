@@ -4,11 +4,12 @@ function loadHistory() {
   return DataManager.getHistory();
 }
 
-function hasProcessed(history, propertyId, groupId) {
+function hasProcessed(history, propertyId, groupId, reference = new Date()) {
   return history.some((item) =>
     String(item.propertyId) === String(propertyId) &&
     String(item.groupId) === String(groupId) &&
-    ['prepared', 'posted'].includes(item.status)
+    ['prepared', 'posted'].includes(item.status) &&
+    isSameLocalDay(item.date, reference)
   );
 }
 

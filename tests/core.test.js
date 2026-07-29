@@ -13,6 +13,9 @@ const {
 } = require('../app/core/CampaignTools');
 const { buildCampaignWorkbook } = require('../app/utils/excelReport');
 const {
+  classifyGroupAvailabilityText,
+} = require('../app/facebook/groupAvailability');
+const {
   getGroupsPostedOnDate,
   hasPostedInGroupOnDate,
 } = require('../app/utils/historyManager');
@@ -70,26 +73,59 @@ test('normalizes legacy upload paths and resolves them in the current workspace'
   assert.match(resolveMediaReference(legacy), /app[\\/]uploads[\\/]CHERRY_PARK/);
 });
 
-test('queue treats a property and group as processed across content days and profiles', () => {
-  const postedHistory = [{
+test('queue only treats a property and group as processed on the current local day', () => {
+  const now = new Date(2026, 6, 13, 15, 0, 0);
+  const yesterdayHistory = [{
     propertyId: 'P1',
     groupId: 'G1',
     day: 2,
     facebookProfileId: 'another-profile',
     status: 'posted',
+    date: new Date(2026, 6, 12, 15, 0, 0).toISOString(),
   }];
-  const donePlan = buildQueuePlan(fixture({ history: postedHistory }));
+  const pendingPlan = buildQueuePlan({
+    ...fixture({ history: yesterdayHistory }),
+    now,
+  });
+  assert.equal(pendingPlan.tasks[0].status, 'pending');
+  assert.equal(pendingPlan.activeTasks.length, 1);
+
+  const todayHistory = [{
+    ...yesterdayHistory[0],
+    date: new Date(2026, 6, 13, 8, 0, 0).toISOString(),
+  }];
+  const donePlan = buildQueuePlan({
+    ...fixture({ history: todayHistory }),
+    now,
+  });
   assert.equal(donePlan.tasks[0].status, 'done');
   assert.equal(donePlan.activeTasks.length, 0);
 
-  const retryPlan = buildQueuePlan(fixture({
-    history: postedHistory,
-    config: { queueRetryTaskIds: [getTaskId('P1', 'G1', 'main')] },
-  }));
+  const retryPlan = buildQueuePlan({
+    ...fixture({
+      history: todayHistory,
+      config: { queueRetryTaskIds: [getTaskId('P1', 'G1', 'main')] },
+    }),
+    now,
+  });
   assert.equal(retryPlan.tasks[0].status, 'retry');
   assert.equal(retryPlan.activeTasks.length, 1);
 });
 
+test('paused and unavailable Facebook groups are classified for safe skipping', () => {
+  assert.deepEqual(
+    classifyGroupAvailabilityText('Administratorii au pus acest grup pe pauză.'),
+    { available: false, reason: 'group_paused' }
+  );
+  assert.deepEqual(
+    classifyGroupAvailabilityText('This content isn’t available right now.'),
+    { available: false, reason: 'group_unavailable' }
+  );
+  assert.deepEqual(
+    classifyGroupAvailabilityText('Scrie ceva...'),
+    { available: true, reason: null }
+  );
+});
 test('queue never includes an inactive campaign even when it remains selected', () => {
   const inactive = fixture();
   inactive.properties[0].active = false;

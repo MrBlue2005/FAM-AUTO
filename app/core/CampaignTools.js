@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { getEligibleGroups, getPostForDay } = require('../utils/campaignPlanner');
-const { getGroupsPostedOnDate } = require('../utils/historyManager');
+const { getGroupsPostedOnDate, hasProcessed } = require('../utils/historyManager');
 const { resolveMediaReference } = require('../utils/mediaPath');
 const {
   getActiveCampaignCategory,
@@ -153,10 +153,11 @@ function buildQueuePlan({ config, properties, jobs, groups, history = [], now = 
   });
 
   const plannedTasks = applySavedQueueState(tasks, config).map((task) => {
-    const processed = history.some((entry) =>
-      entry.propertyId === task.campaignId &&
-      entry.groupId === task.groupId &&
-      ['prepared', 'posted'].includes(entry.status)
+    const processed = hasProcessed(
+      history,
+      task.campaignId,
+      task.groupId,
+      now
     );
 
     return {

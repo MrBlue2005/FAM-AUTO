@@ -4,6 +4,7 @@ const { openGroup } = require('./groupNavigation');
 const { createPost } = require('./postCreator');
 const { publishPost } = require('./publishPost');
 const { discoverAndUpdateGroup } = require('./groupDiscovery');
+const { detectGroupAvailability } = require('./groupAvailability');
 
 const DataManager = require('../core/DataManager');
 
@@ -323,6 +324,28 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       await openGroup(page, post.groupUrl);
 
+      const groupAvailability = await detectGroupAvailability(page);
+      if (!groupAvailability.available) {
+        const message = groupAvailability.reason === 'group_paused'
+          ? `Sărit: ${group.name} este pus pe pauză.`
+          : `Sărit: ${group.name} nu este disponibil.`;
+
+        addHistoryEntry({
+          propertyId: item.id,
+          propertyName: itemName,
+          facebookProfileId,
+          groupId: group.id,
+          groupName: group.name,
+          day: campaignDay,
+          status: 'skipped',
+          reason: groupAvailability.reason,
+        });
+        processedCounter++;
+        updateLiveState(group.name, message);
+        emitEvent('warning', message);
+        continue;
+      }
+
       const discoveredGroup = await discoverAndUpdateGroup(page, group);
 
       if (!isGroupCompatibleWithProperty(item, discoveredGroup)) {
@@ -405,6 +428,28 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       await waitBetweenGroups(processedCounter);
     } catch (error) {
+      const groupAvailability = await detectGroupAvailability(page);
+      if (!groupAvailability.available) {
+        const message = groupAvailability.reason === 'group_paused'
+          ? `Sărit: ${group.name} este pus pe pauză.`
+          : `Sărit: ${group.name} nu este disponibil.`;
+
+        addHistoryEntry({
+          propertyId: item.id,
+          propertyName: itemName,
+          facebookProfileId,
+          groupId: group.id,
+          groupName: group.name,
+          day: campaignDay,
+          status: 'skipped',
+          reason: groupAvailability.reason,
+        });
+        processedCounter++;
+        updateLiveState(group.name, message);
+        emitEvent('warning', message);
+        continue;
+      }
+
       const screenshotPath = await captureFailureScreenshot(page, item.id, group.id);
       addHistoryEntry({
         propertyId: item.id,

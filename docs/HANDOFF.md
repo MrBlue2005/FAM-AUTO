@@ -34,7 +34,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Automatic form drafts and protection against losing unsaved changes.
 - Unified campaign queue with exclusion, retry, and reordering.
 - The live worker rebuilds Queue state before every task, so campaign deactivation/deletion, selection changes, exclusions, and new history entries take effect without restarting the robot.
-- A property/group pair is treated as processed after any `prepared` or `posted` entry regardless of campaign content day or Facebook profile; property progress spans all pending groups instead of resetting for every task.
+- A property/group pair is treated as processed only after a `prepared` or `posted` entry from the current server-local calendar day, regardless of campaign content day or Facebook profile. Older history remains available for reports and no longer requires manual deletion; property progress spans all pending groups instead of resetting for every task.
 - Campaign preview, validations, and mandatory preflight checks.
 - Live Feed, reports, CSV exports, backup/restore, and audit log.
 - Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
@@ -60,6 +60,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Configurable persistent paths for data, logs, uploads, and browser profiles, plus atomic JSON writes.
 - Same-origin production dashboard serving, `/healthz`, `/readyz`, production environment validation, and controlled process shutdown.
 - Playwright Facebook workflow with profile setup, queue planning, posting verification, pause/resume, and stop controls.
+- Facebook groups that display a paused/suspended/unavailable screen are recorded as `skipped` with an explicit reason, so a missing composer does not stop the remaining campaign.
 - Local-first defaults: API bound to `127.0.0.1`, restricted CORS, publishing disabled unless configured.
 
 ### Property description generator
