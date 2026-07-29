@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>R.X. AI Studio</title>
+    <script>
+      (function () {
+        var ignoredExtensionError =
+          'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received';
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason || {};
+          var message = reason.message || String(reason || '');
+
+          if (message.indexOf(ignoredExtensionError) !== -1) {
+            event.preventDefault();
+          }
+        });
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            var message = event.message || '';
+
+            if (message.indexOf(ignoredExtensionError) !== -1) {
+              event.preventDefault();
+            }
+          },
+          true
+        );
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

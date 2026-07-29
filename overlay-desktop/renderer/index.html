@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>R.X. AI Overlay</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="overlay-shell">
+      <header class="overlay-header drag-region">
+        <div class="overlay-brand">
+          <div class="brand-mark" aria-label="R.X. AI Studio">
+            <span class="brand-letter brand-r">R</span>
+            <span class="brand-cut brand-cut-main"></span>
+            <span class="brand-dot"></span>
+            <span class="brand-letter brand-x">X</span>
+            <span class="brand-cut brand-cut-sub"></span>
+          </div>
+          <div class="brand-title" aria-label="RX AI Studio">
+            <span class="brand-kicker">Live command overlay</span>
+            <h1 class="animated-brand" aria-hidden="true">
+              <span style="--i: 0">R</span>
+              <span style="--i: 1">X</span>
+              <span class="word-gap" style="--i: 2">A</span>
+              <span style="--i: 3">I</span>
+              <span class="word-gap" style="--i: 4">S</span>
+              <span style="--i: 5">t</span>
+              <span style="--i: 6">u</span>
+              <span style="--i: 7">d</span>
+              <span style="--i: 8">i</span>
+              <span style="--i: 9">o</span>
+            </h1>
+          </div>
+        </div>
+
+        <nav class="window-actions no-drag">
+          <button id="settingsToggle" title="Setari" aria-label="Setari">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+              <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.1 2.1 0 0 1-2.97 2.97l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.65V21.3a2.1 2.1 0 0 1-4.2 0v-.06a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.36l-.04.04a2.1 2.1 0 0 1-2.97-2.97l.04-.04A1.8 1.8 0 0 0 3.8 15a1.8 1.8 0 0 0-1.65-1.1H2.1a2.1 2.1 0 0 1 0-4.2h.06A1.8 1.8 0 0 0 3.8 8.6a1.8 1.8 0 0 0-.36-1.98l-.04-.04A2.1 2.1 0 0 1 6.37 3.6l.04.04a1.8 1.8 0 0 0 1.98.36 1.8 1.8 0 0 0 1.1-1.65V2.3a2.1 2.1 0 0 1 4.2 0v.06a1.8 1.8 0 0 0 1.1 1.65 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.1 2.1 0 0 1 2.97 2.97l-.04.04a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.65 1.1h.06a2.1 2.1 0 0 1 0 4.2h-.06A1.8 1.8 0 0 0 19.4 15Z" />
+            </svg>
+          </button>
+          <button id="minimizeButton" title="Minimizeaza" aria-label="Minimizeaza">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <button id="closeButton" title="Inchide" aria-label="Inchide">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </nav>
+      </header>
+
+      <section id="statusStrip" class="status-strip idle">
+        <div>
+          <small>Status robot</small>
+          <strong id="statusLabel">Robot pregatit</strong>
+        </div>
+        <div class="status-copy">
+          <span id="lastMessage"></span>
+          <div class="status-meta">
+            <strong id="modeBadge" class="mode-badge test">TEST</strong>
+            <span id="runBadge">Fara rulare activa</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="messageBox" class="message-box hidden"></section>
+
+      <section class="metrics-grid">
+        <article class="metric-card">
+          <small>Grupuri campanie</small>
+          <strong id="currentGroups">0/0</strong>
+          <span id="currentGroup">Niciun grup activ</span>
+        </article>
+
+        <article class="metric-card">
+          <small>Total campanii</small>
+          <strong id="totalGroups">0/0</strong>
+        </article>
+
+        <article class="metric-card">
+          <small>ETA campanie</small>
+          <strong id="currentEta">-</strong>
+          <span id="currentCampaign">Nicio campanie</span>
+        </article>
+
+        <article class="metric-card">
+          <small>ETA total</small>
+          <strong id="totalEta">-</strong>
+          <span id="averageTime">calculez live</span>
+        </article>
+      </section>
+
+      <section class="progress-grid">
+        <article class="progress-card">
+          <div class="section-title">
+            <span>Campania curenta</span>
+            <strong id="currentPercent">0%</strong>
+          </div>
+          <div class="progress-line">
+            <div id="currentProgressFill"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="currentProgressMeta">0/0 grupuri</span>
+            <span id="currentEtaMeta">ETA -</span>
+          </div>
+          <div class="current-task">
+            <span>Profil</span>
+            <strong id="profileLabel">Profil default</strong>
+          </div>
+        </article>
+
+        <article class="progress-card">
+          <div class="section-title">
+            <span>Total campanii</span>
+            <strong id="totalPercent">0%</strong>
+          </div>
+          <div class="progress-line total">
+            <div id="totalProgressFill"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="totalProgressMeta">0/0 grupuri</span>
+            <span id="totalEtaMeta">ETA -</span>
+          </div>
+          <div class="next-tasks">
+            <span>Urmatoarele taskuri</span>
+            <div id="nextTasksList" class="next-tasks-list"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="control-grid">
+        <button id="pauseButton" class="pause">Pauza</button>
+        <button id="resumeButton" class="resume">Resume</button>
+        <button id="refreshButton">Refresh</button>
+      </section>
+
+      <section class="feed-card">
+        <div class="section-title">
+          <span>Live feed</span>
+          <strong id="feedCount">0</strong>
+        </div>
+        <div id="feedList" class="feed-list"></div>
+      </section>
+
+      <aside id="settingsPanel" class="settings-panel hidden no-drag">
+        <div class="settings-head">
+          <div>
+            <span>Overlay settings</span>
+            <strong>Control desktop</strong>
+          </div>
+          <button id="settingsClose" aria-label="Inchide setari">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <label>
+          API backend
+          <input id="apiUrlInput" type="text" spellcheck="false" />
+        </label>
+
+        <label>
+          Cheie API optionala
+          <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" />
+        </label>
+
+        <label>
+          Opacitate <span id="opacityValue">92%</span>
+          <input id="opacityInput" type="range" min="35" max="100" step="1" />
+        </label>
+
+        <div class="size-preset-field">
+          <span>Dimensiune overlay</span>
+          <div class="size-preset-grid">
+            <button id="sizeCompactButton" type="button" data-size-preset="compact">
+              <strong>Compact</strong>
+              <small>monitor mic</small>
+            </button>
+            <button id="sizeMediumButton" type="button" data-size-preset="medium">
+              <strong>Mediu</strong>
+              <small>recomandat</small>
+            </button>
+            <button id="sizeLargeButton" type="button" data-size-preset="large">
+              <strong>Mare</strong>
+              <small>max vizibil</small>
+            </button>
+          </div>
+        </div>
+
+        <label class="toggle-row">
+          <input id="alwaysOnTopInput" type="checkbox" />
+          <span>Mereu deasupra</span>
+        </label>
+
+        <div class="notification-settings">
+          <strong>Notificari Windows</strong>
+          <label class="toggle-row">
+            <input id="notifyErrorsInput" type="checkbox" />
+            <span>Erori</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notifyWarningsInput" type="checkbox" />
+            <span>Avertizari / pauza</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notifySuccessInput" type="checkbox" />
+            <span>Postari / succes</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notifyStatusInput" type="checkbox" />
+            <span>Schimbari de status</span>
+          </label>
+        </div>
+
+        <div class="settings-actions">
+          <button id="saveSettingsButton">Salveaza</button>
+          <button id="testNotificationButton">Test notificare</button>
+          <button id="openDashboardButton">Dashboard</button>
+        </div>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
