@@ -60,7 +60,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Configurable persistent paths for data, logs, uploads, and browser profiles, plus atomic JSON writes.
 - Same-origin production dashboard serving, `/healthz`, `/readyz`, production environment validation, and controlled process shutdown.
 - Playwright Facebook workflow with profile setup, queue planning, posting verification, pause/resume, and stop controls.
-- Facebook groups that display a paused/suspended/unavailable screen are recorded as `skipped` with an explicit reason, so a missing composer does not stop the remaining campaign.
+- Manual and scheduled runs use the same worker. Facebook groups that display a paused/suspended/unavailable screen are recorded as `skipped`; if Facebook uses an unknown message but the group page has no composer, the worker records `composer_unavailable`. Login/checkpoint pages remain errors instead of being silently skipped.
 - Local-first defaults: API bound to `127.0.0.1`, restricted CORS, publishing disabled unless configured.
 
 ### Property description generator

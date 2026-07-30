@@ -125,6 +125,24 @@ test('paused and unavailable Facebook groups are classified for safe skipping', 
     classifyGroupAvailabilityText('Scrie ceva...'),
     { available: true, reason: null }
   );
+  assert.deepEqual(
+    classifyGroupAvailabilityText('Activitatea din acest grup este temporar suspendată.'),
+    { available: false, reason: 'group_paused' }
+  );
+  assert.deepEqual(
+    classifyGroupAvailabilityText('Pagina grupului este încărcată.', {
+      fallbackOnMissingComposer: true,
+      url: 'https://www.facebook.com/groups/123456',
+    }),
+    { available: false, reason: 'composer_unavailable' }
+  );
+  assert.deepEqual(
+    classifyGroupAvailabilityText('Log into Facebook', {
+      fallbackOnMissingComposer: true,
+      url: 'https://www.facebook.com/groups/123456',
+    }),
+    { available: true, reason: null }
+  );
 });
 test('queue never includes an inactive campaign even when it remains selected', () => {
   const inactive = fixture();

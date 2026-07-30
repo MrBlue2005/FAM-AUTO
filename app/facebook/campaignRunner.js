@@ -428,7 +428,10 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       await waitBetweenGroups(processedCounter);
     } catch (error) {
-      const groupAvailability = await detectGroupAvailability(page);
+      const groupAvailability = await detectGroupAvailability(page, {
+        fallbackOnMissingComposer:
+          /Scrie ceva|write something|locator\.waitFor/i.test(error.message),
+      });
       if (!groupAvailability.available) {
         const message = groupAvailability.reason === 'group_paused'
           ? `Sărit: ${group.name} este pus pe pauză.`

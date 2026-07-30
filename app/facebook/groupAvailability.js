@@ -34,10 +34,33 @@ const UNAVAILABLE_MESSAGES = [
   'this page is unavailable',
 ];
 
-function classifyGroupAvailabilityText(value) {
+const AUTHENTICATION_MESSAGES = [
+  'conecteaza-te la facebook',
+  'conectati-va la facebook',
+  'adresa de e-mail sau numarul de telefon',
+  'log into facebook',
+  'email or phone',
+  'forgot password',
+];
+
+const PAUSED_PATTERNS = [
+  /\bgrup.{0,80}\bpauz/,
+  /\bpauz.{0,80}\bgrup/,
+  /\bgrup.{0,80}\bsuspend/,
+  /\bsuspend.{0,80}\bgrup/,
+  /\bgroup.{0,80}\bpaus/,
+  /\bpaus.{0,80}\bgroup/,
+  /\bgroup.{0,80}\bsuspend/,
+  /\bsuspend.{0,80}\bgroup/,
+];
+
+function classifyGroupAvailabilityText(value, options = {}) {
   const text = normalizeText(value);
 
-  if (PAUSED_MESSAGES.some((message) => text.includes(message))) {
+  if (
+    PAUSED_MESSAGES.some((message) => text.includes(message)) ||
+    PAUSED_PATTERNS.some((pattern) => pattern.test(text))
+  ) {
     return { available: false, reason: 'group_paused' };
   }
 
@@ -45,13 +68,27 @@ function classifyGroupAvailabilityText(value) {
     return { available: false, reason: 'group_unavailable' };
   }
 
+  const authenticationRequired = AUTHENTICATION_MESSAGES.some((message) =>
+    text.includes(message)
+  );
+  if (
+    options.fallbackOnMissingComposer &&
+    /facebook\.com\/groups\//i.test(options.url || '') &&
+    !authenticationRequired
+  ) {
+    return { available: false, reason: 'composer_unavailable' };
+  }
+
   return { available: true, reason: null };
 }
 
-async function detectGroupAvailability(page) {
+async function detectGroupAvailability(page, options = {}) {
   try {
     const bodyText = await page.locator('body').innerText({ timeout: 5000 });
-    return classifyGroupAvailabilityText(bodyText);
+    return classifyGroupAvailabilityText(bodyText, {
+      ...options,
+      url: page.url(),
+    });
   } catch {
     return { available: true, reason: null };
   }

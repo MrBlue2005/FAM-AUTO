@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added explicit detection for paused, suspended, or unavailable Facebook groups so the robot records them as skipped and continues instead of timing out on a missing composer button.
+- Added explicit and fallback detection for paused, suspended, unavailable, or read-only Facebook groups so manual and scheduled runs record them as skipped and continue instead of timing out on a missing composer button, while login/checkpoint failures remain errors.
 - Fixed campaign/group history deduplication so only prepared or posted entries from the current server-local calendar day block a task; older history remains available for reports without requiring manual deletion.
 - Added real image and video thumbnails to Media Library cards, with lazy loading, cropped previews, type badges, and a safe fallback for missing files.
 - Fixed new Facebook profile setup by persisting the profile configuration before launching Chromium, surfacing launch/finalization errors, and preventing duplicate setup actions while a request is active.
