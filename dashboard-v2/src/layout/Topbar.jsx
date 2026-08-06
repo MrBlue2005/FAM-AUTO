@@ -14,6 +14,7 @@ const titles = {
   livefeed: 'Live Feed',
   analytics: 'Analytics',
   reports: 'Rapoarte',
+  diagnostics: 'Diagnostic preflight',
   robot: 'RX Propulse Control',
   settings: 'Settings',
 };

@@ -1752,7 +1752,7 @@ textarea {
   padding: 12px;
   box-shadow: var(--shadow);
   display: grid;
-  grid-template-columns: 28px 42px minmax(260px, 1fr) 100px 150px 140px 90px;
+  grid-template-columns: 28px 42px minmax(260px, 1fr) 100px 150px 140px 170px;
   gap: 12px;
   align-items: center;
 }
@@ -1926,6 +1926,21 @@ textarea {
 
 .validation-alert span {
   color: var(--muted);
+}
+
+.editor-panel[data-edit-target] {
+  scroll-margin-top: 84px;
+}
+
+.group-row-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.validation-alert > div {
+  display: grid;
+  gap: 3px;
 }
 
 .post-preview-panel {
@@ -2832,6 +2847,187 @@ textarea {
   gap: 7px;
 }
 
+.reports-error-button,
+.error-groups-heading .button-row,
+.error-groups-heading button,
+.error-group-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.reports-page .management-header > div:first-child {
+  margin-right: auto;
+}
+
+.reports-error-button {
+  white-space: nowrap;
+}
+
+.error-groups-panel {
+  margin-bottom: 18px;
+  border-color: rgba(239, 68, 68, .28);
+}
+
+.error-groups-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.error-groups-heading h2,
+.error-groups-heading p {
+  margin: 0;
+}
+
+.error-groups-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.error-groups-close {
+  min-width: 40px;
+  padding: 10px;
+}
+
+.error-groups-search {
+  width: 100%;
+  margin: 16px 0 12px;
+}
+
+.error-groups-list {
+  max-height: 620px;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.error-group-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(239, 68, 68, .22);
+  border-radius: 14px;
+  background: rgba(127, 29, 29, .07);
+}
+
+.error-group-title,
+.error-group-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.error-group-title > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.error-group-title strong {
+  overflow-wrap: anywhere;
+}
+
+.error-group-title span,
+.error-group-meta > span:not(.status-pill) {
+  color: #d4d4d8;
+  font-size: 12px;
+}
+
+.error-count-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #fecaca !important;
+  background: rgba(239, 68, 68, .16);
+  font-weight: 800;
+}
+
+.error-group-meta {
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.error-message-box {
+  padding: 12px;
+  border: 1px solid rgba(239, 68, 68, .18);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .28);
+}
+
+.error-message-box > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.error-message-box > strong {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  padding: 7px 11px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.error-message-box > strong.paused {
+  color: #fde68a;
+  background: rgba(245, 158, 11, .14);
+}
+
+.error-message-box > strong.unavailable {
+  color: #fecaca;
+  background: rgba(239, 68, 68, .16);
+}
+
+.error-history-details {
+  color: #e4e4e7;
+  font-size: 12px;
+}
+
+.error-history-details summary {
+  width: max-content;
+  cursor: pointer;
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+.error-history-details > div {
+  margin-top: 9px;
+  padding: 9px 11px;
+  border-left: 2px solid rgba(239, 68, 68, .3);
+  background: rgba(255, 255, 255, .025);
+}
+
+.error-history-details span {
+  color: var(--muted);
+}
+
+.error-history-details strong {
+  display: block;
+  margin-top: 5px;
+  color: #fecaca;
+}
+
+.error-history-details p {
+  margin: 5px 0 0;
+  color: #fff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.error-group-open {
+  width: max-content;
+}
+
 .report-history h3 {
   margin: 20px 0 10px;
 }
@@ -2840,6 +3036,19 @@ textarea {
   .reports-layout { grid-template-columns: 1fr; }
   .reports-filters { grid-template-columns: 1fr 1fr; }
   .reports-checkbox { grid-column: 1 / -1; }
+}
+
+@media (max-width: 720px) {
+  .error-groups-heading,
+  .error-group-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .error-count-badge,
+  .error-group-open {
+    width: max-content;
+  }
 }
 
 .entity-select { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }

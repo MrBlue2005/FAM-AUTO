@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import MediaDropzone from '../components/MediaDropzone';
 import FacebookPostPreview from '../components/FacebookPostPreview';
@@ -69,8 +69,15 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
   const [selectedIds, setSelectedIds] = useState([]);
   const [validationErrors, setValidationErrors] = useState({});
   const [formBaseline, setFormBaseline] = useState(freshJob);
+  const editorRef = useRef(null);
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(formBaseline);
+
+  function scrollToEditor() {
+    window.requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   useEffect(() => {
     saveFormDraft(DRAFT_KEY, form);
@@ -132,7 +139,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
         setForm(requestedForm);
         setOpenMenuId(null);
         setMessage(`Editezi: ${requestedJob.title}`);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToEditor();
       }
     });
 
@@ -246,7 +253,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
     setForm(editForm);
     setOpenMenuId(null);
     setMessage(`Editezi: ${job.title}`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToEditor();
   }
 
   function handleCancelEdit() {
@@ -398,7 +405,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
         />
       </header>
 
-      <section className="editor-panel">
+      <section className="editor-panel" data-edit-target ref={editorRef}>
         <div className="panel-title-row">
           <h2>{editingId ? 'Editeaza job' : 'Adauga job'}</h2>
           <div className="button-row">

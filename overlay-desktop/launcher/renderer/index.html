@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang='ro'>
+  <head>
+    <meta charset='UTF-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+    <meta http-equiv='Content-Security-Policy' content='default-src &#39;self&#39;; img-src &#39;self&#39;; style-src &#39;self&#39;; script-src &#39;self&#39;' />
+    <title>RX AI Studio Launcher</title>
+    <link rel='stylesheet' href='styles.css' />
+  </head>
+  <body>
+    <main class='launcher-shell'>
+      <header class='titlebar'>
+        <div class='titlebar-brand'><span>RX</span> AI STUDIO</div>
+        <div class='window-actions'>
+          <button id='minimizeButton' type='button' aria-label='Minimizeaza'>—</button>
+          <button id='closeButton' type='button' aria-label='Inchide'>×</button>
+        </div>
+      </header>
+
+      <section class='hero'>
+        <div class='brand-mark' aria-hidden='true'><span>R</span><span>X</span></div>
+        <div>
+          <p class='eyebrow'>SECURE LOCAL WORKSPACE</p>
+          <h1>RX AI Studio</h1>
+          <p class='subtitle'>Porneste intregul studio dintr-un singur loc.</p>
+        </div>
+      </section>
+
+      <section class='services' aria-label='Starea serviciilor'>
+        <article data-service='api'><span class='status-dot'></span><div><strong>API Robot</strong><small>Se verifica...</small></div></article>
+        <article data-service='dashboard'><span class='status-dot'></span><div><strong>Dashboard</strong><small>Se verifica...</small></div></article>
+        <article data-service='generator'><span class='status-dot'></span><div><strong>Generator descrieri</strong><small>Se verifica...</small></div></article>
+      </section>
+
+      <div id='message' class='message' role='status'>Verific serviciile locale...</div>
+
+      <div class='actions'>
+        <button id='startButton' class='primary' type='button'>Porneste Studio</button>
+        <button id='openButton' class='secondary' type='button' disabled>Deschide Studio</button>
+        <button id='stopButton' class='danger' type='button' disabled>Opreste Studio</button>
+      </div>
+
+      <p class='footer-note'>Aplicatia porneste API-ul, dashboardul si generatorul in fundal. Poti inchide aceasta fereastra dupa ce Studio s-a deschis.</p>
+    </main>
+    <script src='app.js'></script>
+  </body>
+</html>

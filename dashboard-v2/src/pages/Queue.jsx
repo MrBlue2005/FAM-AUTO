@@ -100,7 +100,7 @@ function isRunning(status) {
   return status === 'running' || status === 'paused';
 }
 
-export default function Queue() {
+export default function Queue({ onChangePage }) {
   const [config, setConfig] = useState(defaultConfig);
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -390,8 +390,13 @@ export default function Queue() {
 
       {hasBlockingIssues && (
         <section className="validation-alert">
-          <strong>Validari rosii detectate</strong>
-          <span>Rezolva problemele inainte sa pornesti robotul.</span>
+          <div>
+            <strong>Validari rosii detectate</strong>
+            <span>Rezolva problemele inainte sa pornesti robotul.</span>
+          </div>
+          <button className='secondary-button' type='button' onClick={() => onChangePage?.('diagnostics')}>
+            Interpreteaza erorile
+          </button>
         </section>
       )}
 

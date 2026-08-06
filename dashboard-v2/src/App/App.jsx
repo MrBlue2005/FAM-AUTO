@@ -11,6 +11,7 @@ import Queue from '../pages/Queue';
 import LiveFeed from '../pages/LiveFeed';
 import Analytics from '../pages/Analytics';
 import Reports from '../pages/Reports';
+import Diagnostics from '../pages/Diagnostics';
 import Scheduler from '../pages/Scheduler';
 import Robot from '../pages/Robot';
 import Settings from '../pages/Settings';
@@ -22,7 +23,10 @@ import AppLauncher from '../pages/AppLauncher';
 import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
 
 function DashboardApp({ auth }) {
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState(() => {
+    const requestedPage = new URLSearchParams(window.location.search).get('page');
+    return requestedPage === 'properties' ? 'properties' : 'dashboard';
+  });
   const [editRequest, setEditRequest] = useState(null);
   const [dirtyEditor, setDirtyEditor] = useState(false);
 
@@ -32,7 +36,7 @@ function DashboardApp({ auth }) {
 
   function handleChangePage(page) {
     if (page !== activePage && dirtyEditor) {
-      const leave = window.confirm('Ai modificari nesalvate. Draftul este pastrat automat. Parasesti pagina?');
+      const leave = window.confirm('Ai modificari nesalvate. Parasesti pagina?');
       if (!leave) return;
       setDirtyEditor(false);
     }
@@ -70,10 +74,11 @@ function DashboardApp({ auth }) {
     }
     if (activePage === 'groups') return <Groups />;
     if (activePage === 'media') return <Media />;
-    if (activePage === 'queue') return <Queue />;
+    if (activePage === 'queue') return <Queue onChangePage={handleChangePage} />;
     if (activePage === 'livefeed') return <LiveFeed />;
     if (activePage === 'analytics') return <Analytics />;
     if (activePage === 'reports') return <Reports onChangePage={handleChangePage} />;
+    if (activePage === 'diagnostics') return <Diagnostics onChangePage={handleChangePage} />;
     if (activePage === 'scheduler') return <Scheduler />;
     if (activePage === 'robot') return <Robot />;
     if (activePage === 'settings') return <Settings />;

@@ -118,6 +118,30 @@ assert.equal(unauthorizedMedia.status, 401);
       body: '[]',
     });
     assert.equal(csrfAccepted.status, 200);
+    const transferCreated = await fetch(`http://127.0.0.1:${port}/api/property-description-transfers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        sourceTitle: 'Proprietate test',
+        transactionType: 'sale',
+        descriptions: [
+          { title: 'Comercial', text: 'Descriere comerciala' },
+          { title: 'Emotional', text: 'Descriere emotionala' },
+          { title: 'Premium', text: 'Descriere premium' },
+        ],
+      }),
+    });
+    assert.equal(transferCreated.status, 201);
+    const transferReference = await transferCreated.json();
+    assert.match(transferReference.id, /^[0-9a-f-]{36}$/i);
+    const transferredDescriptions = await fetch(
+      `http://127.0.0.1:${port}/api/property-description-transfers/${transferReference.id}`,
+      { headers: { cookie: sessionCookie } }
+    );
+    assert.equal(transferredDescriptions.status, 200);
+    const transferBody = await transferredDescriptions.json();
+    assert.deepEqual(transferBody.descriptions.map((item) => item.day), [1, 2, 3]);
+    assert.equal(transferBody.descriptions[2].text, 'Descriere premium');
     const authorizedMedia = await fetch(`http://127.0.0.1:${port}/uploads/private-file.png`, {
       headers: { cookie: setCookie.split(';')[0] },
     });

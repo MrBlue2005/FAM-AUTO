@@ -12,6 +12,7 @@ import {
   Megaphone,
   Radio,
   Settings,
+  Stethoscope,
   FileSpreadsheet,
   UsersRound,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ const primaryItems = [
   { id: 'livefeed', label: 'Live Feed', Icon: Radio },
   { id: 'analytics', label: 'Analytics', Icon: BarChart3 },
   { id: 'reports', label: 'Rapoarte', Icon: FileSpreadsheet },
+  { id: 'diagnostics', label: 'Diagnostic', Icon: Stethoscope },
 ];
 
 const secondaryItems = [

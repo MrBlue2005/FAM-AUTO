@@ -26,6 +26,7 @@ const {
   buildPreflightReport,
   getTaskId,
 } = require('../app/core/CampaignTools');
+const { buildDiagnostics } = require('../app/core/Diagnostics');
 
 const app = express();
 const PORT = process.env.PORT == null || process.env.PORT === '' ? 3000 : Number(process.env.PORT);
@@ -38,6 +39,8 @@ const OVERLAY_ACCESS_TOKEN = crypto.createHmac(
   process.env.ADMIN_PASSWORD_SCRYPT || API_KEY || crypto.randomBytes(32)
 ).update('rx-propulse-overlay-v1').digest('hex');
 const authSessions = new Map();
+const propertyDescriptionTransfers = new Map();
+const PROPERTY_DESCRIPTION_TRANSFER_TTL_MS = 30 * 60 * 1000;
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()).filter(Boolean);
 const dashboardDist = path.join(__dirname, '..', 'dashboard-v2', 'dist');
 const overlayDesktopRoot = path.join(__dirname, '..', 'overlay-desktop');
@@ -180,6 +183,9 @@ const maintenanceTimer = setInterval(() => {
   for (const [key, bucket] of rateBuckets) if (now - bucket.start > 2 * 60 * 1000) rateBuckets.delete(key);
   for (const [key, bucket] of loginBuckets) if (now - bucket.start > 16 * 60 * 1000) loginBuckets.delete(key);
   for (const [token, session] of authSessions) if (session.expiresAt < now) authSessions.delete(token);
+  for (const [id, transfer] of propertyDescriptionTransfers) {
+    if (transfer.expiresAt < now) propertyDescriptionTransfers.delete(id);
+  }
 }, 5 * 60 * 1000);
 maintenanceTimer.unref?.();
 app.use('/api', (req, res, next) => {
@@ -266,6 +272,46 @@ app.post('/api/properties', (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+app.post('/api/property-description-transfers', (req, res) => {
+  const descriptions = Array.isArray(req.body?.descriptions) ? req.body.descriptions : [];
+  if (descriptions.length !== 3) {
+    return res.status(400).json({ error: 'Transferul trebuie sa contina exact 3 descrieri.' });
+  }
+
+  const normalizedDescriptions = descriptions.map((item, index) => ({
+    day: index + 1,
+    title: String(item?.title || `Ziua ${index + 1}`).trim().slice(0, 180),
+    text: String(item?.text || '').trim(),
+  }));
+  if (normalizedDescriptions.some((item) => item.text.length < 1 || item.text.length > 12000)) {
+    return res.status(400).json({ error: 'Fiecare descriere trebuie sa contina intre 1 si 12000 de caractere.' });
+  }
+
+  const id = crypto.randomUUID();
+  const expiresAt = Date.now() + PROPERTY_DESCRIPTION_TRANSFER_TTL_MS;
+  propertyDescriptionTransfers.set(id, {
+    id,
+    descriptions: normalizedDescriptions,
+    sourceTitle: String(req.body?.sourceTitle || '').trim().slice(0, 4000),
+    transactionType: ['rent', 'sale'].includes(req.body?.transactionType)
+      ? req.body.transactionType
+      : null,
+    createdAt: new Date().toISOString(),
+    expiresAt,
+  });
+
+  return res.status(201).json({ id, expiresAt: new Date(expiresAt).toISOString() });
+});
+
+app.get('/api/property-description-transfers/:transferId', (req, res) => {
+  const transfer = propertyDescriptionTransfers.get(req.params.transferId);
+  if (!transfer || transfer.expiresAt < Date.now()) {
+    propertyDescriptionTransfers.delete(req.params.transferId);
+    return res.status(404).json({ error: 'Transferul nu exista sau a expirat.' });
+  }
+  return res.json(transfer);
 });
 
 app.delete('/api/properties/:propertyId', (req, res) => {
@@ -675,6 +721,16 @@ app.get('/api/validations', (req, res) => {
 
 app.get('/api/preflight', (req, res) => {
   res.json(buildPreflightReport(getCampaignToolData()));
+});
+
+app.get('/api/diagnostics', (req, res) => {
+  const data = getCampaignToolData();
+  res.json(buildDiagnostics({
+    ...data,
+    preflight: buildPreflightReport(data),
+    validations: validateCampaigns(data),
+    queuePlan: buildQueuePlan(data),
+  }));
 });
 
 app.get('/api/logs/errors', (req, res) => {

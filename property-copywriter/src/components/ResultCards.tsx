@@ -6,7 +6,9 @@ import type { DescriptionKind, Descriptions } from "@/lib/schemas";
 type Props = {
   value: Descriptions;
   busyVariant: DescriptionKind | "all" | null;
+  transferBusy: boolean;
   onRegenerate: (variant?: DescriptionKind) => void;
+  onTransfer: () => void;
 };
 const labels: Record<DescriptionKind, string> = { commercial: "Comercială", emotional: "Emoțională", premium: "Premium" };
 
@@ -41,7 +43,7 @@ function DescriptionPreview({ text }: { text: string }) {
   );
 }
 
-export function ResultCards({ value, busyVariant, onRegenerate }: Props) {
+export function ResultCards({ value, busyVariant, transferBusy, onRegenerate, onTransfer }: Props) {
   const [copied, setCopied] = useState<DescriptionKind | null>(null);
   const copy = async (kind: DescriptionKind) => {
     const item = value[kind];
@@ -53,9 +55,15 @@ export function ResultCards({ value, busyVariant, onRegenerate }: Props) {
     <section>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div><p className="eyebrow">Rezultate</p><h2 className="mt-2 text-3xl font-black">Trei abordări distincte</h2></div>
-        <button className="button secondary" disabled={busyVariant !== null} onClick={() => onRegenerate()}>
-          {busyVariant === "all" && <span className="spinner" />} Regenerare toate variantele
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="button" disabled={busyVariant !== null || transferBusy} onClick={onTransfer}>
+            {transferBusy && <span className="spinner" />}
+            {transferBusy ? "Se transferă..." : "Trimite în RX PROPULSE"}
+          </button>
+          <button className="button secondary" disabled={busyVariant !== null || transferBusy} onClick={() => onRegenerate()}>
+            {busyVariant === "all" && <span className="spinner" />} Regenerare toate variantele
+          </button>
+        </div>
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
         {(Object.keys(labels) as DescriptionKind[]).map((kind, index) => (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, Download, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, Download, ExternalLink, RefreshCw, RotateCcw, TriangleAlert, X } from 'lucide-react';
 import { api } from '../services/api';
 
 const statusLabels = {
@@ -29,6 +29,91 @@ function statusTone(status) {
   return 'info';
 }
 
+const GROUP_AVAILABILITY_REASONS = new Set([
+  'group_paused',
+  'group_unavailable',
+  'composer_unavailable',
+]);
+
+function normalizeIssueText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function standardizeGroupIssue(entry) {
+  const source = normalizeIssueText(`${entry.reason || ''} ${entry.errorMessage || ''}`);
+  const paused = entry.reason === 'group_paused' || /\b(pauz|paus|suspend)/.test(source);
+
+  return paused
+    ? { code: 'group_paused', label: 'Grup pus pe pauză' }
+    : { code: 'group_unavailable', label: 'Grup indisponibil' };
+}
+
+function isGroupAvailabilityIssue(entry) {
+  return entry.status === 'error' || GROUP_AVAILABILITY_REASONS.has(entry.reason);
+}
+
+function summarizeErrorGroups(history, groups) {
+  const configuredGroups = new Map(groups.map((group) => [String(group.id || ''), group]));
+  const grouped = new Map();
+
+  history
+    .filter(isGroupAvailabilityIssue)
+    .forEach((entry) => {
+      const groupId = String(entry.groupId || '').trim();
+      const groupName = entry.groupName || groupId || 'Grup necunoscut';
+      const key = groupId || groupName.toLocaleLowerCase('ro-RO');
+      const configured = configuredGroups.get(groupId);
+      const technicalMessage = entry.errorMessage || entry.reason || 'Fara detalii tehnice';
+      const standardReason = standardizeGroupIssue(entry);
+      const item = grouped.get(key) || {
+        groupId,
+        groupName,
+        groupUrl: configured?.url || '',
+        configured: Boolean(configured),
+        active: configured?.active !== false,
+        count: 0,
+        lastDate: null,
+        latestReason: '',
+        latestReasonCode: '',
+        latestTechnicalMessage: '',
+        campaigns: new Set(),
+        occurrences: [],
+      };
+
+      item.count += 1;
+      item.campaigns.add(entry.propertyName || entry.propertyId || 'Campanie necunoscuta');
+      item.occurrences.push({
+        date: entry.date,
+        reason: standardReason.label,
+        reasonCode: standardReason.code,
+        technicalMessage,
+        campaign: entry.propertyName || entry.propertyId || 'Campanie necunoscuta',
+      });
+
+      if (!item.lastDate || new Date(entry.date || 0) >= new Date(item.lastDate || 0)) {
+        item.lastDate = entry.date || item.lastDate;
+        item.latestReason = standardReason.label;
+        item.latestReasonCode = standardReason.code;
+        item.latestTechnicalMessage = technicalMessage;
+      }
+
+      grouped.set(key, item);
+    });
+
+  return Array.from(grouped.values())
+    .map((item) => ({
+      ...item,
+      campaigns: Array.from(item.campaigns),
+      occurrences: item.occurrences
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+        .slice(0, 5),
+    }))
+    .sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
+}
+
 export default function Reports({ onChangePage }) {
   const [runs, setRuns] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -37,6 +122,11 @@ export default function Reports({ onChangePage }) {
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
+  const [showErrorGroups, setShowErrorGroups] = useState(false);
+  const [errorHistory, setErrorHistory] = useState([]);
+  const [configuredGroups, setConfiguredGroups] = useState([]);
+  const [errorGroupsLoading, setErrorGroupsLoading] = useState(false);
+  const [errorGroupSearch, setErrorGroupSearch] = useState('');
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -63,6 +153,45 @@ export default function Reports({ onChangePage }) {
   }, [status, search]);
 
   const visibleRuns = useMemo(() => runs.filter((run) => showArchived || !run.archived), [runs, showArchived]);
+  const errorGroups = useMemo(
+    () => summarizeErrorGroups(errorHistory, configuredGroups),
+    [configuredGroups, errorHistory]
+  );
+  const visibleErrorGroups = useMemo(() => {
+    const query = errorGroupSearch.trim().toLocaleLowerCase('ro-RO');
+    if (!query) return errorGroups;
+    return errorGroups.filter((item) =>
+      `${item.groupName} ${item.groupId} ${item.latestReason} ${item.latestTechnicalMessage} ${item.campaigns.join(' ')}`
+        .toLocaleLowerCase('ro-RO')
+        .includes(query)
+    );
+  }, [errorGroupSearch, errorGroups]);
+  const totalGroupErrors = useMemo(
+    () => errorGroups.reduce((total, item) => total + item.count, 0),
+    [errorGroups]
+  );
+
+  async function loadErrorGroups() {
+    setErrorGroupsLoading(true);
+    try {
+      const [history, groups] = await Promise.all([api.getHistory(), api.getGroups()]);
+      setErrorHistory(history);
+      setConfiguredGroups(groups);
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('rx:toast', { detail: { message: error.message, type: 'error' } }));
+    } finally {
+      setErrorGroupsLoading(false);
+    }
+  }
+
+  async function toggleErrorGroups() {
+    if (showErrorGroups) {
+      setShowErrorGroups(false);
+      return;
+    }
+    setShowErrorGroups(true);
+    await loadErrorGroups();
+  }
 
   async function openRun(runId) {
     setWorking(runId);
@@ -110,10 +239,94 @@ export default function Reports({ onChangePage }) {
           <h1>Rapoarte rulări</h1>
           <p>Istoric separat pentru fiecare pornire a robotului, rezultate și retry controlat.</p>
         </div>
+        <button className='danger-button reports-error-button' type='button' onClick={toggleErrorGroups} disabled={errorGroupsLoading}>
+          <TriangleAlert size={16} />
+          {errorGroupsLoading ? 'Se incarca...' : `Grupuri cu erori${errorGroups.length ? ` (${errorGroups.length})` : ''}`}
+        </button>
         <button className="secondary-button" type="button" onClick={loadRuns} disabled={loading}>
           <RefreshCw size={16} /> {loading ? 'Se actualizeaza...' : 'Actualizeaza'}
         </button>
       </header>
+      {showErrorGroups && (
+        <section className='editor-panel error-groups-panel'>
+          <div className='error-groups-heading'>
+            <div>
+              <h2>Grupuri care au avut erori</h2>
+              <p>{errorGroups.length} grupuri unice · {totalGroupErrors} incidente in istoricul salvat</p>
+            </div>
+            <div className='button-row'>
+              <button className='secondary-button' type='button' onClick={loadErrorGroups} disabled={errorGroupsLoading}>
+                <RefreshCw size={16} /> Reincarca
+              </button>
+              <button className='ghost-button error-groups-close' type='button' onClick={() => setShowErrorGroups(false)} aria-label='Inchide lista'>
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          <input
+            className='error-groups-search'
+            value={errorGroupSearch}
+            onChange={(event) => setErrorGroupSearch(event.target.value)}
+            placeholder='Cauta grup, ID, campanie sau mesaj de eroare...'
+          />
+
+          <div className='error-groups-list'>
+            {visibleErrorGroups.map((item) => (
+              <article className='error-group-card' key={item.groupId || item.groupName}>
+                <div className='error-group-title'>
+                  <div>
+                    <strong>{item.groupName}</strong>
+                    <span>{item.groupId || 'Fara ID'} · ultima eroare: {formatDate(item.lastDate)}</span>
+                  </div>
+                  <span className='error-count-badge'>{item.count} {item.count === 1 ? 'incident' : 'incidente'}</span>
+                </div>
+
+                <div className='error-group-meta'>
+                  <span className={`status-pill ${item.configured ? (item.active ? 'success' : 'warning') : 'error'}`}>
+                    {item.configured ? (item.active ? 'Activ' : 'Inactiv') : 'Nu mai este in lista'}
+                  </span>
+                  <span>Campanii: {item.campaigns.join(', ')}</span>
+                </div>
+
+                <div className='error-message-box'>
+                  <span>Motiv standardizat</span>
+                  <strong className={item.latestReasonCode === 'group_paused' ? 'paused' : 'unavailable'}>
+                    {item.latestReason}
+                  </strong>
+                </div>
+
+                <details className='error-history-details'>
+                  <summary>Vezi ultimele {item.occurrences.length} aparitii si detaliile tehnice</summary>
+                  {item.occurrences.map((occurrence, index) => (
+                    <div key={`${occurrence.date}-${index}`}>
+                      <span>{formatDate(occurrence.date)} · {occurrence.campaign}</span>
+                      <strong>{occurrence.reason}</strong>
+                      <p>{occurrence.technicalMessage}</p>
+                    </div>
+                  ))}
+                </details>
+
+                {item.groupUrl && (
+                  <button
+                    className='secondary-button error-group-open'
+                    type='button'
+                    onClick={() => window.open(item.groupUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink size={15} /> Deschide grupul pe Facebook
+                  </button>
+                )}
+              </article>
+            ))}
+
+            {!errorGroupsLoading && visibleErrorGroups.length === 0 && (
+              <div className='empty-state-v2'>
+                {errorGroups.length ? 'Niciun grup nu corespunde cautarii.' : 'Nu exista erori de grup in istoricul salvat.'}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="editor-panel reports-filters">
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cauta ID, campanie sau profil..." />

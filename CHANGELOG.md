@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Synchronized all three property description textareas continuously while any one is resized, preventing the neighboring post cards from shifting until pointer release.
+- Connected RX CREATIVE Tool to the property editor through an authenticated, short-lived transfer: the three generated variants populate days 1-3, preserve existing media draft fields, and open RX PROPULSE directly on the property form without exposing descriptions in the URL.
+- Added automatic smooth scrolling to the edit form for properties and jobs, plus an explicit group edit action that centers and focuses the selected group's editable fields.
+- Fixed the property editor leaking the last edited property into the new-property form by separating edit state from creation drafts and cleaning up legacy stale drafts.
+- Added a Diagnostic dashboard tab that interprets preflight and validation codes in plain language, identifies empty-queue root causes such as active Facebook profile mismatches, recommends corrective actions, preserves the original technical message, and links directly to the relevant configuration page.
+- Added a portable Windows RX AI Studio Launcher with automatic service checks, fully hidden background startup, browser opening, Desktop shortcut installation, and a guarded stop action restricted to the Studio process tree and ports.
+- Added a Reports dashboard panel that groups posting errors and availability skips by Facebook group, standardizes the visible reason as `Grup pus pe pauză` or `Grup indisponibil`, and keeps technical details available on demand.
 - Added explicit and fallback detection for paused, suspended, unavailable, or read-only Facebook groups so manual and scheduled runs record them as skipped and continue instead of timing out on a missing composer button, while login/checkpoint failures remain errors.
 - Fixed campaign/group history deduplication so only prepared or posted entries from the current server-local calendar day block a task; older history remains available for reports without requiring manual deletion.
 - Added real image and video thumbnails to Media Library cards, with lazy loading, cropped previews, type badges, and a safe fallback for missing files.

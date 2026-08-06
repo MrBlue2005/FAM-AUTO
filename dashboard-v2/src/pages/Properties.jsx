@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import ProfileStartModal from '../components/ProfileStartModal';
 import MediaDropzone from '../components/MediaDropzone';
@@ -56,13 +56,64 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   const [selectedIds, setSelectedIds] = useState([]);
   const [validationErrors, setValidationErrors] = useState({});
   const [formBaseline, setFormBaseline] = useState(freshForm);
+  const [postTextHeight, setPostTextHeight] = useState(null);
+  const initialFormRef = useRef(form);
+  const editorRef = useRef(null);
+  const activePostTextareaRef = useRef(null);
+  const postTextareaRefs = useRef([]);
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(formBaseline);
 
+  function scrollToEditor() {
+    window.requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
   useEffect(() => {
-    saveFormDraft(DRAFT_KEY, form);
+    function synchronizePostTextareas() {
+      const textarea = activePostTextareaRef.current;
+      if (!textarea) return;
+      const height = Math.round(textarea.getBoundingClientRect().height);
+      activePostTextareaRef.current = null;
+      if (height >= 120) setPostTextHeight(height);
+    }
+
+    document.addEventListener('pointerup', synchronizePostTextareas);
+    document.addEventListener('pointercancel', synchronizePostTextareas);
+    return () => {
+      document.removeEventListener('pointerup', synchronizePostTextareas);
+      document.removeEventListener('pointercancel', synchronizePostTextareas);
+    };
+  }, []);
+
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      const activeTextarea = activePostTextareaRef.current;
+      if (!activeTextarea || !entries.some((entry) => entry.target === activeTextarea)) return;
+
+      const height = Math.round(activeTextarea.getBoundingClientRect().height);
+      for (const textarea of postTextareaRefs.current) {
+        if (textarea && textarea !== activeTextarea) {
+          textarea.style.height = `${height}px`;
+        }
+      }
+    });
+
+    for (const textarea of postTextareaRefs.current) {
+      if (textarea) observer.observe(textarea);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     onDirtyChange?.(isDirty);
-  }, [form, isDirty, onDirtyChange]);
+    if (editingId) {
+      clearFormDraft(DRAFT_KEY);
+      return;
+    }
+    saveFormDraft(DRAFT_KEY, form);
+  }, [editingId, form, isDirty, onDirtyChange]);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -102,8 +153,19 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
 
   useEffect(() => {
     let ignore = false;
+    const transferId = new URLSearchParams(window.location.search).get('descriptionTransfer');
+    const transferRequest = transferId
+      ? api.getPropertyDescriptionTransfer(transferId)
+        .then((data) => ({ data }))
+        .catch((error) => ({ error }))
+      : Promise.resolve(null);
 
-    Promise.all([api.getProperties(), api.getPropertyLogs(), api.getRuntimeConfig()]).then(([propertiesData, logsData, config]) => {
+    Promise.all([
+      api.getProperties(),
+      api.getPropertyLogs(),
+      api.getRuntimeConfig(),
+      transferRequest,
+    ]).then(([propertiesData, logsData, config, transferResult]) => {
       if (ignore) return;
       setProperties(propertiesData);
       setPropertyLogs(logsData);
@@ -112,8 +174,44 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
       const requestedId = editRequest?.id || window.localStorage.getItem('rx-edit-property-id');
       const requestedProperty = propertiesData.find((item) => item.id === requestedId);
 
-      if (requestedProperty) {
+      if (transferResult?.data) {
+        const transfer = transferResult.data;
+        const initialForm = initialFormRef.current;
+        const staleEditDraft = initialForm.id
+          && propertiesData.some((property) => property.id === initialForm.id);
+        const baseForm = staleEditDraft ? freshForm() : initialForm;
+        const fallbackPosts = freshForm().posts;
+        const importedForm = {
+          ...baseForm,
+          name: baseForm.name || transfer.sourceTitle || '',
+          transactionType: transfer.transactionType || baseForm.transactionType,
+          posts: fallbackPosts.map((fallbackPost, index) => ({
+            ...fallbackPost,
+            ...(baseForm.posts?.[index] || {}),
+            day: index + 1,
+            title: transfer.descriptions[index]?.title || baseForm.posts?.[index]?.title || fallbackPost.title,
+            text: transfer.descriptions[index]?.text || '',
+          })),
+        };
         window.localStorage.removeItem('rx-edit-property-id');
+        clearFormDraft(DRAFT_KEY);
+        onEditHandled?.();
+        setEditingId(null);
+        setFormBaseline(baseForm);
+        setForm(importedForm);
+        initialFormRef.current = importedForm;
+        setValidationErrors({});
+        setOpenMenuId(null);
+        setMessage('Cele 3 descrieri au fost importate in zilele 1, 2 si 3.');
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.delete('descriptionTransfer');
+        window.history.replaceState({}, '', currentUrl);
+        scrollToEditor();
+      } else if (transferResult?.error) {
+        setMessage(transferResult.error.message || 'Descrierile nu au putut fi importate.');
+      } else if (requestedProperty) {
+        window.localStorage.removeItem('rx-edit-property-id');
+        clearFormDraft(DRAFT_KEY);
         onEditHandled?.();
         setEditingId(requestedProperty.id);
         const requestedForm = {
@@ -123,9 +221,23 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
         };
         setFormBaseline(requestedForm);
         setForm(requestedForm);
+        setValidationErrors({});
         setOpenMenuId(null);
         setMessage(`Editezi: ${requestedProperty.name}`);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToEditor();
+      } else {
+        const initialForm = initialFormRef.current;
+        const staleEditDraft = initialForm.id
+          && propertiesData.some((property) => property.id === initialForm.id);
+        if (staleEditDraft) {
+          const resetForm = freshForm();
+          clearFormDraft(DRAFT_KEY);
+          initialFormRef.current = resetForm;
+          setFormBaseline(resetForm);
+          setForm(resetForm);
+          setValidationErrors({});
+          setMessage('');
+        }
       }
     });
 
@@ -182,6 +294,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   }
 
   function handleEdit(property) {
+    clearFormDraft(DRAFT_KEY);
     setEditingId(property.id);
     const editForm = {
       ...freshForm(),
@@ -190,15 +303,18 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
     };
     setFormBaseline(editForm);
     setForm(editForm);
+    setValidationErrors({});
     setOpenMenuId(null);
     setMessage(`Editezi: ${property.name}`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToEditor();
   }
 
   function handleCancelEdit() {
+    const resetForm = freshForm();
     setEditingId(null);
-    setFormBaseline(freshForm());
-    setForm(freshForm());
+    setFormBaseline(resetForm);
+    setForm(resetForm);
+    setValidationErrors({});
     setMessage('');
     clearFormDraft(DRAFT_KEY);
   }
@@ -355,7 +471,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
         />
       </header>
 
-      <section className="editor-panel">
+      <section className="editor-panel" data-edit-target ref={editorRef}>
         <div className="panel-title-row">
           <h2>{editingId ? 'Editeaza proprietate' : 'Adauga proprietate'}</h2>
           {isDirty && <span className="draft-status">Draft salvat automat</span>}
@@ -447,9 +563,16 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               <label>
                 Text postare
                 <textarea
+                  ref={(node) => {
+                    postTextareaRefs.current[index] = node;
+                  }}
                   value={post.text}
                   onChange={(event) => updatePost(index, 'text', event.target.value)}
+                  onPointerDown={(event) => {
+                    activePostTextareaRef.current = event.currentTarget;
+                  }}
                   rows={8}
+                  style={postTextHeight ? { height: postTextHeight } : undefined}
                 />
               </label>
             </div>

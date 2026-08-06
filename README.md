@@ -7,6 +7,10 @@ RX AI Studio reuneste doua aplicatii locale:
 
 Launcherul si ambele aplicatii folosesc o singura sesiune de autentificare.
 
+In RX PROPULSE TOOL, tabul **Diagnostic** interpreteaza erorile preflight, explica de ce este blocata pornirea si indica pagina in care trebuie corectata configuratia. Mesajul tehnic original ramane disponibil pentru investigatii.
+
+Cele trei descrieri generate in RX CREATIVE Tool pot fi trimise direct in formularul unei proprietati: Comerciala devine Ziua 1, Emotionala Ziua 2, iar Premium Ziua 3.
+
 ## Instalare pe un PC nou
 
 Cerinte: Windows 10/11, Git, Node.js 22.12 sau mai nou si Google Chrome. Deschide PowerShell:
@@ -26,10 +30,22 @@ Procedura completa si depanarea sunt in [docs/SETUP_NEW_PC.md](docs/SETUP_NEW_PC
 
 ## Pornire
 
+Pornire recomandata pe Windows: dublu-click pe shortcutul **RX AI Studio** de pe Desktop. Launcherul verifica si porneste automat API-ul, dashboardul si generatorul complet in fundal, fara ferestre CMD, apoi deschide Studio in browser.
+
+Butonul **Opreste Studio** inchide controlat procesele locale ale API-ului, dashboardului si generatorului. Launcherul cere confirmare deoarece oprirea in timpul unei campanii intrerupe robotul.
+
+Construire si instalare manuala a shortcutului:
+
+```powershell
+npm.cmd run launcher:dist
+npm.cmd run launcher:install
+```
+
 Toate serviciile intr-un singur terminal:
 
 ```powershell
 npm.cmd run studio
+npm.cmd run studio:stop
 ```
 
 Adrese locale:
@@ -66,6 +82,7 @@ npm.cmd --prefix property-copywriter run typecheck
 npm.cmd --prefix property-copywriter run build
 npm.cmd run test:e2e
 npm.cmd run overlay:dist
+npm.cmd run launcher:dist
 ```
 
 Auditurile celor patru workspace-uri trebuie sa raporteze zero vulnerabilitati:

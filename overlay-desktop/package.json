@@ -12,7 +12,9 @@
     "dev": "electron .",
     "pack": "electron-builder --dir",
     "dist": "node scripts/build.js",
-    "dist:signed": "node scripts/build.js --signed"
+    "dist:signed": "node scripts/build.js --signed",
+    "launcher:dev": "electron launcher/main.js",
+    "launcher:dist": "node launcher/build.js"
   },
   "devDependencies": {
     "electron": "^43.1.0",

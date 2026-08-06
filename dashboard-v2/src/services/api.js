@@ -79,6 +79,8 @@ export const api = {
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
   logout: () => request('/auth/logout', { method: 'POST', body: '{}' }),
   getProperties: () => request('/properties'),
+  getPropertyDescriptionTransfer: (transferId) =>
+    request(`/property-description-transfers/${encodeURIComponent(transferId)}`),
   saveProperty: (property) =>
     request('/properties', {
       method: 'POST',
@@ -170,6 +172,7 @@ export const api = {
     ),
   getValidations: () => request('/validations'),
   getPreflight: () => request('/preflight'),
+  getDiagnostics: () => request('/diagnostics'),
   getGroupedErrors: () => request('/logs/errors'),
   getLatestReport: () => request('/reports/latest'),
   exportLatestReportUrl: `${API_URL}/reports/latest/export`,

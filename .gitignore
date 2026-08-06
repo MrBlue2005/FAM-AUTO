@@ -17,6 +17,7 @@ FAM-AUTO/
 dashboard-v2/dist/
 overlay-desktop/dist/
 overlay-desktop/out/
+overlay-desktop/launcher/dist/
 .env
 .env.production
 dashboard-v2/.env.*

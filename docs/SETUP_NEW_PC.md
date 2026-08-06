@@ -50,6 +50,19 @@ Optiuni: `-SkipBrowserInstall` si `-SkipChecks`.
 
 ## 4. Porneste studioul
 
+Instalarea interactiva creeaza automat shortcutul **RX AI Studio** pe Desktop. Deschide-l prin dublu-click; aplicatia porneste cele trei servicii in fundal si deschide Studio cand toate sunt online.
+
+Pentru oprire foloseste butonul **Opreste Studio** din launcher. Confirma oprirea numai daca robotul nu ruleaza sau daca vrei sa intrerupi campania activa.
+
+Pentru reconstruire sau reinstalarea shortcutului:
+
+```powershell
+npm.cmd run launcher:dist
+npm.cmd run launcher:install
+```
+
+Pornirea manuala ramane disponibila:
+
 ```powershell
 npm.cmd run studio
 ```

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 
 const emptyGroup = {
@@ -47,6 +47,7 @@ export default function Groups() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const groupEditorRefs = useRef(new Map());
 
   async function loadGroups() {
     const data = await api.getGroups();
@@ -70,6 +71,15 @@ export default function Groups() {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
       return copy;
+    });
+  }
+
+  function focusGroupEditor(groupId) {
+    const row = groupEditorRefs.current.get(groupId);
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.requestAnimationFrame(() => {
+      row.querySelector('[data-group-name]')?.focus({ preventScroll: true });
     });
   }
 
@@ -285,7 +295,14 @@ export default function Groups() {
           const originalIndex = groups.findIndex((item) => item.id === group.id);
 
           return (
-            <article className="group-row-v2" key={group.id}>
+            <article
+              className="group-row-v2"
+              key={group.id}
+              ref={(node) => {
+                if (node) groupEditorRefs.current.set(group.id, node);
+                else groupEditorRefs.current.delete(group.id);
+              }}
+            >
               <input
                 type="checkbox"
                 checked={group.active}
@@ -302,6 +319,7 @@ export default function Groups() {
 
               <div className="group-edit-main">
                 <input
+                  data-group-name
                   value={group.name}
                   onChange={(event) => updateGroup(originalIndex, 'name', event.target.value)}
                 />
@@ -340,9 +358,14 @@ export default function Groups() {
                 <option value="mixed">Mixed</option>
               </select>
 
-              <button className="danger-button" onClick={() => deleteGroup(group.id)}>
-                Sterge
-              </button>
+              <div className="group-row-actions">
+                <button className="secondary-button small-button" onClick={() => focusGroupEditor(group.id)}>
+                  Editeaza
+                </button>
+                <button className="danger-button small-button" onClick={() => deleteGroup(group.id)}>
+                  Sterge
+                </button>
+              </div>
             </article>
           );
         })}

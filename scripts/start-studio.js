@@ -2,6 +2,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
+const backgroundMode = process.env.RX_STUDIO_BACKGROUND === '1';
 const serviceDefinitions = [
   {
     name: 'API',
@@ -64,7 +65,8 @@ async function startStudio() {
 
     const child = spawn(definition.command, definition.args, {
       cwd: definition.cwd,
-      stdio: 'inherit',
+      stdio: backgroundMode ? 'ignore' : 'inherit',
+      windowsHide: backgroundMode,
       env: process.env,
     });
     children.push(child);

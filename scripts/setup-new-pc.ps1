@@ -88,5 +88,11 @@ if (-not $SkipChecks) {
   Invoke-Checked npm.cmd --prefix property-copywriter run typecheck
 }
 
+if (-not $NonInteractive) {
+  Invoke-Checked npm.cmd run launcher:dist
+  Invoke-Checked npm.cmd run launcher:install
+  Write-Host 'Launcherul RX AI Studio a fost instalat pe Desktop.' -ForegroundColor Green
+}
+
 Write-Host "`nInstalarea este gata. Porneste toate aplicatiile cu: npm.cmd run studio" -ForegroundColor Green
 Write-Host 'Deschide apoi: http://127.0.0.1:5173'

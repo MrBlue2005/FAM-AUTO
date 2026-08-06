@@ -47,6 +47,7 @@ export function Workbench({ demo }: { demo: boolean }) {
   const [manualInfo, setManualInfo] = useState<string | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualBusy, setManualBusy] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
 
   useEffect(() => {
     const id = search.get("id");
@@ -150,6 +151,27 @@ export function Workbench({ demo }: { demo: boolean }) {
     }
   };
 
+  const transferToPropulse = async () => {
+    if (!descriptions) return;
+    setTransferBusy(true);
+    setError(null);
+    try {
+      const result = await jsonRequest<{ dashboardUrl: string }>("/api/propulse-transfer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          descriptions,
+          sourceTitle: property?.title ?? null,
+          transactionType: property?.transactionType ?? null,
+        }),
+      });
+      window.location.assign(result.dashboardUrl);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Descrierile nu au putut fi trimise.");
+      setTransferBusy(false);
+    }
+  };
+
   return (
     <main className="shell py-10 md:py-16">
       <section className="mb-8 grid gap-7 lg:grid-cols-[1fr_.62fr] lg:items-end">
@@ -216,7 +238,13 @@ export function Workbench({ demo }: { demo: boolean }) {
           onImport={importManualResponse}
           onClose={() => setManualOpen(false)}
         />}
-        {descriptions && <ResultCards value={descriptions} busyVariant={busy === "analyze" ? null : busy} onRegenerate={generate} />}
+        {descriptions && <ResultCards
+          value={descriptions}
+          busyVariant={busy === "analyze" ? null : busy}
+          transferBusy={transferBusy}
+          onRegenerate={generate}
+          onTransfer={transferToPropulse}
+        />}
       </div>}
     </main>
   );

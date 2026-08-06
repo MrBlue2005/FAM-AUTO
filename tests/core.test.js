@@ -21,6 +21,7 @@ const {
 } = require('../app/utils/historyManager');
 const DataManager = require('../app/core/DataManager');
 const ScheduleManager = require('../app/core/ScheduleManager');
+const { buildDiagnostics, diagnoseEmptyQueue } = require('../app/core/Diagnostics');
 
 function fixture(overrides = {}) {
   const config = {
@@ -232,6 +233,45 @@ test('preflight reports a daily no-work result when every group was already post
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === 'NO_ELIGIBLE_GROUPS_TODAY'));
+});
+
+test('empty queue diagnostic explains a browser profile mismatch', () => {
+  const data = fixture({
+    config: {
+      facebookProfileId: 'alternate',
+      facebookProfiles: [
+        { id: 'main', label: 'Main', category: 'real_estate' },
+        { id: 'alternate', label: 'Alternate', category: 'real_estate' },
+      ],
+    },
+  });
+
+  const diagnostic = diagnoseEmptyQueue(data);
+
+  assert.equal(diagnostic.title, 'Profilul browser activ nu corespunde campaniei selectate');
+  assert.equal(diagnostic.actionPage, 'queue');
+  assert.match(diagnostic.explanation, /alternate/);
+});
+
+test('diagnostics interpret preflight errors and preserve the technical message', () => {
+  const data = fixture();
+  const diagnostics = buildDiagnostics({
+    ...data,
+    preflight: {
+      issues: [
+        { code: 'MISSING_MEDIA', level: 'error', message: 'Media lipseste pentru task.' },
+        { code: 'LIVE_MODE', level: 'warning', message: 'Mod LIVE activ.' },
+      ],
+    },
+    validations: { globalIssues: [], campaigns: [] },
+    queuePlan: { summary: { active: 0, total: 0 } },
+  });
+
+  assert.equal(diagnostics.status, 'blocked');
+  assert.equal(diagnostics.summary.errors, 1);
+  assert.equal(diagnostics.summary.warnings, 1);
+  assert.equal(diagnostics.issues[0].title, 'Postarea nu are media');
+  assert.equal(diagnostics.issues[0].originalMessage, 'Media lipseste pentru task.');
 });
 
 test('weekly schedule computes the next local weekday and skips elapsed times', () => {

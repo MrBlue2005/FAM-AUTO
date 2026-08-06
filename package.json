@@ -20,7 +20,11 @@
     "overlay:pack": "npm --prefix overlay-desktop run pack",
     "overlay:dist": "npm --prefix overlay-desktop run dist",
     "studio": "node scripts/start-studio.js",
-    "setup:new-pc": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-new-pc.ps1"
+    "setup:new-pc": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-new-pc.ps1",
+    "launcher:dev": "npm --prefix overlay-desktop run launcher:dev",
+    "launcher:dist": "npm --prefix overlay-desktop run launcher:dist",
+    "launcher:install": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-studio-launcher.ps1",
+    "studio:stop": "node scripts/stop-studio.js"
   },
   "keywords": [],
   "author": "",
