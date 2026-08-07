@@ -12,6 +12,7 @@ const defaultRuntimeConfig = {
   selectedPropertyIds: [],
   stopAfterCurrentGroup: false,
   campaignCategory: 'real_estate',
+  selectedGroupListCategory: 'Romania',
   facebookProfileId: 'main',
   facebookProfiles: [
     {
