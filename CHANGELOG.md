@@ -1,10 +1,5 @@
 # Changelog
 
-## 2026-08-07
-
-- Added custom group list categories and Queue filtering so Romanian, international, and other user-defined group sets can be managed and run separately.
-- Kept existing group data compatible by treating groups without a list category as `Romania`.
-
 ## Unreleased
 
 - Synchronized all three property description textareas continuously while any one is resized, preventing the neighboring post cards from shifting until pointer release.

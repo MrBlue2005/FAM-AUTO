@@ -1,6 +1,5 @@
 const { getPostForDay, getEligibleGroups } = require('../utils/campaignPlanner');
 const { getActiveCampaignCategory } = require('../utils/campaignCategory');
-const { matchesSelectedGroupListCategory } = require('../utils/groupListCategory');
 
 const preflightCatalog = {
   NO_ELIGIBLE_GROUPS_TODAY: {
@@ -100,9 +99,7 @@ function diagnoseEmptyQueue({ config, properties, jobs, groups }) {
     (item) => item.active === true && matchesActiveProfile(item, config, category)
   );
   const activeGroups = groups.filter(
-    (group) => group.active === true &&
-      matchesSelectedGroupListCategory(group, config) &&
-      (group.category || 'real_estate') === category
+    (group) => group.active === true && (group.category || 'real_estate') === category
   );
   const campaignDay = Number(config.campaignDay || 1);
 
@@ -170,7 +167,7 @@ function diagnoseEmptyQueue({ config, properties, jobs, groups }) {
   }
 
   const noEligibleGroups = selectedMatchingItems.filter(
-    (item) => getEligibleGroups(item, groups, config).length === 0
+    (item) => getEligibleGroups(item, groups).length === 0
   );
   if (noEligibleGroups.length) {
     return {
@@ -182,7 +179,7 @@ function diagnoseEmptyQueue({ config, properties, jobs, groups }) {
     };
   }
 
-  const eligibleCount = Math.max(...selectedMatchingItems.map((item) => getEligibleGroups(item, groups, config).length), 0);
+  const eligibleCount = Math.max(...selectedMatchingItems.map((item) => getEligibleGroups(item, groups).length), 0);
   if (Number(config.startFromGroup || 1) > eligibleCount) {
     return {
       title: 'Pozitia de start depaseste numarul de grupuri',

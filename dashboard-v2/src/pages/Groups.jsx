@@ -7,7 +7,6 @@ const emptyGroup = {
   active: true,
   favorite: false,
   category: 'real_estate',
-  groupListCategory: 'Romania',
   overrideType: null,
 };
 
@@ -32,10 +31,6 @@ function getCategory(group) {
   return group.category || 'real_estate';
 }
 
-function getGroupListCategory(group) {
-  return String(group.groupListCategory || '').trim() || 'Romania';
-}
-
 function nextGroupId(groups) {
   const max = groups.reduce((highest, group) => {
     const number = Number(String(group.id || '').replace('GROUP_', ''));
@@ -52,7 +47,6 @@ export default function Groups() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [groupListCategoryFilter, setGroupListCategoryFilter] = useState('all');
   const groupEditorRefs = useRef(new Map());
 
   async function loadGroups() {
@@ -103,7 +97,6 @@ export default function Groups() {
       active: newGroup.active,
       favorite: newGroup.favorite,
       category: newGroup.category,
-      groupListCategory: getGroupListCategory(newGroup),
       overrideType: newGroup.overrideType,
     };
 
@@ -155,12 +148,10 @@ export default function Groups() {
   const filteredGroups = groups.filter((group) => {
     const type = detectType(group);
     const groupCategory = getCategory(group);
-    const groupListCategory = getGroupListCategory(group);
-    const searchText = `${group.name} ${group.url} ${groupListCategory}`.toLowerCase();
+    const searchText = `${group.name} ${group.url}`.toLowerCase();
 
     if (!searchText.includes(search.toLowerCase())) return false;
     if (categoryFilter !== 'all' && groupCategory !== categoryFilter) return false;
-    if (groupListCategoryFilter !== 'all' && groupListCategory !== groupListCategoryFilter) return false;
     if (filter === 'active') return group.active;
     if (filter === 'inactive') return !group.active;
     if (filter === 'favorite') return group.favorite;
@@ -176,9 +167,6 @@ export default function Groups() {
   const realEstateCount = groups.filter((group) => getCategory(group) === 'real_estate').length;
   const jobsCount = groups.filter((group) => getCategory(group) === 'jobs').length;
   const mixedCount = groups.filter((group) => detectType(group) === 'mixed').length;
-  const groupListCategories = Array.from(
-    new Set(['Romania', 'Internationale', ...groups.map(getGroupListCategory)])
-  ).sort((a, b) => a.localeCompare(b, 'ro'));
 
   return (
     <div className="management-page">
@@ -228,16 +216,6 @@ export default function Groups() {
             <option value="jobs">Joburi</option>
           </select>
 
-          <input
-            list="group-list-categories"
-            value={newGroup.groupListCategory}
-            onChange={(event) =>
-              setNewGroup((prev) => ({ ...prev, groupListCategory: event.target.value }))
-            }
-            placeholder="Categorie grup (ex: Internationale)"
-            aria-label="Categorie lista grup"
-          />
-
           <select
             value={newGroup.overrideType || 'auto'}
             onChange={(event) =>
@@ -257,10 +235,6 @@ export default function Groups() {
             Adauga
           </button>
         </div>
-        <datalist id="group-list-categories">
-          {groupListCategories.map((category) => <option key={category} value={category} />)}
-        </datalist>
-        <p className="field-hint">Poti scrie orice categorie noua. Exemple: Romania, Internationale, Diaspora.</p>
       </section>
 
       <section className="action-strip">
@@ -301,16 +275,6 @@ export default function Groups() {
           <option value="all">Toate categoriile</option>
           <option value="real_estate">Imobiliare</option>
           <option value="jobs">Joburi</option>
-        </select>
-
-        <select
-          value={groupListCategoryFilter}
-          onChange={(event) => setGroupListCategoryFilter(event.target.value)}
-        >
-          <option value="all">Toate listele de grupuri</option>
-          {groupListCategories.map((category) => (
-            <option key={category} value={category}>{category}</option>
-          ))}
         </select>
 
         <select value={filter} onChange={(event) => setFilter(event.target.value)}>
@@ -377,13 +341,6 @@ export default function Groups() {
                 <option value="real_estate">Imobiliare</option>
                 <option value="jobs">Joburi</option>
               </select>
-
-              <input
-                list="group-list-categories"
-                value={getGroupListCategory(group)}
-                onChange={(event) => updateGroup(originalIndex, 'groupListCategory', event.target.value)}
-                aria-label={`Categorie lista pentru ${group.name}`}
-              />
 
               <select
                 value={group.overrideType || 'auto'}
