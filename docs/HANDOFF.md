@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-07-29
+Last updated: 2026-08-07
 
 ## Repository state
 
@@ -47,6 +47,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Reports dashboard page with filters, detailed events, per-run Excel export, controlled retry, and archiving.
 - Reports use explicit white/high-contrast text and controls throughout the dark interface.
 - Adding a Facebook profile now persists its runtime configuration before Chromium setup starts; setup/finalization failures are shown in the dashboard and duplicate setup clicks are blocked while a request is active.
+- Groups support a separate, custom list category (for example `Romania`, `Internationale`, or `Diaspora`) in addition to the Imobiliare/Joburi campaign category. Queue Manager can select one list category so Romanian and international groups are not mixed; existing groups without this field are treated as `Romania`, which is also the safe default Queue selection.
 - Optional API key and role-based authentication groundwork for future hosting.
 - Production authentication with Scrypt passwords, login throttling, HttpOnly sessions, protected media, and fail-closed dashboard access.
 - Desktop notifications.

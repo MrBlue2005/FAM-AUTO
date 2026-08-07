@@ -8,6 +8,7 @@ const defaultConfig = {
   publishEnabled: false,
   selectedPropertyIds: [],
   campaignCategory: 'real_estate',
+  selectedGroupListCategory: 'Romania',
   facebookProfileId: 'main',
   facebookProfiles: [
     {
@@ -207,13 +208,21 @@ export default function Queue({ onChangePage }) {
   }, [pollingFast]);
 
   const activeCategory = getActiveCategory(config);
+  const groupListCategories = useMemo(
+    () => Array.from(new Set(groups.map((group) => String(group.groupListCategory || '').trim() || 'Romania')))
+      .sort((a, b) => a.localeCompare(b, 'ro')),
+    [groups]
+  );
   const robotStatus = robot?.robotStatus || 'idle';
   const running = isRunning(robotStatus);
   const activeCampaigns = activeCategory === 'jobs'
     ? jobs.filter((item) => item.active).length
     : properties.filter((item) => item.active).length;
   const activeGroups = groups.filter(
-    (group) => group.active && (group.category || 'real_estate') === activeCategory
+    (group) => group.active &&
+      (group.category || 'real_estate') === activeCategory &&
+      (config.selectedGroupListCategory === 'all' ||
+        (String(group.groupListCategory || '').trim() || 'Romania') === config.selectedGroupListCategory)
   ).length;
   const postingIdentityId =
     config.postingIdentityByProfile?.[config.facebookProfileId] ||
@@ -247,6 +256,15 @@ export default function Queue({ onChangePage }) {
 
   async function saveField(field, value) {
     await saveConfigChange({ [field]: value });
+  }
+
+  async function saveGroupListCategory(category) {
+    await saveConfigChange({
+      selectedGroupListCategory: category,
+      queueExcludedTaskIds: [],
+      queueRetryTaskIds: [],
+      queueOrder: [],
+    }, 'Categoria de grupuri a fost schimbata si queue-ul a fost recalculat.');
   }
 
   async function saveCampaignCategory(category) {
@@ -425,6 +443,19 @@ export default function Queue({ onChangePage }) {
                 <option key={profile.id} value={profile.id}>
                   {profile.label || profile.id}
                 </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Categorie grupuri
+            <select
+              value={config.selectedGroupListCategory || 'all'}
+              onChange={(event) => saveGroupListCategory(event.target.value)}
+            >
+              <option value="all">Toate categoriile</option>
+              {groupListCategories.map((category) => (
+                <option key={category} value={category}>{category}</option>
               ))}
             </select>
           </label>

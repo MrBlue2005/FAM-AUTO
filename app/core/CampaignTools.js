@@ -7,6 +7,7 @@ const {
   getProfileForCampaign,
   getProfileIdForCampaign,
 } = require('../utils/campaignCategory');
+const { matchesSelectedGroupListCategory } = require('../utils/groupListCategory');
 
 function getCampaignName(item) {
   return item.name || item.title || item.id;
@@ -114,7 +115,7 @@ function buildQueuePlan({ config, properties, jobs, groups, history = [], now = 
     : new Set();
   const skippedTodayGroupIds = new Set();
   const tasks = campaigns.flatMap((campaign) => {
-    const availableGroups = getEligibleGroups(campaign, groups).filter((group) => {
+    const availableGroups = getEligibleGroups(campaign, groups, config).filter((group) => {
       const postedToday = groupsPostedToday.has(String(group.id));
       if (postedToday) skippedTodayGroupIds.add(String(group.id));
       return !postedToday;
@@ -236,8 +237,8 @@ function validateCampaigns({ config, properties, jobs, groups }) {
     { id: 'jobs', items: jobs, nameField: 'title' },
   ];
   const activeGroupsByCategory = {
-    real_estate: groups.filter((group) => group.active && (group.category || 'real_estate') === 'real_estate'),
-    jobs: groups.filter((group) => group.active && (group.category || 'real_estate') === 'jobs'),
+    real_estate: groups.filter((group) => group.active && matchesSelectedGroupListCategory(group, config) && (group.category || 'real_estate') === 'real_estate'),
+    jobs: groups.filter((group) => group.active && matchesSelectedGroupListCategory(group, config) && (group.category || 'real_estate') === 'jobs'),
   };
 
   const profile = (config.facebookProfiles || []).find(

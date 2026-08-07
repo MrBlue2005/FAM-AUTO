@@ -145,6 +145,42 @@ test('paused and unavailable Facebook groups are classified for safe skipping', 
     { available: true, reason: null }
   );
 });
+
+test('queue keeps Romanian and international group categories separate', () => {
+  const groups = [
+    {
+      id: 'RO',
+      name: 'Chirii Bucuresti',
+      url: 'https://www.facebook.com/groups/romania',
+      active: true,
+      category: 'real_estate',
+      groupListCategory: 'Romania',
+    },
+    {
+      id: 'INT',
+      name: 'International rentals',
+      url: 'https://www.facebook.com/groups/international',
+      active: true,
+      category: 'real_estate',
+      groupListCategory: 'Internationale',
+      overrideType: 'rent',
+    },
+  ];
+
+  const internationalPlan = buildQueuePlan(fixture({
+    groups,
+    config: { selectedGroupListCategory: 'internationale' },
+  }));
+
+  assert.deepEqual(internationalPlan.tasks.map((task) => task.groupId), ['INT']);
+
+  const legacyRomanianPlan = buildQueuePlan(fixture({
+    groups: [{ ...groups[0], groupListCategory: undefined }],
+    config: { selectedGroupListCategory: 'Romania' },
+  }));
+
+  assert.deepEqual(legacyRomanianPlan.tasks.map((task) => task.groupId), ['RO']);
+});
 test('queue never includes an inactive campaign even when it remains selected', () => {
   const inactive = fixture();
   inactive.properties[0].active = false;

@@ -4,13 +4,15 @@ const {
   getCampaignCategoryForItem,
   getGroupCategory,
 } = require('./campaignCategory');
+const { matchesSelectedGroupListCategory } = require('./groupListCategory');
 
-function getEligibleGroups(item, groups) {
-  const runtimeConfig = DataManager.getRuntimeConfig();
+function getEligibleGroups(item, groups, config = null) {
+  const runtimeConfig = config || DataManager.getRuntimeConfig();
   const campaignCategory = getCampaignCategoryForItem(item, runtimeConfig);
 
   return groups.filter((group) => {
     if (!group.active) return false;
+    if (!matchesSelectedGroupListCategory(group, runtimeConfig)) return false;
 
     const groupCategory = getGroupCategory(group);
 
