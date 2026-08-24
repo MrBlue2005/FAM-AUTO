@@ -11,6 +11,7 @@ const defaultRuntimeConfig = {
   publishEnabled: false,
   selectedPropertyIds: [],
   stopAfterCurrentGroup: false,
+  pausedProfileIds: [],
   campaignCategory: 'real_estate',
   selectedGroupListCategory: 'Romania',
   facebookProfileId: 'main',
@@ -511,6 +512,7 @@ function getRuntimeConfig() {
     queueExcludedTaskIds: config.queueExcludedTaskIds || [],
     queueRetryTaskIds: config.queueRetryTaskIds || [],
     queueOrder: config.queueOrder || [],
+    pausedProfileIds: config.pausedProfileIds || [],
   };
 }
 
@@ -539,6 +541,7 @@ function saveRuntimeConfig(config) {
     queueExcludedTaskIds: config.queueExcludedTaskIds || [],
     queueRetryTaskIds: config.queueRetryTaskIds || [],
     queueOrder: config.queueOrder || [],
+    pausedProfileIds: config.pausedProfileIds || [],
   };
 
   writeJson(filePath, normalizedConfig);

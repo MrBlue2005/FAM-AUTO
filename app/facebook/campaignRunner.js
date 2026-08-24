@@ -82,7 +82,8 @@ async function waitIfPaused(itemName, groupName = null, executionConfig = null) 
   while (true) {
     const runtimeConfig = DataManager.getRuntimeConfig();
 
-    if (!runtimeConfig.pauseRequested) {
+    const profilePaused = (runtimeConfig.pausedProfileIds || []).includes(executionConfig?.facebookProfileId);
+    if (!runtimeConfig.pauseRequested && !profilePaused) {
       if (pauseMessageSent) {
         emitEvent('success', 'Robot reluat. Continuă campania.');
         emitState({

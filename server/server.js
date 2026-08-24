@@ -1096,8 +1096,26 @@ app.post('/api/robot/pause', (req, res) => {
   res.json(RobotManager.pause());
 });
 
+app.post('/api/robot/pause-profile', (req, res) => {
+  const profileId = req.body?.profileId;
+  if (!profileId || typeof profileId !== 'string') return res.status(400).json({ error: 'Profil Facebook lipsa.' });
+  return res.json(RobotManager.pause(profileId));
+});
+
 app.post('/api/robot/resume', (req, res) => {
   res.json(RobotManager.resume());
+});
+
+app.post('/api/robot/resume-profile', (req, res) => {
+  const profileId = req.body?.profileId;
+  if (!profileId || typeof profileId !== 'string') return res.status(400).json({ error: 'Profil Facebook lipsa.' });
+  return res.json(RobotManager.resume(profileId));
+});
+
+app.post('/api/robot/stop-profile', (req, res) => {
+  const profileId = req.body?.profileId;
+  if (!profileId || typeof profileId !== 'string') return res.status(400).json({ error: 'Profil Facebook lipsa.' });
+  return res.json(RobotManager.stop(profileId));
 });
 
 app.use('/api', (req, res) => {

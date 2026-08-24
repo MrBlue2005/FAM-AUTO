@@ -2194,6 +2194,20 @@ textarea {
   min-width: 0;
 }
 
+.parallel-run-actions {
+  display: flex !important;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.parallel-run-row {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+}
+
+.parallel-run-actions .small-button {
+  white-space: nowrap;
+}
+
 .settings-subgrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

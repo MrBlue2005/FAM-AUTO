@@ -118,14 +118,35 @@ export default function Robot() {
 
       {message && <p className="save-message">{message}</p>}
 
-      {activeRuns.length > 1 && (
+      {activeRuns.length > 0 && (
         <section className="editor-panel">
-          <h2>Rulări paralele</h2>
+          <h2>{activeRuns.length > 1 ? 'Rulări paralele' : 'Rulare activă'}</h2>
           <div className="settings-campaign-list">
             {activeRuns.map((run) => (
-              <div className="settings-campaign-row" key={run.runId}>
+              <div className="settings-campaign-row parallel-run-row" key={run.runId}>
                 <div><strong>{run.profileId}</strong><span>{run.currentProperty || 'Se pregătește'} · {run.currentGroup || '-'}</span></div>
                 <span className={`status-pill ${run.robotStatus === 'running' ? 'active' : 'warning'}`}>{run.robotStatus}</span>
+                <div className="parallel-run-actions">
+                  <button
+                    type="button"
+                    className="secondary-button small-button"
+                    onClick={() => runAction(
+                      run.robotStatus === 'paused' ? `Rularea ${run.profileId} a fost reluată.` : `Pauză cerută pentru ${run.profileId}.`,
+                      () => run.robotStatus === 'paused'
+                        ? api.resumeRobotProfile(run.profileId)
+                        : api.pauseRobotProfile(run.profileId)
+                    )}
+                  >
+                    {run.robotStatus === 'paused' ? 'Resume' : 'Pauză'}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button small-button"
+                    onClick={() => runAction(`Rularea ${run.profileId} a fost oprită.`, () => api.stopRobotProfile(run.profileId))}
+                  >
+                    Stop
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -246,14 +246,32 @@ export const api = {
       method: 'POST',
     }),
 
+  stopRobotProfile: (profileId) =>
+    request('/robot/stop-profile', {
+      method: 'POST',
+      body: JSON.stringify({ profileId }),
+    }),
+
   pauseRobot: () =>
     request('/robot/pause', {
       method: 'POST',
     }),
 
+  pauseRobotProfile: (profileId) =>
+    request('/robot/pause-profile', {
+      method: 'POST',
+      body: JSON.stringify({ profileId }),
+    }),
+
   resumeRobot: () =>
     request('/robot/resume', {
       method: 'POST',
+    }),
+
+  resumeRobotProfile: (profileId) =>
+    request('/robot/resume-profile', {
+      method: 'POST',
+      body: JSON.stringify({ profileId }),
     }),
 
   stopRobotAfterCurrent: () =>

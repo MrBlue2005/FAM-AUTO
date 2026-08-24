@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added per-profile controls to every active campaign run: Pause/Resume affects only that worker, while Stop terminates only its selected Facebook-profile worker.
 - Allowed two or more campaigns to run concurrently when each uses a different Facebook profile. Each worker now receives an independent immutable execution configuration; attempting to start a second run for the same persistent browser profile is blocked.
 - Updated Scheduler and Robot controls to show active profile runs, permit a different-profile schedule to start, and apply pause/resume/stop-after-current-group as explicit shared safety controls for all active workers.
 - Protected concurrent history writes and group discovery updates with per-file locks so parallel workers do not overwrite each other's results.

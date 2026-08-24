@@ -178,16 +178,33 @@ function stopAfterCurrentGroup() {
   return { ...status(), stopAfterCurrentGroup: true, lastMessage: message };
 }
 
-function pause() {
+function pause(profileId = null) {
   const config = DataManager.getRuntimeConfig();
+  if (profileId && !activeRobots.has(profileId)) {
+    return { ...status(), lastMessage: `Nu exista o rulare activa pentru profilul ${profileId}.` };
+  }
+  if (profileId) {
+    const pausedProfileIds = [...new Set([...(config.pausedProfileIds || []), profileId])];
+    DataManager.saveRuntimeConfig({ ...config, pausedProfileIds });
+    const message = `Rularea profilului ${profileId} va intra in pauza dupa grupul curent.`;
+    addLiveFeed({ type: 'warning', message, profileId });
+    return { ...status(), lastMessage: message };
+  }
   DataManager.saveRuntimeConfig({ ...config, pauseRequested: true });
   const message = 'Toate rulările active vor intra în pauză după grupul curent.';
   addLiveFeed({ type: 'warning', message });
   return { ...status(), pauseRequested: true, lastMessage: message };
 }
 
-function resume() {
+function resume(profileId = null) {
   const config = DataManager.getRuntimeConfig();
+  if (profileId) {
+    const pausedProfileIds = (config.pausedProfileIds || []).filter((id) => id !== profileId);
+    DataManager.saveRuntimeConfig({ ...config, pausedProfileIds });
+    const message = `Rularea profilului ${profileId} a fost reluata.`;
+    addLiveFeed({ type: 'success', message, profileId });
+    return { ...status(), lastMessage: message };
+  }
   DataManager.saveRuntimeConfig({ ...config, pauseRequested: false });
   addLiveFeed({ type: 'success', message: 'Toate rulările active au fost reluate.' });
   return { ...status(), pauseRequested: false };
