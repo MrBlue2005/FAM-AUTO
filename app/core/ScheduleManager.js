@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const DataManager = require('./DataManager');
 const RobotManager = require('./RobotManager');
 const { inferProfileCategory } = require('../utils/campaignCategory');
+const { DEFAULT_GROUP_LIST_CATEGORY } = require('../utils/groupListCategory');
 
 const DEFAULT_LATE_MINUTES = 10;
 const CHECK_INTERVAL_MS = 15000;
@@ -66,6 +67,9 @@ function normalizeSchedule(input = {}, existing = null) {
   const now = new Date();
   const config = DataManager.getRuntimeConfig();
   const category = input.campaignCategory === 'jobs' ? 'jobs' : 'real_estate';
+  const groupListCategory = String(
+    input.groupListCategory || existing?.groupListCategory || DEFAULT_GROUP_LIST_CATEGORY
+  ).trim();
   const profileId = String(input.facebookProfileId || config.facebookProfileId || 'main');
   const profile = (config.facebookProfiles || []).find((item) => item.id === profileId);
   if (!profile) {
@@ -103,6 +107,9 @@ function normalizeSchedule(input = {}, existing = null) {
     time: String(input.time || ''),
     timezone: getSystemTimeZone(),
     campaignCategory: category,
+    // This is intentionally independent from campaignCategory and facebookProfileId.
+    // It chooses the list of Facebook groups, not the Facebook account or campaign type.
+    groupListCategory: groupListCategory || DEFAULT_GROUP_LIST_CATEGORY,
     campaignIds: validateCampaignSelection(category, input.campaignIds),
     facebookProfileId: profileId,
     campaignDay,
@@ -203,6 +210,7 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
     publishEnabled: schedule.publishEnabled,
     selectedPropertyIds: schedule.campaignIds,
     campaignCategory: schedule.campaignCategory,
+    selectedGroupListCategory: schedule.groupListCategory,
     facebookProfileId: schedule.facebookProfileId,
     queueExcludedTaskIds: [],
     queueRetryTaskIds: [],

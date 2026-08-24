@@ -22,6 +22,9 @@ function freshForm(config = {}) {
     daysOfWeek: [1, 2, 3, 4, 5],
     time: '09:00',
     campaignCategory: category,
+    groupListCategory: config.selectedGroupListCategory && config.selectedGroupListCategory !== 'all'
+      ? config.selectedGroupListCategory
+      : 'Romania',
     campaignIds: [],
     facebookProfileId: selectedProfile?.id || 'main',
     campaignDay: Number(config.campaignDay || 1),
@@ -56,6 +59,7 @@ export default function Scheduler() {
   const [timezone, setTimezone] = useState('local');
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [config, setConfig] = useState({ facebookProfiles: [] });
   const [facebookProfiles, setFacebookProfiles] = useState([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
@@ -67,10 +71,11 @@ export default function Scheduler() {
   const [saving, setSaving] = useState(false);
 
   async function loadData() {
-    const [scheduleData, propertyData, jobData, configData, profileData, robotData] = await Promise.all([
+    const [scheduleData, propertyData, jobData, groupData, configData, profileData, robotData] = await Promise.all([
       api.getSchedules(),
       api.getProperties(),
       api.getJobs(),
+      api.getGroups(),
       api.getRuntimeConfig(),
       api.getFacebookProfiles(),
       api.getRobotStatus(),
@@ -81,6 +86,7 @@ export default function Scheduler() {
     setTimezone(scheduleData.timezone || 'local');
     setProperties(propertyData);
     setJobs(jobData);
+    setGroups(groupData);
     setConfig(mergedConfig);
     setFacebookProfiles(fetchedProfiles);
     setProfilesLoading(false);
@@ -91,8 +97,8 @@ export default function Scheduler() {
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([api.getSchedules(), api.getProperties(), api.getJobs(), api.getRuntimeConfig(), api.getFacebookProfiles(), api.getRobotStatus()])
-      .then(([scheduleData, propertyData, jobData, configData, profileData, robotData]) => {
+    Promise.all([api.getSchedules(), api.getProperties(), api.getJobs(), api.getGroups(), api.getRuntimeConfig(), api.getFacebookProfiles(), api.getRobotStatus()])
+      .then(([scheduleData, propertyData, jobData, groupData, configData, profileData, robotData]) => {
         if (ignore) return;
         const fetchedProfiles = profileData.profiles || [];
         const mergedConfig = { ...configData, facebookProfiles: fetchedProfiles };
@@ -100,6 +106,7 @@ export default function Scheduler() {
         setTimezone(scheduleData.timezone || 'local');
         setProperties(propertyData);
         setJobs(jobData);
+        setGroups(groupData);
         setConfig(mergedConfig);
         setFacebookProfiles(fetchedProfiles);
         setProfilesLoading(false);
@@ -119,6 +126,11 @@ export default function Scheduler() {
   const profiles = useMemo(() => facebookProfiles.filter(
     (profile) => profileCategory(profile) === form.campaignCategory
   ), [facebookProfiles, form.campaignCategory]);
+  const groupListCategories = useMemo(
+    () => Array.from(new Set(groups.map((group) => String(group.groupListCategory || '').trim() || 'Romania')))
+      .sort((a, b) => a.localeCompare(b, 'ro')),
+    [groups]
+  );
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -248,6 +260,7 @@ export default function Scheduler() {
         <div className="schedule-form-grid">
           <label>Tip campanie<select value={form.campaignCategory} onChange={(event) => setCategory(event.target.value)}><option value="real_estate">Imobiliare</option><option value="jobs">Joburi</option></select></label>
           <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => updateField('facebookProfileId', event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
+          <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}><option value="Romania">Romania</option>{groupListCategories.filter((category) => category !== 'Romania').map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
           <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
           <label>Limita grupuri<select value={form.groupLimit} onChange={(event) => updateField('groupLimit', event.target.value === 'all' ? 'all' : Number(event.target.value))}><option value="1">1 grup</option><option value="5">5 grupuri</option><option value="10">10 grupuri</option><option value="all">Toate</option></select></label>
           <label>Incepe de la grupul<input type="number" min="1" value={form.startFromGroup} onChange={(event) => updateField('startFromGroup', Number(event.target.value))} /></label>
@@ -284,7 +297,7 @@ export default function Scheduler() {
               <div className="schedule-card-main">
                 <div className="schedule-card-title"><span className={`schedule-state ${schedule.enabled ? 'active' : ''}`}><CalendarClock size={15} />{schedule.enabled ? 'Activa' : 'Pauza'}</span><h3>{schedule.name}</h3></div>
                 <div className="schedule-when"><Clock3 size={16} /><strong>{schedule.time}</strong><span>{weekDays.filter((day) => schedule.daysOfWeek.includes(day.value)).map((day) => day.short).join(', ')}</span></div>
-                <p>{schedule.campaignIds.length} campanii / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
+                <p>{schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
                 <div className="schedule-run-meta"><span>Urmatoarea: <strong>{formatDate(schedule.nextRunAt)}</strong></span><span>Ultima: <strong>{schedule.lastStatus === 'never' ? 'niciodata' : `${schedule.lastStatus} / ${formatDate(schedule.lastRunAt)}`}</strong></span></div>
                 {schedule.lastMessage && <small className="schedule-last-message">{schedule.lastMessage}</small>}
               </div>
