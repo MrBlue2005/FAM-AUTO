@@ -6,6 +6,7 @@
 - Kept existing group data compatible by treating groups without a list category as `Romania`.
 - Updated the Zonere extractor for the current listing layout: it now reads the `Despre Proprietate` description and successive label/value details such as usable area, rooms, bathrooms, land, and construction year.
 - Added persistent folders for campaign schedules. Folders can be created empty, existing schedules can be moved between folders or back to `Fara folder`, and deleting a folder preserves its schedules.
+- Programările filtrează campaniile după profilul Facebook selectat și resping salvarea unei combinații campanie-profil incompatibile.
 
 ## Unreleased
 

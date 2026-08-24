@@ -44,13 +44,22 @@ function computeNextRun(schedule, from = new Date()) {
   throw new Error('Nu am putut calcula urmatoarea rulare.');
 }
 
-function validateCampaignSelection(category, campaignIds) {
+function campaignMatchesProfile(campaign, profileId, category, profiles) {
+  const explicitProfileId = campaign.facebookProfileId || campaign.postingProfileId || '';
+  if (explicitProfileId) return explicitProfileId === profileId;
+  const defaultProfile = profiles.find((profile) => inferProfileCategory(profile) === category);
+  return profileId === defaultProfile?.id;
+}
+
+function validateCampaignSelection(category, campaignIds, profileId, profiles) {
   const source = category === 'jobs' ? DataManager.getJobs() : DataManager.getProperties();
-  const knownIds = new Set(source.map((campaign) => campaign.id));
+  const byId = new Map(source.map((campaign) => [campaign.id, campaign]));
   const ids = Array.from(new Set((Array.isArray(campaignIds) ? campaignIds : []).map(String).filter(Boolean)));
   if (!ids.length) throw new Error('Selecteaza cel putin o campanie.');
-  const unknown = ids.filter((id) => !knownIds.has(id));
+  const unknown = ids.filter((id) => !byId.has(id));
   if (unknown.length) throw new Error(`Campanii inexistente: ${unknown.join(', ')}.`);
+  const mismatched = ids.filter((id) => !campaignMatchesProfile(byId.get(id), profileId, category, profiles));
+  if (mismatched.length) throw new Error(`Campaniile nu sunt asociate profilului Facebook selectat: ${mismatched.join(', ')}.`);
   return ids;
 }
 
@@ -129,7 +138,7 @@ function normalizeSchedule(input = {}, existing = null) {
     // It chooses the list of Facebook groups, not the Facebook account or campaign type.
     groupListCategory: groupListCategory || DEFAULT_GROUP_LIST_CATEGORY,
     folderId,
-    campaignIds: validateCampaignSelection(category, input.campaignIds),
+    campaignIds: validateCampaignSelection(category, input.campaignIds, profileId, config.facebookProfiles || []),
     facebookProfileId: profileId,
     campaignDay,
     groupLimit: normalizeGroupLimit(input.groupLimit ?? 1),

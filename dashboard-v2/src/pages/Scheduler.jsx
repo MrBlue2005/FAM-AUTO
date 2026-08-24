@@ -43,6 +43,16 @@ function profileCategory(profile) {
   return value.includes('job') || value.includes('munca') || value.includes('cariere') ? 'jobs' : 'real_estate';
 }
 
+function defaultProfileIdForCategory(profiles, category) {
+  return profiles.find((profile) => profileCategory(profile) === category)?.id || '';
+}
+
+function campaignMatchesSelectedProfile(campaign, profileId, category, profiles) {
+  const explicitProfileId = campaign.facebookProfileId || campaign.postingProfileId || '';
+  if (explicitProfileId) return explicitProfileId === profileId;
+  return profileId === defaultProfileIdForCategory(profiles, category);
+}
+
 function formatDate(value) {
   if (!value) return '-';
   return new Intl.DateTimeFormat('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
@@ -128,10 +138,18 @@ export default function Scheduler() {
     return () => { ignore = true; };
   }, []);
 
-  const campaigns = form.campaignCategory === 'jobs' ? jobs : properties;
   const profiles = useMemo(() => facebookProfiles.filter(
     (profile) => profileCategory(profile) === form.campaignCategory
   ), [facebookProfiles, form.campaignCategory]);
+  const campaigns = useMemo(() => {
+    const source = form.campaignCategory === 'jobs' ? jobs : properties;
+    return source.filter((campaign) => campaignMatchesSelectedProfile(
+      campaign,
+      form.facebookProfileId,
+      form.campaignCategory,
+      facebookProfiles
+    ));
+  }, [facebookProfiles, form.campaignCategory, form.facebookProfileId, jobs, properties]);
   const groupListCategories = useMemo(
     () => Array.from(new Set([
       'Romania',
@@ -162,6 +180,14 @@ export default function Scheduler() {
       campaignCategory: category,
       campaignIds: [],
       facebookProfileId: firstProfile?.id || current.facebookProfileId,
+    }));
+  }
+
+  function setFacebookProfile(profileId) {
+    setForm((current) => ({
+      ...current,
+      facebookProfileId: profileId,
+      campaignIds: [],
     }));
   }
 
@@ -316,7 +342,7 @@ export default function Scheduler() {
         <div className="schedule-form-grid">
           <label>Tip campanie<select value={form.campaignCategory} onChange={(event) => setCategory(event.target.value)}><option value="real_estate">Imobiliare</option><option value="jobs">Joburi</option></select></label>
           <label>Folder<select value={form.folderId || ''} onChange={(event) => updateField('folderId', event.target.value || null)}><option value="">Fără folder</option>{folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label>
-          <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => updateField('facebookProfileId', event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
+          <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => setFacebookProfile(event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select><small>Se afișează doar campaniile asociate acestui profil.</small>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
           <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}>{groupListCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
           <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
           <label>Limita grupuri<select value={form.groupLimit} onChange={(event) => updateField('groupLimit', event.target.value === 'all' ? 'all' : Number(event.target.value))}><option value="1">1 grup</option><option value="5">5 grupuri</option><option value="10">10 grupuri</option><option value="all">Toate</option></select></label>
@@ -336,7 +362,7 @@ export default function Scheduler() {
                 <span><strong>{campaign.name || campaign.title || campaign.id}</strong><small>{campaign.id}</small></span>
               </label>
             ))}
-            {!campaigns.length && <div className="schedule-empty">Nu exista campanii pentru categoria selectata.</div>}
+            {!campaigns.length && <div className="schedule-empty">Nu exista campanii asociate profilului Facebook selectat.</div>}
           </div>
         </div>
 
