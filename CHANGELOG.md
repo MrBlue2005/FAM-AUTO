@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Restored property and total ETA propagation from each profile worker to the Robot dashboard after parallel campaign support was added.
 - Added persistent folders for campaigns. Campaigns can be assigned from their action menu, filtered by folder, and safely detached when a folder is deleted; folders are included in private backups.
 - Added per-profile controls to every active campaign run: Pause/Resume affects only that worker, while Stop terminates only its selected Facebook-profile worker.
 - Allowed two or more campaigns to run concurrently when each uses a different Facebook profile. Each worker now receives an independent immutable execution configuration; attempting to start a second run for the same persistent browser profile is blocked.

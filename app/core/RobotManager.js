@@ -18,6 +18,11 @@ function activeRuns() {
     currentGroup: worker.state.currentGroup || null,
     progress: worker.state.progress || 0,
     totalGroups: worker.state.totalGroups || 0,
+    totalCampaignProgress: worker.state.totalCampaignProgress || 0,
+    totalCampaignGroups: worker.state.totalCampaignGroups || 0,
+    averageSecondsPerGroup: worker.state.averageSecondsPerGroup || null,
+    etaCurrentProperty: worker.state.etaCurrentProperty || null,
+    etaTotal: worker.state.etaTotal || null,
     lastMessage: worker.state.lastMessage || '',
   }));
 }
@@ -37,6 +42,11 @@ function refreshAggregateState() {
     currentGroup: primary?.currentGroup || null,
     progress: primary?.progress || 0,
     totalGroups: primary?.totalGroups || 0,
+    totalCampaignProgress: primary?.totalCampaignProgress || 0,
+    totalCampaignGroups: primary?.totalCampaignGroups || 0,
+    averageSecondsPerGroup: primary?.averageSecondsPerGroup || null,
+    etaCurrentProperty: primary?.etaCurrentProperty || null,
+    etaTotal: primary?.etaTotal || null,
     lastMessage: primary?.lastMessage || (runs.length ? 'Roboti activi.' : 'Robot pregatit.'),
   });
 }

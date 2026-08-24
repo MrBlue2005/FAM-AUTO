@@ -46,6 +46,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Deleting a property or job now removes its reference from mixed schedules and deletes schedules left without campaigns.
 - Scheduled runs default to TEST mode; LIVE schedules require an explicit publishing confirmation and overlapping robot runs are skipped.
 - Different Facebook profiles can now run campaigns concurrently: every active profile has its own Node/Playwright worker and immutable configuration snapshot. A second worker for the same persistent browser profile is rejected. The Robot page shows all active profile runs; pause, resume, and stop-after-current-group remain intentionally shared safety controls for every active worker.
+- Parallel worker status propagates property/total progress, average seconds per group, and both ETA values from the selected primary active run to the Robot dashboard.
 - Every active run also has individual Pause/Resume and Stop controls. A per-profile pause is checked at the next safe point and does not affect the other workers; individual Stop terminates only that profile's worker.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.
 - The scheduler profile selector loads configured Facebook profiles from `GET /api/facebook-profiles` and filters them by campaign category.
