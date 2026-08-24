@@ -3381,13 +3381,28 @@ textarea {
 
 .schedule-folder-create input {
   min-width: 200px;
+  background: rgba(0, 0, 0, .45);
+  border: 1px solid var(--border-strong);
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  outline: none;
+}
+
+.schedule-folder-create input::placeholder {
+  color: rgba(255, 255, 255, .72);
+}
+
+.schedule-folder-create input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .schedule-folder-list > button,
 .schedule-folder-item > button:first-child {
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, .24);
-  color: var(--muted);
+  color: rgba(255, 255, 255, .88);
   border-radius: 10px;
   padding: 8px 10px;
   display: inline-flex;
