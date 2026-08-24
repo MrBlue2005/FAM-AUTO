@@ -23,8 +23,21 @@ export function parseZonereHtml(html: string, sourceUrl: string): RawPropertyDat
     const label = decode(match[1]).replace(/:$/, "");
     if (label && label.length <= 50) facts[label] ??= decode(match[2]);
   }
+  const leafTexts = [...html.matchAll(/<(?:span|p|strong|b|div)[^>]*>\s*([^<>]+?)\s*<\/(?:span|p|strong|b|div)>/gi)]
+    .map((match) => decode(match[1]))
+    .filter((value) => value.length > 0 && value.length <= 120);
+  const knownLabels = new Set([
+    "tip proprietate", "tip tranzactie", "suprafata utila", "suprafata construita", "suprafata teren",
+    "nr. camere", "nr. bai", "nr. balcoane", "nr. terase", "regim de inaltime", "an constructie",
+    "stare", "orientare", "structura", "clasa energetica",
+  ]);
+  leafTexts.forEach((label, index) => {
+    const normalized = decode(label).normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+    const value = leafTexts[index + 1];
+    if (knownLabels.has(normalized) && value) facts[label] ??= value;
+  });
   const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  const sectionDescription = html.match(/<h[1-6][^>]*>\s*Descriere proprietate\s*<\/h[1-6]>([\s\S]*?)(?=<h[1-6][^>]*>|$)/i);
+  const sectionDescription = html.match(/<h[1-6][^>]*>\s*(?:Descriere proprietate|Despre Proprietate)\s*<\/h[1-6]>([\s\S]*?)(?=<h[1-6][^>]*>\s*(?:Facilit(?:a|ă)ți proprietate|Dotări\s*&\s*Facilități|Lifestyle în zonă|Galerie Foto|Toate Caracteristicile)\s*<\/h[1-6]>|$)/i);
   const descriptionMatch = sectionDescription
     ?? html.match(/<(?:article|div)[^>]*class=["'][^"']*description[^"']*["'][^>]*>([\s\S]*?)<\/(?:article|div)>/i);
   const pageText = decode(html).slice(0, 30_000);

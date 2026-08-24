@@ -6,9 +6,13 @@ import type { PropertySourceAdapter, RawPropertyData } from "./types";
 const labels: Record<string, keyof PropertyData> = {
   pret: "price",
   tip: "propertyType",
+  "tip proprietate": "propertyType",
+  "tip tranzactie": "transactionType",
   camere: "rooms",
+  "nr. camere": "rooms",
   dormitoare: "bedrooms",
   bai: "bathrooms",
+  "nr. bai": "bathrooms",
   "suprafata utila": "usableAreaSqm",
   "suprafata construita": "totalAreaSqm",
   "suprafata totala": "totalAreaSqm",
@@ -18,6 +22,7 @@ const labels: Record<string, keyof PropertyData> = {
   etajul: "floor",
   niveluri: "totalFloors",
   "an constructie": "constructionYear",
+  "regim de inaltime": "totalFloors",
   compartimentare: "layout",
   parcare: "parkingSpaces",
 };
@@ -71,6 +76,13 @@ function urlContext(sourceUrl: string): {
 function floorsFromValue(value: string): number | null {
   const matches = [...value.matchAll(/(?:P\+|\/\s*(?:P\+)?)(\d+)/gi)];
   return matches.length ? normalizeNumber(matches.at(-1)?.[1]) : null;
+}
+
+function transactionTypeFromValue(value: string): PropertyData["transactionType"] {
+  const normalized = normalizeLabel(value);
+  if (normalized.includes("inchiri")) return "rent";
+  if (normalized.includes("vanz")) return "sale";
+  return null;
 }
 
 function addressFromDescription(value: string | null): string | null {
@@ -133,6 +145,7 @@ export function normalizeZonereRaw(raw: RawPropertyData): PropertyData {
     }
     if (key === "floor" || key === "layout" || key === "propertyType") result[key] = text(rawValue);
     else if (key === "constructionYear") result[key] = normalizeNumber(rawValue)?.valueOf() ?? null;
+    else if (key === "transactionType") result.transactionType ??= transactionTypeFromValue(rawValue);
     else if (key === "price") {
       result.price ??= normalizeNumber(rawValue);
       result.currency ??= normalizeCurrency(rawValue);
@@ -185,11 +198,13 @@ export class ZonereAdapter implements PropertySourceAdapter {
           const to = end ? all.indexOf(end as HTMLElement) : all.length;
           return all.slice(Math.max(0, from), to < 0 ? all.length : to);
         };
-        const sectionText = (label: string, nextLabel: string) => {
-          const start = marker(label);
+        const sectionText = (startLabels: string[], endLabels: string[]) => {
+          const start = startLabels.map(marker).find(Boolean);
           if (!start) return null;
           const startIndex = all.indexOf(start);
-          const next = all.slice(startIndex + 1).find((element) => normalized(element.textContent) === nextLabel);
+          const next = all.slice(startIndex + 1).find((element) =>
+            endLabels.includes(normalized(element.textContent))
+          );
           if (!next) return null;
           const range = document.createRange();
           range.setStartAfter(start);
@@ -208,8 +223,10 @@ export class ZonereAdapter implements PropertySourceAdapter {
         });
 
         const facts: Record<string, string> = {};
-        const detailsHeading = marker("detalii proprietate");
-        const descriptionHeading = marker("descriere proprietate");
+        const detailsHeading = marker("detalii proprietate")
+          ?? marker("toate caracteristicile")
+          ?? marker("caracteristici");
+        const descriptionHeading = marker("descriere proprietate") ?? marker("despre proprietate");
         const detailElements = elementsBetween(detailsHeading, descriptionHeading);
         detailElements.forEach((element) => {
           if (!["LI", "TR"].includes(element.tagName)) return;
@@ -232,6 +249,28 @@ export class ZonereAdapter implements PropertySourceAdapter {
           }
         });
 
+        // Noua interfață Zonere redă detaliile ca elemente succesive (etichetă,
+        // apoi valoare), nu neapărat în <li>, <tr> sau <dl>.
+        const detailLabels = new Set([
+          "pret", "tip", "tip proprietate", "tip tranzactie", "camere", "nr. camere",
+          "dormitoare", "bai", "nr. bai", "suprafata utila", "suprafata construita",
+          "suprafata totala", "suprafata teren", "suprafata terasa", "etaj", "etajul",
+          "niveluri", "an constructie", "regim de inaltime", "compartimentare", "parcare",
+          "nr. balcoane", "nr. terase", "stare", "orientare",
+          "structura", "clasa energetica", "comision", "cod proprietate",
+        ]);
+        const leafTexts = all
+          .filter((element) => element.children.length === 0)
+          .map((element) => clean(element.textContent))
+          .filter((value): value is string => typeof value === "string" && value.length <= 120);
+        leafTexts.forEach((label, index) => {
+          const normalizedLabel = normalized(label).replace(/:$/, "");
+          if (!detailLabels.has(normalizedLabel)) return;
+          const value = leafTexts[index + 1];
+          if (typeof value !== "string" || detailLabels.has(normalized(value).replace(/:$/, ""))) return;
+          facts[label.replace(/:$/, "")] ??= value;
+        });
+
         const h1 = document.querySelector("h1");
         const price = elementsBetween(h1 ?? undefined, detailsHeading)
           .filter((element) => element.children.length === 0)
@@ -248,7 +287,10 @@ export class ZonereAdapter implements PropertySourceAdapter {
         return {
           sourceUrl,
           title: clean(h1?.textContent) ?? clean(document.title),
-          description: sectionText("descriere proprietate", "facilitati proprietate"),
+          description: sectionText(
+            ["descriere proprietate", "despre proprietate"],
+            ["facilitati proprietate", "dotari & facilitati", "lifestyle in zona", "galerie foto", "toate caracteristicile"]
+          ),
           jsonLd, openGraph, facts, images,
           pageText: (clean(clone.innerText) ?? "").slice(0, 30_000),
         };

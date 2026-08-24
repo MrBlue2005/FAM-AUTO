@@ -57,6 +57,35 @@ describe("adaptorul Zonere", () => {
   });
 });
 
+describe("interfața Zonere nouă", () => {
+  it("extrage descrierea și perechile de detalii", () => {
+    const html = `
+      <h1>Casă premium de vânzare în Adunații Copăceni</h1>
+      <p>289.900 €</p>
+      <h2>Despre Proprietate</h2><p>Descrierea completă a proprietății premium.</p>
+      <h2>Lifestyle în zonă</h2>
+      <div>Tip proprietate</div><div>Casa / Vila</div>
+      <div>Tip tranzacție</div><div>De Vânzare</div>
+      <div>Suprafață utilă</div><div>326 m²</div>
+      <div>Suprafață construită</div><div>390 m²</div>
+      <div>Suprafață teren</div><div>492 m²</div>
+      <div>Nr. camere</div><div>6</div>
+      <div>Nr. băi</div><div>2</div>
+      <div>An construcție</div><div>2020</div>`;
+    const property = normalizeZonereRaw(parseZonereHtml(html, "https://www.zonere.ro/casa-premium-de-vanzare"));
+    expect(property.originalDescription).toContain("Descrierea completă");
+    expect(property.price).toBe(289900);
+    expect(property.propertyType).toBe("Casa / Vila");
+    expect(property.transactionType).toBe("sale");
+    expect(property.usableAreaSqm).toBe(326);
+    expect(property.totalAreaSqm).toBe(390);
+    expect(property.landAreaSqm).toBe(492);
+    expect(property.rooms).toBe(6);
+    expect(property.bathrooms).toBe(2);
+    expect(property.constructionYear).toBe(2020);
+  });
+});
+
 describe("generarea structurată", () => {
   const property = {
     ...emptyProperty("https://zonere.ro/oferta/test"), title: "Apartament 3 camere", rooms: 3,

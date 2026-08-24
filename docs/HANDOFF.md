@@ -67,6 +67,7 @@ Always verify these values with `git status` and `git log`; this document descri
 ### Property description generator
 
 - Standalone Next.js application in `property-copywriter/`, served locally on port 3100.
+- The Zonere adapter supports the current listing layout, including the `Despre Proprietate` section and label/value property details. It was validated live on the Adunații Copăceni listing supplied on 2026-08-24.
 - Its header uses the shared RX emblem in the generator green palette; the launcher displays red and green application-specific RX logos on the corresponding cards, with accessible labeling and reduced-motion support.
 - Secure Zonere listing extraction, including catalog and shortlink support.
 - Editable structured property data and formatted social-media descriptions.
