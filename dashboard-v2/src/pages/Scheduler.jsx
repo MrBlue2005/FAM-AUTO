@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Clock3, Pause, Play, Plus, Save, Trash2 } from 'lucide-react';
+import { CalendarClock, Clock3, Folder, FolderPlus, Pause, Play, Plus, Save, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 
 const weekDays = [
@@ -22,6 +22,7 @@ function freshForm(config = {}) {
     daysOfWeek: [1, 2, 3, 4, 5],
     time: '09:00',
     campaignCategory: category,
+    folderId: null,
     groupListCategory: config.selectedGroupListCategory && config.selectedGroupListCategory !== 'all'
       ? config.selectedGroupListCategory
       : 'Romania',
@@ -56,6 +57,9 @@ function schedulePayload(schedule) {
 
 export default function Scheduler() {
   const [schedules, setSchedules] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [selectedFolderId, setSelectedFolderId] = useState('all');
+  const [folderName, setFolderName] = useState('');
   const [timezone, setTimezone] = useState('local');
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -83,6 +87,7 @@ export default function Scheduler() {
     const fetchedProfiles = profileData.profiles || [];
     const mergedConfig = { ...configData, facebookProfiles: fetchedProfiles };
     setSchedules(scheduleData.schedules || []);
+    setFolders(scheduleData.folders || []);
     setTimezone(scheduleData.timezone || 'local');
     setProperties(propertyData);
     setJobs(jobData);
@@ -103,6 +108,7 @@ export default function Scheduler() {
         const fetchedProfiles = profileData.profiles || [];
         const mergedConfig = { ...configData, facebookProfiles: fetchedProfiles };
         setSchedules(scheduleData.schedules || []);
+        setFolders(scheduleData.folders || []);
         setTimezone(scheduleData.timezone || 'local');
         setProperties(propertyData);
         setJobs(jobData);
@@ -135,6 +141,15 @@ export default function Scheduler() {
       .sort((a, b) => a.localeCompare(b, 'ro')),
     [groups]
   );
+  const folderNameById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders]
+  );
+  const visibleSchedules = useMemo(() => {
+    if (selectedFolderId === 'all') return schedules;
+    if (selectedFolderId === 'none') return schedules.filter((schedule) => !schedule.folderId);
+    return schedules.filter((schedule) => schedule.folderId === selectedFolderId);
+  }, [schedules, selectedFolderId]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -170,8 +185,41 @@ export default function Scheduler() {
 
   function resetForm() {
     setEditingId(null);
-    setForm(freshForm(config));
+    setForm({ ...freshForm(config), folderId: selectedFolderId === 'all' || selectedFolderId === 'none' ? null : selectedFolderId });
     setMessage('');
+  }
+
+  async function createFolder() {
+    const name = folderName.trim();
+    if (!name) return setMessage('Introdu numele folderului.');
+    try {
+      const folder = await api.createScheduleFolder(name);
+      setFolderName('');
+      setSelectedFolderId(folder.id);
+      setForm((current) => ({ ...current, folderId: folder.id }));
+      setMessage(`Folderul „${folder.name}” a fost creat. Programările noi vor fi adăugate aici.`);
+      await loadData();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function deleteFolder(folder) {
+    if (!window.confirm(`Ștergi folderul „${folder.name}”? Programările rămân salvate, în „Fără folder”.`)) return;
+    try {
+      await api.deleteScheduleFolder(folder.id);
+      if (selectedFolderId === folder.id) setSelectedFolderId('none');
+      if (form.folderId === folder.id) setForm((current) => ({ ...current, folderId: null }));
+      setMessage(`Folderul „${folder.name}” a fost șters; programările au fost păstrate.`);
+      await loadData();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  function chooseFolder(folderId) {
+    setSelectedFolderId(folderId);
+    if (!editingId) setForm((current) => ({ ...current, folderId: folderId === 'all' || folderId === 'none' ? null : folderId }));
   }
 
   async function saveSchedule() {
@@ -184,11 +232,15 @@ export default function Scheduler() {
 
     setSaving(true);
     try {
-      if (editingId) await api.updateSchedule(editingId, form);
-      else await api.createSchedule(form);
+      const saved = editingId ? await api.updateSchedule(editingId, form) : await api.createSchedule(form);
       setMessage(editingId ? 'Programarea a fost actualizata.' : 'Programarea a fost creata.');
       setEditingId(null);
-      setForm(freshForm(config));
+      setForm({
+        ...freshForm(config),
+        folderId: selectedFolderId === 'all' || selectedFolderId === 'none'
+          ? saved.folderId || null
+          : selectedFolderId,
+      });
       await loadData();
     } catch (error) {
       setMessage(error.message);
@@ -263,6 +315,7 @@ export default function Scheduler() {
 
         <div className="schedule-form-grid">
           <label>Tip campanie<select value={form.campaignCategory} onChange={(event) => setCategory(event.target.value)}><option value="real_estate">Imobiliare</option><option value="jobs">Joburi</option></select></label>
+          <label>Folder<select value={form.folderId || ''} onChange={(event) => updateField('folderId', event.target.value || null)}><option value="">Fără folder</option>{folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label>
           <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => updateField('facebookProfileId', event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
           <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}>{groupListCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
           <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
@@ -295,13 +348,24 @@ export default function Scheduler() {
 
       <section className="schedule-list-section">
         <div className="panel-title-row"><div><h2>Programari salvate</h2><p className="muted-text">Schedulerul functioneaza cat timp API-ul este pornit.</p></div><strong>{schedules.length}</strong></div>
+        <div className="schedule-folder-toolbar">
+          <div className="schedule-folder-create">
+            <input value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Nume folder nou" maxLength="80" />
+            <button className="secondary-button" type="button" onClick={createFolder}><FolderPlus size={16} /> Creeaza folder</button>
+          </div>
+          <div className="schedule-folder-list" aria-label="Foldere programari">
+            <button className={selectedFolderId === 'all' ? 'active' : ''} type="button" onClick={() => chooseFolder('all')}>Toate ({schedules.length})</button>
+            <button className={selectedFolderId === 'none' ? 'active' : ''} type="button" onClick={() => chooseFolder('none')}>Fara folder ({schedules.filter((schedule) => !schedule.folderId).length})</button>
+            {folders.map((folder) => <span className="schedule-folder-item" key={folder.id}><button className={selectedFolderId === folder.id ? 'active' : ''} type="button" onClick={() => chooseFolder(folder.id)}><Folder size={14} /> {folder.name} ({schedules.filter((schedule) => schedule.folderId === folder.id).length})</button><button className="schedule-folder-delete" type="button" title={`Sterge folderul ${folder.name}`} onClick={() => deleteFolder(folder)}><Trash2 size={13} /></button></span>)}
+          </div>
+        </div>
         <div className="schedule-list">
-          {schedules.map((schedule) => (
+          {visibleSchedules.map((schedule) => (
             <article className={`schedule-card ${schedule.enabled ? '' : 'disabled'}`} key={schedule.id}>
               <div className="schedule-card-main">
                 <div className="schedule-card-title"><span className={`schedule-state ${schedule.enabled ? 'active' : ''}`}><CalendarClock size={15} />{schedule.enabled ? 'Activa' : 'Pauza'}</span><h3>{schedule.name}</h3></div>
                 <div className="schedule-when"><Clock3 size={16} /><strong>{schedule.time}</strong><span>{weekDays.filter((day) => schedule.daysOfWeek.includes(day.value)).map((day) => day.short).join(', ')}</span></div>
-                <p>{schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
+                <p>{folderNameById.get(schedule.folderId) || 'Fara folder'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
                 <div className="schedule-run-meta"><span>Urmatoarea: <strong>{formatDate(schedule.nextRunAt)}</strong></span><span>Ultima: <strong>{schedule.lastStatus === 'never' ? 'niciodata' : `${schedule.lastStatus} / ${formatDate(schedule.lastRunAt)}`}</strong></span></div>
                 {schedule.lastMessage && <small className="schedule-last-message">{schedule.lastMessage}</small>}
               </div>
@@ -313,7 +377,7 @@ export default function Scheduler() {
               </div>
             </article>
           ))}
-          {!schedules.length && <div className="schedule-empty large">Nu exista programari. Creeaza prima programare folosind formularul de mai sus.</div>}
+          {!visibleSchedules.length && <div className="schedule-empty large">Nu exista programari în acest folder. Creeaza una din formularul de mai sus.</div>}
         </div>
       </section>
     </div>

@@ -851,7 +851,23 @@ app.post('/api/runs/:runId/archive', (req, res) => {
 /* CAMPAIGN SCHEDULES */
 
 app.get('/api/schedules', (req, res) => {
-  res.json({ timezone: ScheduleManager.getSystemTimeZone(), schedules: ScheduleManager.list() });
+  res.json({ timezone: ScheduleManager.getSystemTimeZone(), schedules: ScheduleManager.list(), folders: ScheduleManager.listFolders() });
+});
+
+app.post('/api/schedule-folders', (req, res) => {
+  try {
+    res.status(201).json(ScheduleManager.createFolder(req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/schedule-folders/:folderId', (req, res) => {
+  try {
+    res.json(ScheduleManager.removeFolder(req.params.folderId));
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
 });
 
 app.post('/api/schedules', (req, res) => {

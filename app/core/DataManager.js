@@ -111,6 +111,16 @@ function saveSchedules(schedules) {
   return schedules;
 }
 
+function getScheduleFolders() {
+  return readJson(path.join(dataPath, 'scheduleFolders.json'), []);
+}
+
+function saveScheduleFolders(folders) {
+  if (!Array.isArray(folders)) throw new Error('Lista de foldere pentru programari trebuie sa fie un array.');
+  writeJson(path.join(dataPath, 'scheduleFolders.json'), folders);
+  return folders;
+}
+
 function pruneSchedulesForCampaign(schedules, campaignId, campaignCategory) {
   const normalizedCategory = campaignCategory === 'jobs' ? 'jobs' : 'real_estate';
   let updatedCount = 0;
@@ -370,7 +380,7 @@ function addAuditEntry(entry) {
 }
 
 function createBackup() {
-  return { format: 'rx-ai-studio-backup', version: 1, createdAt: new Date().toISOString(), runtimeConfig: getRuntimeConfig(), groups: getGroups(), schedules: getSchedules(), properties: getProperties(), jobs: getJobs(), history: getHistory(), runs: getCampaignRuns() };
+  return { format: 'rx-ai-studio-backup', version: 1, createdAt: new Date().toISOString(), runtimeConfig: getRuntimeConfig(), groups: getGroups(), schedules: getSchedules(), scheduleFolders: getScheduleFolders(), properties: getProperties(), jobs: getJobs(), history: getHistory(), runs: getCampaignRuns() };
 }
 
 function restoreBackup(backup) {
@@ -402,6 +412,7 @@ function restoreBackup(backup) {
   saveRuntimeConfig(backup.runtimeConfig);
   saveGroups(backup.groups);
   saveSchedules(Array.isArray(backup.schedules) ? backup.schedules : []);
+  saveScheduleFolders(Array.isArray(backup.scheduleFolders) ? backup.scheduleFolders : []);
   replaceCampaignDirectory('properties', backup.properties, saveProperty);
   replaceCampaignDirectory('jobs', backup.jobs, saveJob);
   writeJson(path.join(logsPath, 'history.json'), backup.history);
@@ -477,6 +488,8 @@ module.exports = {
 
   getSchedules,
   saveSchedules,
+  getScheduleFolders,
+  saveScheduleFolders,
   pruneSchedulesForCampaign,
 
   getProperties,

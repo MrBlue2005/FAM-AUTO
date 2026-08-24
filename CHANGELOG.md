@@ -5,6 +5,7 @@
 - Added custom group list categories and Queue/Scheduler filtering so Romanian, international, and other user-defined group sets can be managed and run separately, without changing the Facebook profile or campaign type.
 - Kept existing group data compatible by treating groups without a list category as `Romania`.
 - Updated the Zonere extractor for the current listing layout: it now reads the `Despre Proprietate` description and successive label/value details such as usable area, rooms, bathrooms, land, and construction year.
+- Added persistent folders for campaign schedules. Folders can be created empty, existing schedules can be moved between folders or back to `Fara folder`, and deleting a folder preserves its schedules.
 
 ## Unreleased
 

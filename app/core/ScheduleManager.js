@@ -63,6 +63,20 @@ function normalizeGroupLimit(value) {
   return limit;
 }
 
+function normalizeFolderId(value) {
+  const folderId = String(value || '').trim();
+  if (!folderId) return null;
+  if (!/^[A-Z0-9_-]+$/i.test(folderId)) throw new Error('Folderul programarii este invalid.');
+  return folderId;
+}
+
+function getFolderOrThrow(folderId) {
+  if (!folderId) return null;
+  const folder = DataManager.getScheduleFolders().find((item) => item.id === folderId);
+  if (!folder) throw new Error('Folderul selectat nu exista. Reincarca pagina si incearca din nou.');
+  return folder;
+}
+
 function normalizeSchedule(input = {}, existing = null) {
   const now = new Date();
   const config = DataManager.getRuntimeConfig();
@@ -70,6 +84,10 @@ function normalizeSchedule(input = {}, existing = null) {
   const groupListCategory = String(
     input.groupListCategory || existing?.groupListCategory || DEFAULT_GROUP_LIST_CATEGORY
   ).trim();
+  const folderId = normalizeFolderId(
+    Object.prototype.hasOwnProperty.call(input, 'folderId') ? input.folderId : existing?.folderId
+  );
+  getFolderOrThrow(folderId);
   const profileId = String(input.facebookProfileId || config.facebookProfileId || 'main');
   const profile = (config.facebookProfiles || []).find((item) => item.id === profileId);
   if (!profile) {
@@ -110,6 +128,7 @@ function normalizeSchedule(input = {}, existing = null) {
     // This is intentionally independent from campaignCategory and facebookProfileId.
     // It chooses the list of Facebook groups, not the Facebook account or campaign type.
     groupListCategory: groupListCategory || DEFAULT_GROUP_LIST_CATEGORY,
+    folderId,
     campaignIds: validateCampaignSelection(category, input.campaignIds),
     facebookProfileId: profileId,
     campaignDay,
@@ -139,6 +158,36 @@ function list() {
     if (!b.nextRunAt) return -1;
     return new Date(a.nextRunAt) - new Date(b.nextRunAt);
   });
+}
+
+function listFolders() {
+  return DataManager.getScheduleFolders().slice().sort((a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''), 'ro')
+  );
+}
+
+function createFolder(input = {}) {
+  const name = String(input.name || '').trim();
+  if (!name) throw new Error('Numele folderului este obligatoriu.');
+  if (name.length > 80) throw new Error('Numele folderului poate avea cel mult 80 de caractere.');
+  const folders = DataManager.getScheduleFolders();
+  if (folders.some((folder) => String(folder.name || '').localeCompare(name, 'ro', { sensitivity: 'accent' }) === 0)) {
+    throw new Error('Exista deja un folder cu acest nume.');
+  }
+  const folder = { id: `SCHEDULE_FOLDER_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`, name, createdAt: new Date().toISOString() };
+  DataManager.saveScheduleFolders([...folders, folder]);
+  return folder;
+}
+
+function removeFolder(id) {
+  const folders = DataManager.getScheduleFolders();
+  if (!folders.some((folder) => folder.id === id)) throw new Error('Folderul nu exista.');
+  DataManager.saveScheduleFolders(folders.filter((folder) => folder.id !== id));
+  const schedules = DataManager.getSchedules().map((schedule) =>
+    schedule.folderId === id ? { ...schedule, folderId: null, updatedAt: new Date().toISOString() } : schedule
+  );
+  DataManager.saveSchedules(schedules);
+  return { ok: true, id };
 }
 
 function create(input) {
@@ -277,6 +326,9 @@ module.exports = {
   execute,
   getSystemTimeZone,
   list,
+  listFolders,
+  createFolder,
+  removeFolder,
   normalizeSchedule,
   remove,
   runNow,

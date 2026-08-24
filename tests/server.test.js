@@ -118,6 +118,53 @@ assert.equal(unauthorizedMedia.status, 401);
       body: '[]',
     });
     assert.equal(csrfAccepted.status, 200);
+    const folderCreated = await fetch(`http://127.0.0.1:${port}/api/schedule-folders`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({ name: 'Programari internationale' }),
+    });
+    assert.equal(folderCreated.status, 201);
+    const folder = await folderCreated.json();
+    assert.match(folder.id, /^SCHEDULE_FOLDER_/);
+    const propertyCreated = await fetch(`http://127.0.0.1:${port}/api/properties`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({ id: 'SCHEDULE_FOLDER_PROPERTY', name: 'Property folder test', active: true, posts: [] }),
+    });
+    assert.equal(propertyCreated.status, 200);
+    const scheduleCreated = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        name: 'Programare mutata in folder', enabled: false, daysOfWeek: [1], time: '09:00',
+        campaignCategory: 'real_estate', campaignIds: ['SCHEDULE_FOLDER_PROPERTY'], facebookProfileId: 'main',
+        campaignDay: 1, groupLimit: 1, startFromGroup: 1, publishEnabled: false,
+      }),
+    });
+    assert.equal(scheduleCreated.status, 201);
+    const schedule = await scheduleCreated.json();
+    const scheduleMoved = await fetch(`http://127.0.0.1:${port}/api/schedules/${schedule.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({ ...schedule, folderId: folder.id }),
+    });
+    assert.equal(scheduleMoved.status, 200);
+    assert.equal((await scheduleMoved.json()).folderId, folder.id);
+    const schedulesWithFolder = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(schedulesWithFolder.status, 200);
+    assert.ok((await schedulesWithFolder.json()).folders.some((item) => item.id === folder.id));
+    const folderDeleted = await fetch(`http://127.0.0.1:${port}/api/schedule-folders/${folder.id}`, {
+      method: 'DELETE',
+      headers: { cookie: sessionCookie, 'x-rx-csrf': '1' },
+    });
+    assert.equal(folderDeleted.status, 200);
+    const schedulesAfterFolderDelete = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
+      headers: { cookie: sessionCookie },
+    });
+    const restoredSchedule = (await schedulesAfterFolderDelete.json()).schedules.find((item) => item.id === schedule.id);
+    assert.equal(restoredSchedule.folderId, null);
     const transferCreated = await fetch(`http://127.0.0.1:${port}/api/property-description-transfers`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },

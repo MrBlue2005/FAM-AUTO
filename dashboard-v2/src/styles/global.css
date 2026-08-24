@@ -3365,6 +3365,59 @@ textarea {
   gap: 9px;
 }
 
+.schedule-folder-toolbar {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.schedule-folder-create,
+.schedule-folder-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-folder-create input {
+  min-width: 200px;
+}
+
+.schedule-folder-list > button,
+.schedule-folder-item > button:first-child {
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, .24);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.schedule-folder-list > button.active,
+.schedule-folder-item > button:first-child.active {
+  color: white;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.schedule-folder-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.schedule-folder-delete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px;
+  cursor: pointer;
+}
+
+.schedule-folder-delete:hover { color: var(--danger); }
+
 .schedule-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

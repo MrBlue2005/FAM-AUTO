@@ -185,6 +185,8 @@ export const api = {
   archiveRun: (runId, archived = true) => request(`/runs/${encodeURIComponent(runId)}/archive`, { method: 'POST', body: JSON.stringify({ archived }) }),
 
   getSchedules: () => request('/schedules'),
+  createScheduleFolder: (name) => request('/schedule-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteScheduleFolder: (folderId) => request(`/schedule-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
   createSchedule: (schedule) => request('/schedules', { method: 'POST', body: JSON.stringify(schedule) }),
   updateSchedule: (scheduleId, schedule) => request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'PUT', body: JSON.stringify(schedule) }),
   deleteSchedule: (scheduleId) => request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' }),

@@ -40,6 +40,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
+- Persistent schedule folders: create folders, assign existing or new schedules, filter schedules by folder, and safely delete a folder without deleting its schedules.
 - Deleting a property or job now removes its reference from mixed schedules and deletes schedules left without campaigns.
 - Scheduled runs default to TEST mode; LIVE schedules require an explicit publishing confirmation and overlapping robot runs are skipped.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.
