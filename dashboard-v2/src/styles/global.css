@@ -3379,21 +3379,25 @@ textarea {
   gap: 9px;
 }
 
-.schedule-folder-toolbar {
+.schedule-folder-toolbar,
+.campaign-folder-toolbar {
   display: grid;
   gap: 12px;
   margin: 0 0 16px;
 }
 
 .schedule-folder-create,
-.schedule-folder-list {
+.schedule-folder-list,
+.campaign-folder-create,
+.campaign-folder-list {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.schedule-folder-create input {
+.schedule-folder-create input,
+.campaign-folder-create input {
   min-width: 200px;
   background: rgba(0, 0, 0, .45);
   border: 1px solid var(--border-strong);
@@ -3403,17 +3407,21 @@ textarea {
   outline: none;
 }
 
-.schedule-folder-create input::placeholder {
+.schedule-folder-create input::placeholder,
+.campaign-folder-create input::placeholder {
   color: rgba(255, 255, 255, .72);
 }
 
-.schedule-folder-create input:focus {
+.schedule-folder-create input:focus,
+.campaign-folder-create input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .schedule-folder-list > button,
-.schedule-folder-item > button:first-child {
+.schedule-folder-item > button:first-child,
+.campaign-folder-list > button,
+.campaign-folder-item > button:first-child {
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, .24);
   color: rgba(255, 255, 255, .88);
@@ -3426,18 +3434,22 @@ textarea {
 }
 
 .schedule-folder-list > button.active,
-.schedule-folder-item > button:first-child.active {
+.schedule-folder-item > button:first-child.active,
+.campaign-folder-list > button.active,
+.campaign-folder-item > button:first-child.active {
   color: white;
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-.schedule-folder-item {
+.schedule-folder-item,
+.campaign-folder-item {
   display: inline-flex;
   align-items: center;
 }
 
-.schedule-folder-delete {
+.schedule-folder-delete,
+.campaign-folder-delete {
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -3445,7 +3457,25 @@ textarea {
   cursor: pointer;
 }
 
-.schedule-folder-delete:hover { color: var(--danger); }
+.schedule-folder-delete:hover,
+.campaign-folder-delete:hover { color: var(--danger); }
+
+.campaign-folder-select {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.campaign-folder-select select {
+  min-width: 170px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #17171d;
+  color: #fff;
+  padding: 7px 8px;
+}
 
 .schedule-card {
   display: grid;

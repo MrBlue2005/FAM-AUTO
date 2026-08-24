@@ -183,6 +183,16 @@ function saveScheduleFolders(folders) {
   return folders;
 }
 
+function getCampaignFolders() {
+  return readJson(path.join(dataPath, 'campaignFolders.json'), []);
+}
+
+function saveCampaignFolders(folders) {
+  if (!Array.isArray(folders)) throw new Error('Lista de foldere pentru campanii trebuie sa fie un array.');
+  writeJson(path.join(dataPath, 'campaignFolders.json'), folders);
+  return folders;
+}
+
 function pruneSchedulesForCampaign(schedules, campaignId, campaignCategory) {
   const normalizedCategory = campaignCategory === 'jobs' ? 'jobs' : 'real_estate';
   let updatedCount = 0;
@@ -310,6 +320,18 @@ function deleteJob(jobId) {
   removeCampaignFromSchedules(jobId, 'jobs');
 
   return getJobs();
+}
+
+function removeCampaignFolderReferences(folderId) {
+  const properties = getProperties();
+  const jobs = getJobs();
+
+  properties.filter((item) => item.folderId === folderId).forEach((item) => {
+    saveProperty({ ...item, folderId: null });
+  });
+  jobs.filter((item) => item.folderId === folderId).forEach((item) => {
+    saveJob({ ...item, folderId: null });
+  });
 }
 
 /* HISTORY */
@@ -445,7 +467,7 @@ function addAuditEntry(entry) {
 }
 
 function createBackup() {
-  return { format: 'rx-ai-studio-backup', version: 1, createdAt: new Date().toISOString(), runtimeConfig: getRuntimeConfig(), groups: getGroups(), schedules: getSchedules(), scheduleFolders: getScheduleFolders(), properties: getProperties(), jobs: getJobs(), history: getHistory(), runs: getCampaignRuns() };
+  return { format: 'rx-ai-studio-backup', version: 1, createdAt: new Date().toISOString(), runtimeConfig: getRuntimeConfig(), groups: getGroups(), schedules: getSchedules(), scheduleFolders: getScheduleFolders(), campaignFolders: getCampaignFolders(), properties: getProperties(), jobs: getJobs(), history: getHistory(), runs: getCampaignRuns() };
 }
 
 function restoreBackup(backup) {
@@ -478,6 +500,7 @@ function restoreBackup(backup) {
   saveGroups(backup.groups);
   saveSchedules(Array.isArray(backup.schedules) ? backup.schedules : []);
   saveScheduleFolders(Array.isArray(backup.scheduleFolders) ? backup.scheduleFolders : []);
+  saveCampaignFolders(Array.isArray(backup.campaignFolders) ? backup.campaignFolders : []);
   replaceCampaignDirectory('properties', backup.properties, saveProperty);
   replaceCampaignDirectory('jobs', backup.jobs, saveJob);
   writeJson(path.join(logsPath, 'history.json'), backup.history);
@@ -558,6 +581,8 @@ module.exports = {
   saveSchedules,
   getScheduleFolders,
   saveScheduleFolders,
+  getCampaignFolders,
+  saveCampaignFolders,
   pruneSchedulesForCampaign,
 
   getProperties,
@@ -567,6 +592,7 @@ module.exports = {
   getJobs,
   saveJob,
   deleteJob,
+  removeCampaignFolderReferences,
 
   getHistory,
   addHistory,

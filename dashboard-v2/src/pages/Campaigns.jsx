@@ -15,6 +15,9 @@ function getCampaignTypeLabel(type) {
 export default function Campaigns({ onChangePage, onEditCampaign }) {
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [folderName, setFolderName] = useState('');
+  const [folderFilter, setFolderFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -24,18 +27,20 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
   const [pendingCampaignName, setPendingCampaignName] = useState('');
 
   async function loadCampaigns() {
-    const [propertiesData, jobsData] = await Promise.all([api.getProperties(), api.getJobs()]);
+    const [propertiesData, jobsData, foldersData] = await Promise.all([api.getProperties(), api.getJobs(), api.getCampaignFolders()]);
     setProperties(propertiesData);
     setJobs(jobsData);
+    setFolders(foldersData);
   }
 
   useEffect(() => {
     let ignore = false;
 
-    Promise.all([api.getProperties(), api.getJobs()]).then(([propertiesData, jobsData]) => {
+    Promise.all([api.getProperties(), api.getJobs(), api.getCampaignFolders()]).then(([propertiesData, jobsData, foldersData]) => {
       if (ignore) return;
       setProperties(propertiesData);
       setJobs(jobsData);
+      setFolders(foldersData);
     });
 
     return () => {
@@ -97,6 +102,8 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
     if (typeFilter !== 'all' && campaign.type !== typeFilter) return false;
     if (statusFilter === 'active' && !campaign.active) return false;
     if (statusFilter === 'inactive' && campaign.active) return false;
+    if (folderFilter === 'none' && campaign.raw.folderId) return false;
+    if (folderFilter !== 'all' && folderFilter !== 'none' && campaign.raw.folderId !== folderFilter) return false;
 
     return true;
   });
@@ -179,6 +186,32 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
     setMessage(`Campanie clonata: ${clonedCampaign[nameField]}.`);
   }
 
+  async function createFolder() {
+    const name = folderName.trim();
+    if (!name) return;
+    const folder = await api.createCampaignFolder(name);
+    setFolders((items) => [...items, folder].sort((a, b) => a.name.localeCompare(b.name, 'ro')));
+    setFolderName('');
+    setFolderFilter(folder.id);
+    setMessage(`Folder creat: ${folder.name}.`);
+  }
+
+  async function deleteFolder(folder) {
+    if (!window.confirm(`Ștergi folderul „${folder.name}”? Campaniile rămân salvate, fără folder.`)) return;
+    await api.deleteCampaignFolder(folder.id);
+    if (folderFilter === folder.id) setFolderFilter('all');
+    await loadCampaigns();
+    setMessage(`Folder șters: ${folder.name}.`);
+  }
+
+  async function assignFolder(campaign, folderId) {
+    const config = getCampaignApi(campaign);
+    await config.save({ ...campaign.raw, folderId: folderId || null });
+    await loadCampaigns();
+    setOpenMenuId(null);
+    setMessage(`Folder actualizat pentru ${getCampaignName(campaign)}.`);
+  }
+
   function handleExportCampaign(campaign) {
     const blob = new Blob([JSON.stringify(campaign.raw, null, 2)], {
       type: 'application/json',
@@ -253,6 +286,30 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
         <div>
           <span>Joburi</span>
           <strong>{jobCount}</strong>
+        </div>
+      </section>
+
+      <section className="campaign-folder-toolbar">
+        <div className="campaign-folder-create">
+          <input
+            value={folderName}
+            onChange={(event) => setFolderName(event.target.value)}
+            placeholder="Nume folder nou"
+            maxLength="80"
+          />
+          <button className="secondary-button" type="button" onClick={createFolder}>Creează folder</button>
+        </div>
+        <div className="campaign-folder-list" aria-label="Foldere campanii">
+          <button className={folderFilter === 'all' ? 'active' : ''} type="button" onClick={() => setFolderFilter('all')}>Toate ({campaigns.length})</button>
+          <button className={folderFilter === 'none' ? 'active' : ''} type="button" onClick={() => setFolderFilter('none')}>Fără folder ({campaigns.filter((campaign) => !campaign.raw.folderId).length})</button>
+          {folders.map((folder) => (
+            <span className="campaign-folder-item" key={folder.id}>
+              <button className={folderFilter === folder.id ? 'active' : ''} type="button" onClick={() => setFolderFilter(folder.id)}>
+                {folder.name} ({campaigns.filter((campaign) => campaign.raw.folderId === folder.id).length})
+              </button>
+              <button className="campaign-folder-delete" type="button" title={`Șterge folderul ${folder.name}`} onClick={() => deleteFolder(folder)}>×</button>
+            </span>
+          ))}
         </div>
       </section>
 
@@ -335,6 +392,13 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
                   </button>
                   <button onClick={() => handleRunCampaign(campaign)}>Ruleaza doar aceasta</button>
                   <button onClick={() => handleCloneCampaign(campaign)}>Cloneaza</button>
+                  <label className="campaign-folder-select">
+                    Folder
+                    <select value={campaign.raw.folderId || ''} onChange={(event) => assignFolder(campaign, event.target.value)}>
+                      <option value="">Fără folder</option>
+                      {folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}
+                    </select>
+                  </label>
                   <button onClick={() => handleExportCampaign(campaign)}>Export JSON</button>
                   <button className="danger-link" onClick={() => handleDeleteCampaign(campaign)}>
                     Sterge definitiv

@@ -197,7 +197,7 @@ app.use('/api', (req, res, next) => {
 
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || !RobotManager.isRunning()) return next();
-  const protectedRoutes = ['/groups', '/properties', '/jobs', '/media', '/backup/import', '/runtime-config'];
+  const protectedRoutes = ['/groups', '/properties', '/jobs', '/campaign-folders', '/media', '/backup/import', '/runtime-config'];
   if (!protectedRoutes.some((route) => req.path.startsWith(route))) return next();
   return res.status(409).json({ error: 'Datele campaniilor nu pot fi modificate cat timp robotul ruleaza.' });
 });
@@ -261,6 +261,39 @@ app.post('/api/groups', (req, res) => {
 });
 
 /* PROPERTIES */
+
+app.get('/api/campaign-folders', (req, res) => {
+  res.json(DataManager.getCampaignFolders());
+});
+
+app.post('/api/campaign-folders', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Numele folderului este obligatoriu.' });
+  if (name.length > 80) return res.status(400).json({ error: 'Numele folderului poate avea cel mult 80 de caractere.' });
+
+  const folders = DataManager.getCampaignFolders();
+  if (folders.some((folder) => String(folder.name || '').localeCompare(name, 'ro', { sensitivity: 'accent' }) === 0)) {
+    return res.status(409).json({ error: 'Exista deja un folder cu acest nume.' });
+  }
+
+  const folder = {
+    id: `CAMPAIGN_FOLDER_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+    name,
+    createdAt: new Date().toISOString(),
+  };
+  DataManager.saveCampaignFolders([...folders, folder]);
+  return res.status(201).json(folder);
+});
+
+app.delete('/api/campaign-folders/:folderId', (req, res) => {
+  const folders = DataManager.getCampaignFolders();
+  if (!folders.some((folder) => folder.id === req.params.folderId)) {
+    return res.status(404).json({ error: 'Folderul nu exista.' });
+  }
+  DataManager.saveCampaignFolders(folders.filter((folder) => folder.id !== req.params.folderId));
+  DataManager.removeCampaignFolderReferences(req.params.folderId);
+  return res.json({ ok: true, id: req.params.folderId });
+});
 
 app.get('/api/properties', (req, res) => {
   res.json(DataManager.getProperties());

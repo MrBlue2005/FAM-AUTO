@@ -91,6 +91,10 @@ export const api = {
       method: 'DELETE',
     }),
 
+  getCampaignFolders: () => request('/campaign-folders'),
+  createCampaignFolder: (name) => request('/campaign-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteCampaignFolder: (folderId) => request(`/campaign-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
+
   getJobs: () => request('/jobs'),
   saveJob: (job) =>
     request('/jobs', {
