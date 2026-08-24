@@ -79,6 +79,45 @@ function writeJson(filePath, data) {
   }
 }
 
+function withFileLock(filePath, callback) {
+  const lockPath = `${filePath}.lock`;
+  const deadline = Date.now() + 15000;
+  const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+  let lockHandle;
+
+  while (!lockHandle) {
+    try {
+      lockHandle = fs.openSync(lockPath, 'wx');
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+
+      try {
+        const lockAge = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (lockAge > 120000) fs.unlinkSync(lockPath);
+      } catch (lockError) {
+        if (lockError.code !== 'ENOENT') throw lockError;
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error(`Fisier blocat prea mult timp: ${path.basename(filePath)}`);
+      }
+
+      Atomics.wait(sleepBuffer, 0, 0, 25);
+    }
+  }
+
+  try {
+    return callback();
+  } finally {
+    fs.closeSync(lockHandle);
+    try {
+      fs.unlinkSync(lockPath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
 function useDefaultIfEmpty(value, fallback) {
   return Array.isArray(value) && value.length > 0 ? value : fallback;
 }
@@ -98,6 +137,28 @@ function saveGroups(groups) {
   if (!Array.isArray(groups)) throw new Error('Lista de grupuri trebuie sa fie un array.');
   writeJson(path.join(dataPath, 'groups.json'), groups);
   return groups;
+}
+
+function updateGroup(groupId, updater) {
+  assertEntityId(groupId, 'Grup');
+  if (typeof updater !== 'function') throw new Error('Actualizarea grupului trebuie sa fie o functie.');
+
+  const groupsPath = path.join(dataPath, 'groups.json');
+
+  return withFileLock(groupsPath, () => {
+    const groups = readJson(groupsPath, []);
+    const groupIndex = groups.findIndex((group) => group.id === groupId);
+
+    if (groupIndex === -1) return null;
+
+    const updatedGroup = updater(groups[groupIndex]);
+    if (!updatedGroup || typeof updatedGroup !== 'object') return groups[groupIndex];
+
+    groups[groupIndex] = updatedGroup;
+    writeJson(groupsPath, groups);
+
+    return updatedGroup;
+  });
 }
 
 /* SCHEDULES */
@@ -258,16 +319,19 @@ function getHistory() {
 
 function addHistory(entry) {
   const historyPath = path.join(logsPath, 'history.json');
-  const history = getHistory();
 
-  history.push({
-    ...entry,
-    date: new Date().toISOString(),
+  return withFileLock(historyPath, () => {
+    const history = readJson(historyPath, []);
+
+    history.push({
+      ...entry,
+      date: new Date().toISOString(),
+    });
+
+    writeJson(historyPath, history);
+
+    return history;
   });
-
-  writeJson(historyPath, history);
-
-  return history;
 }
 
 function clearHistoryForProperty(propertyId) {
@@ -485,6 +549,7 @@ function saveRuntimeConfig(config) {
 module.exports = {
   getGroups,
   saveGroups,
+  updateGroup,
 
   getSchedules,
   saveSchedules,

@@ -90,13 +90,10 @@ async function discoverAndUpdateGroup(page, group) {
     return group;
   }
 
-  const groups = DataManager.getGroups();
   const detectedType = detectGroupType(discoveredName);
 
-  const updatedGroups = groups.map((item) => {
-    if (item.id !== group.id) return item;
-
-    const updatedGroup = {
+  const updatedGroup = DataManager.updateGroup(group.id, (item) => {
+    const nextGroup = {
       ...item,
       name: discoveredName,
       discoveredName,
@@ -105,13 +102,11 @@ async function discoverAndUpdateGroup(page, group) {
     };
 
     if (!item.overrideType) {
-      updatedGroup.overrideType = detectedType;
+      nextGroup.overrideType = detectedType;
     }
 
-    return updatedGroup;
+    return nextGroup;
   });
-
-  DataManager.saveGroups(updatedGroups);
 
   console.log(`🔎 Grup detectat: ${discoveredName} (${detectedType})`);
 

@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-08-07
+Last updated: 2026-08-24
 
 ## Repository state
 
@@ -44,6 +44,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - In Scheduler, the selected Facebook profile filters the campaign checklist. Explicitly assigned campaigns appear only for their assigned profile; legacy campaigns without a profile appear only for their category's default profile. Backend validation prevents incompatible profile/campaign combinations from being saved.
 - Deleting a property or job now removes its reference from mixed schedules and deletes schedules left without campaigns.
 - Scheduled runs default to TEST mode; LIVE schedules require an explicit publishing confirmation and overlapping robot runs are skipped.
+- Different Facebook profiles can now run campaigns concurrently: every active profile has its own Node/Playwright worker and immutable configuration snapshot. A second worker for the same persistent browser profile is rejected. The Robot page shows all active profile runs; pause, resume, and stop-after-current-group remain intentionally shared safety controls for every active worker.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.
 - The scheduler profile selector loads configured Facebook profiles from `GET /api/facebook-profiles` and filters them by campaign category.
 - Reports dashboard page with filters, detailed events, per-run Excel export, controlled retry, and archiving.
@@ -59,6 +60,7 @@ Always verify these values with `git status` and `git log`; this document descri
 
 - Express API in `server/server.js`.
 - Local JSON-backed properties, jobs, groups, runtime configuration, and history.
+- Parallel workers lock history and group-discovery updates per file, preventing read-modify-write data loss while two profiles post at the same time.
 - Local JSON-backed weekly schedules, evaluated while the API process is running using the server's local timezone.
 - Configurable persistent paths for data, logs, uploads, and browser profiles, plus atomic JSON writes.
 - Same-origin production dashboard serving, `/healthz`, `/readyz`, production environment validation, and controlled process shutdown.

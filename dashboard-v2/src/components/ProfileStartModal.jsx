@@ -22,19 +22,21 @@ export default function ProfileStartModal({ open, onClose, onConfirm }) {
   const [preflight, setPreflight] = useState(null);
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [liveConfirmed, setLiveConfirmed] = useState(false);
+  const [robot, setRobot] = useState(null);
 
   useEffect(() => {
     let ignore = false;
 
     if (!open) return undefined;
 
-    Promise.all([api.getRuntimeConfig(), api.getQueuePlan(), api.getPreflight()])
-      .then(([configData, planData, preflightData]) => {
+    Promise.all([api.getRuntimeConfig(), api.getQueuePlan(), api.getPreflight(), api.getRobotStatus()])
+      .then(([configData, planData, preflightData, robotData]) => {
         if (ignore) return;
 
         setConfig(configData);
         setQueuePlan(planData);
         setPreflight(preflightData);
+        setRobot(robotData);
         setSelectedProfileId(configData.facebookProfileId || configData.facebookProfiles?.[0]?.id || 'main');
         setLiveConfirmed(false);
       });
@@ -54,7 +56,8 @@ export default function ProfileStartModal({ open, onClose, onConfirm }) {
   const profiles = config?.facebookProfiles || [];
   const loading = !config || !queuePlan || !preflight;
   const liveMode = config?.publishEnabled === true;
-  const canStart = Boolean(selectedProfileId) && !loading && preflight?.ok && (!liveMode || liveConfirmed);
+  const activeProfileIds = new Set((robot?.activeRuns || []).map((run) => run.profileId));
+  const canStart = Boolean(selectedProfileId) && !activeProfileIds.has(selectedProfileId) && !loading && preflight?.ok && (!liveMode || liveConfirmed);
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -78,8 +81,8 @@ export default function ProfileStartModal({ open, onClose, onConfirm }) {
                 onChange={(event) => setSelectedProfileId(event.target.value)}
               >
                 {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.label || profile.id}
+                  <option key={profile.id} value={profile.id} disabled={activeProfileIds.has(profile.id)}>
+                    {profile.label || profile.id}{activeProfileIds.has(profile.id) ? ' — rulează deja' : ''}
                   </option>
                 ))}
               </select>
@@ -93,7 +96,7 @@ export default function ProfileStartModal({ open, onClose, onConfirm }) {
                   key={profile.id}
                 >
                   <span>{profile.label || profile.id}</span>
-                  <small>{profileTasks[profile.id]?.total || 0} taskuri active</small>
+                  <small>{activeProfileIds.has(profile.id) ? 'Rulează deja' : `${profileTasks[profile.id]?.total || 0} taskuri active`}</small>
                 </div>
               ))}
             </div>

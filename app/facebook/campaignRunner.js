@@ -76,7 +76,7 @@ function calculateEta({ startedAt, processed, total }) {
   };
 }
 
-async function waitIfPaused(itemName, groupName = null) {
+async function waitIfPaused(itemName, groupName = null, executionConfig = null) {
   let pauseMessageSent = false;
 
   while (true) {
@@ -114,8 +114,8 @@ async function waitIfPaused(itemName, groupName = null) {
   }
 }
 
-function isGroupCompatibleWithProperty(item, group) {
-  const runtimeConfig = DataManager.getRuntimeConfig();
+function isGroupCompatibleWithProperty(item, group, executionConfig = null) {
+  const runtimeConfig = executionConfig || DataManager.getRuntimeConfig();
   const campaignCategory = getCampaignCategoryForItem(item, runtimeConfig);
   const groupCategory = getGroupCategory(group);
 
@@ -140,7 +140,7 @@ function isGroupCompatibleWithProperty(item, group) {
   return true;
 }
 
-function shouldStopAfterCurrentGroup() {
+function shouldStopAfterCurrentGroup(executionConfig = null) {
   const runtimeConfig = DataManager.getRuntimeConfig();
   return runtimeConfig.stopAfterCurrentGroup === true;
 }
@@ -148,7 +148,7 @@ function shouldStopAfterCurrentGroup() {
 async function runCampaign(page, item, groups, campaignDay, options = {}) {
   const itemName = getItemName(item);
   const history = loadHistory();
-  const runtimeConfig = DataManager.getRuntimeConfig();
+  const runtimeConfig = options.executionConfig || DataManager.getRuntimeConfig();
   const facebookProfileId = options.facebookProfileId || getProfileIdForCampaign(item, runtimeConfig);
   const forceRetryGroupIds = new Set(options.forceRetryGroupIds || []);
 
@@ -169,7 +169,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
     return { processed: 0 };
   }
 
-  let eligibleGroups = options.plannedGroups || getEligibleGroups(item, groups);
+  let eligibleGroups = options.plannedGroups || getEligibleGroups(item, groups, runtimeConfig);
   const propertyProgressBase = Number(options.propertyProgressBase || 0);
   const propertyTotalGroups = Number(
     options.propertyTotalGroups || eligibleGroups.length
@@ -261,7 +261,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
   }
 
   for (const group of eligibleGroups) {
-    await waitIfPaused(itemName, group.name);
+    await waitIfPaused(itemName, group.name, runtimeConfig);
 
     if (
       options.skipGroupsPostedToday &&
@@ -298,7 +298,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
       processedCounter++;
       updateLiveState(group.name, message);
 
-      if (shouldStopAfterCurrentGroup()) {
+      if (shouldStopAfterCurrentGroup(runtimeConfig)) {
         const stopMessage = 'Robotul se oprește după grupul curent.';
         console.log('🛑 Stop după grupul curent.');
         emitEvent('warning', stopMessage);
@@ -314,7 +314,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
         groupUrl: group.url,
         facebookProfileId,
         postingIdentityId: item.postingIdentityId,
-        campaignCategory: getCampaignCategoryForItem(item, DataManager.getRuntimeConfig()),
+        campaignCategory: getCampaignCategoryForItem(item, runtimeConfig),
       };
 
       updateLiveState(group.name, `Deschid grupul: ${group.name}`);
@@ -348,7 +348,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       const discoveredGroup = await discoverAndUpdateGroup(page, group);
 
-      if (!isGroupCompatibleWithProperty(item, discoveredGroup)) {
+      if (!isGroupCompatibleWithProperty(item, discoveredGroup, runtimeConfig)) {
         const message = `Sărit după discovery: ${discoveredGroup.name} nu este compatibil cu campania ${item.transactionType}.`;
 
         console.log(`⏭ ${message}`);
@@ -370,7 +370,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
         processedCounter++;
         updateLiveState(discoveredGroup.name, message);
 
-        if (shouldStopAfterCurrentGroup()) {
+        if (shouldStopAfterCurrentGroup(runtimeConfig)) {
           const stopMessage = 'Robotul se oprește după grupul curent.';
           console.log('🛑 Stop după grupul curent.');
           emitEvent('warning', stopMessage);
@@ -419,7 +419,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
           : `✅ Pregătit și notat în history: ${discoveredGroup.name}`
       );
 
-      if (shouldStopAfterCurrentGroup()) {
+      if (shouldStopAfterCurrentGroup(runtimeConfig)) {
         const stopMessage = 'Robotul se oprește după grupul curent.';
         console.log('🛑 Stop după grupul curent.');
         emitEvent('warning', stopMessage);
@@ -475,7 +475,7 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       console.error(`❌ Eroare la grupul ${group.name}: ${error.message}`);
 
-      if (shouldStopAfterCurrentGroup()) {
+      if (shouldStopAfterCurrentGroup(runtimeConfig)) {
         const stopMessage = 'Robotul se oprește după grupul curent.';
         console.log('🛑 Stop după grupul curent.');
         emitEvent('warning', stopMessage);

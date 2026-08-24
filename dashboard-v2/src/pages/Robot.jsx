@@ -31,6 +31,7 @@ export default function Robot() {
   const status = robot?.robotStatus || 'idle';
   const running = isRunning(status);
   const paused = status === 'paused';
+  const activeRuns = robot?.activeRuns || [];
 
   useEffect(() => {
     let ignore = false;
@@ -80,43 +81,56 @@ export default function Robot() {
 
       <section className="robot-control-grid">
         <button
-          className={`primary-button ${running ? 'control-locked' : ''}`}
-          disabled={running}
+          className="primary-button"
           onClick={() => setStartModalOpen(true)}
         >
-          Start
+          {running ? 'Start alt profil' : 'Start'}
         </button>
         <button
           className={`secondary-button ${paused ? 'control-locked' : ''}`}
           disabled={!running || paused}
           onClick={() => runAction('Pauza ceruta.', api.pauseRobot)}
         >
-          Pause
+          {activeRuns.length > 1 ? 'Pause toate' : 'Pause'}
         </button>
         <button
           className={`primary-button ${!paused ? 'control-locked' : ''}`}
           disabled={!paused}
           onClick={() => runAction('Robot reluat.', api.resumeRobot)}
         >
-          Resume
+          {activeRuns.length > 1 ? 'Resume toate' : 'Resume'}
         </button>
         <button
           className="secondary-button"
           disabled={!running || robot?.stopAfterCurrentGroup}
           onClick={() => runAction('Stop dupa grupul curent.', api.stopRobotAfterCurrent)}
         >
-          Stop dupa grup curent
+          {activeRuns.length > 1 ? 'Stop toate dupa grup' : 'Stop dupa grup curent'}
         </button>
         <button
           className={`danger-button ${running ? 'control-active-danger' : ''}`}
           disabled={!running}
           onClick={() => runAction('Robot oprit.', api.stopRobot)}
         >
-          Stop
+          {activeRuns.length > 1 ? 'Stop toate' : 'Stop'}
         </button>
       </section>
 
       {message && <p className="save-message">{message}</p>}
+
+      {activeRuns.length > 1 && (
+        <section className="editor-panel">
+          <h2>Rulări paralele</h2>
+          <div className="settings-campaign-list">
+            {activeRuns.map((run) => (
+              <div className="settings-campaign-row" key={run.runId}>
+                <div><strong>{run.profileId}</strong><span>{run.currentProperty || 'Se pregătește'} · {run.currentGroup || '-'}</span></div>
+                <span className={`status-pill ${run.robotStatus === 'running' ? 'active' : 'warning'}`}>{run.robotStatus}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <ProfileStartModal
         open={startModalOpen}

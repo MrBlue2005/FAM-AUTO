@@ -26,12 +26,21 @@ function clearRetryFlag(taskId) {
   }
 }
 
+function getExecutionConfig() {
+  try {
+    const parsed = JSON.parse(process.env.RX_EXECUTION_CONFIG || '');
+    return parsed && typeof parsed === 'object' ? parsed : DataManager.getRuntimeConfig();
+  } catch {
+    return DataManager.getRuntimeConfig();
+  }
+}
+
 (async () => {
   let activeContext = null;
 
   try {
     const config = {
-      ...DataManager.getRuntimeConfig(),
+      ...getExecutionConfig(),
       skipGroupsPostedToday: process.env.RX_SKIP_GROUPS_POSTED_TODAY === '1',
     };
     const queuePlan = buildQueuePlan({
@@ -66,11 +75,8 @@ function clearRetryFlag(taskId) {
     console.log('==============================');
 
     for (const task of tasks) {
-      const latestConfig = {
-        ...DataManager.getRuntimeConfig(),
-        skipGroupsPostedToday: config.skipGroupsPostedToday,
-      };
-      if (latestConfig.stopAfterCurrentGroup) break;
+      const latestConfig = config;
+      if (DataManager.getRuntimeConfig().stopAfterCurrentGroup) break;
 
       const latestProperties = DataManager.getProperties();
       const latestJobs = DataManager.getJobs();
@@ -132,6 +138,7 @@ function clearRetryFlag(taskId) {
           propertyStartedAt: propertyStartedAt.get(currentTask.campaignId),
           forceRetryGroupIds: currentTask.retry ? [currentTask.groupId] : [],
           skipGroupsPostedToday: config.skipGroupsPostedToday,
+          executionConfig: config,
         }
       );
 

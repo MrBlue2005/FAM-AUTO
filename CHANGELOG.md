@@ -10,6 +10,9 @@
 
 ## Unreleased
 
+- Allowed two or more campaigns to run concurrently when each uses a different Facebook profile. Each worker now receives an independent immutable execution configuration; attempting to start a second run for the same persistent browser profile is blocked.
+- Updated Scheduler and Robot controls to show active profile runs, permit a different-profile schedule to start, and apply pause/resume/stop-after-current-group as explicit shared safety controls for all active workers.
+- Protected concurrent history writes and group discovery updates with per-file locks so parallel workers do not overwrite each other's results.
 - Synchronized all three property description textareas continuously while any one is resized, preventing the neighboring post cards from shifting until pointer release.
 - Connected RX CREATIVE Tool to the property editor through an authenticated, short-lived transfer: the three generated variants populate days 1-3, preserve existing media draft fields, and open RX PROPULSE directly on the property form without exposing descriptions in the URL.
 - Added automatic smooth scrolling to the edit form for properties and jobs, plus an explicit group edit action that centers and focuses the selected group's editable fields.

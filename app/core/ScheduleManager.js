@@ -251,7 +251,7 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
     }
   }
 
-  if (RobotManager.isRunning()) {
+  if (RobotManager.isRunning(schedule.facebookProfileId)) {
     return saveExecutionResult(schedule, {
       lastRunAt: now.toISOString(),
       lastStatus: 'skipped',
@@ -260,7 +260,7 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
   }
 
   const currentConfig = DataManager.getRuntimeConfig();
-  DataManager.saveRuntimeConfig({
+  const executionConfig = {
     ...currentConfig,
     campaignDay: schedule.campaignDay,
     groupLimit: schedule.groupLimit,
@@ -275,14 +275,15 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
     queueOrder: [],
     pauseRequested: false,
     stopAfterCurrentGroup: false,
-  });
+  };
 
   const robot = RobotManager.start({
     facebookProfileId: schedule.facebookProfileId,
+    executionConfig,
     confirmedPublishEnabled: schedule.publishEnabled && schedule.liveConfirmed,
     skipGroupsPostedToday: schedule.skipGroupsPostedToday !== false,
   });
-  const started = robot.robotStatus === 'running';
+  const started = robot.startedProfileId === schedule.facebookProfileId;
   const skippedToday = robot.preflight?.issues?.some((issue) => issue.code === 'NO_ELIGIBLE_GROUPS_TODAY');
   const result = saveExecutionResult(schedule, {
     lastRunAt: now.toISOString(),

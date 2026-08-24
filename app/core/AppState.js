@@ -16,6 +16,8 @@ const state = {
 
   stopAfterCurrentGroup: false,
   activeRunId: null,
+  activeRunCount: 0,
+  activeRuns: [],
 
   liveFeed: [],
   lastMessage: 'Robot pregătit.',
