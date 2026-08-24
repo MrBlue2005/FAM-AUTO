@@ -127,7 +127,11 @@ export default function Scheduler() {
     (profile) => profileCategory(profile) === form.campaignCategory
   ), [facebookProfiles, form.campaignCategory]);
   const groupListCategories = useMemo(
-    () => Array.from(new Set(groups.map((group) => String(group.groupListCategory || '').trim() || 'Romania')))
+    () => Array.from(new Set([
+      'Romania',
+      'Internationale',
+      ...groups.map((group) => String(group.groupListCategory || '').trim() || 'Romania'),
+    ]))
       .sort((a, b) => a.localeCompare(b, 'ro')),
     [groups]
   );
@@ -260,7 +264,7 @@ export default function Scheduler() {
         <div className="schedule-form-grid">
           <label>Tip campanie<select value={form.campaignCategory} onChange={(event) => setCategory(event.target.value)}><option value="real_estate">Imobiliare</option><option value="jobs">Joburi</option></select></label>
           <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => updateField('facebookProfileId', event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
-          <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}><option value="Romania">Romania</option>{groupListCategories.filter((category) => category !== 'Romania').map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
+          <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}>{groupListCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
           <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
           <label>Limita grupuri<select value={form.groupLimit} onChange={(event) => updateField('groupLimit', event.target.value === 'all' ? 'all' : Number(event.target.value))}><option value="1">1 grup</option><option value="5">5 grupuri</option><option value="10">10 grupuri</option><option value="all">Toate</option></select></label>
           <label>Incepe de la grupul<input type="number" min="1" value={form.startFromGroup} onChange={(event) => updateField('startFromGroup', Number(event.target.value))} /></label>
