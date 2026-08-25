@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import ProfileStartModal from '../components/ProfileStartModal';
 import MediaDropzone from '../components/MediaDropzone';
@@ -58,7 +59,7 @@ function PropertyPreviewModal({ property, profileLabel, onClose }) {
     };
   }, []);
 
-  return (
+  return createPortal(
     <div className="modal-backdrop property-preview-backdrop" onMouseDown={onClose}>
       <section
         className="property-preview-modal"
@@ -95,6 +96,8 @@ function PropertyPreviewModal({ property, profileLabel, onClose }) {
         )}
       </section>
     </div>
+    ,
+    document.body
   );
 }
 
