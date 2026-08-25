@@ -2204,12 +2204,33 @@ textarea {
 }
 
 .parallel-run-row {
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(180px, max-content) max-content;
 }
 
 .parallel-run-actions .small-button {
   white-space: nowrap;
 }
+
+.parallel-run-eta {
+  display: grid !important;
+  gap: 5px !important;
+  min-width: 180px !important;
+  padding: 8px 10px;
+  border: 1px solid rgba(96,165,250,.24);
+  border-radius: 10px;
+  background: rgba(59,130,246,.08);
+}
+
+.parallel-run-eta span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.parallel-run-eta strong { color: white; font-size: 13px; }
 
 .settings-subgrid {
   display: grid;

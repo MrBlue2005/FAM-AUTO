@@ -51,6 +51,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Scheduled runs default to TEST mode; LIVE schedules require an explicit publishing confirmation and overlapping robot runs are skipped.
 - A confirmed LIVE schedule passes its isolated execution configuration through to the final Facebook publish action. This is required because the shared runtime configuration stays TEST-safe while parallel profile workers run.
 - Different Facebook profiles can now run campaigns concurrently: every active profile has its own Node/Playwright worker and immutable configuration snapshot. A second worker for the same persistent browser profile is rejected. The Robot page shows all active profile runs; pause, resume, and stop-after-current-group remain intentionally shared safety controls for every active worker.
+- Every active profile-run card on the Robot page displays its own current-campaign ETA and full-run ETA, so parallel campaigns can be tracked independently.
 - Parallel worker status propagates property/total progress, average seconds per group, and both ETA values from the selected primary active run to the Robot dashboard.
 - Every active run also has individual Pause/Resume and Stop controls. A per-profile pause is checked at the next safe point and does not affect the other workers; individual Stop terminates only that profile's worker.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.

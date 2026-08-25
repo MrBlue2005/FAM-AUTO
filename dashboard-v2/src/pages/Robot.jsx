@@ -126,6 +126,10 @@ export default function Robot() {
               <div className="settings-campaign-row parallel-run-row" key={run.runId}>
                 <div><strong>{run.profileId}</strong><span>{run.currentProperty || 'Se pregătește'} · {run.currentGroup || '-'}</span></div>
                 <span className={`status-pill ${run.robotStatus === 'running' ? 'active' : 'warning'}`}>{run.robotStatus}</span>
+                <div className="parallel-run-eta" aria-label={`ETA pentru ${run.profileId}`}>
+                  <span>ETA campanie <strong>{formatEta(run.etaCurrentProperty)}</strong></span>
+                  <span>ETA rulare <strong>{formatEta(run.etaTotal)}</strong></span>
+                </div>
                 <div className="parallel-run-actions">
                   <button
                     type="button"
