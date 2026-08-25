@@ -39,6 +39,51 @@ function freshForm() {
   };
 }
 
+function PropertyPreviewModal({ property, profileLabel, onClose }) {
+  const posts = property.posts?.length ? property.posts : defaultPosts;
+  const [selectedPostIndex, setSelectedPostIndex] = useState(0);
+  const selectedPost = posts[selectedPostIndex] || posts[0];
+
+  return (
+    <div className="modal-backdrop property-preview-backdrop" onMouseDown={onClose}>
+      <section
+        className="property-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Preview pentru ${property.name}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <h2>Preview postari</h2>
+            <p>{property.name}</p>
+          </div>
+          <button type="button" className="secondary-button small-button" onClick={onClose}>Inchide</button>
+        </header>
+
+        <div className="property-preview-tabs" role="tablist" aria-label="Alege ziua postarii">
+          {posts.map((post, index) => (
+            <button
+              key={`${post.day}-${index}`}
+              type="button"
+              role="tab"
+              aria-selected={selectedPostIndex === index}
+              className={selectedPostIndex === index ? 'active' : ''}
+              onClick={() => setSelectedPostIndex(index)}
+            >
+              Ziua {post.day || index + 1}
+            </button>
+          ))}
+        </div>
+
+        {selectedPost && (
+          <FacebookPostPreview post={selectedPost} profileLabel={profileLabel} open hideToggle />
+        )}
+      </section>
+    </div>
+  );
+}
+
 export default function Properties({ editRequest, onEditHandled, onDirtyChange, onChangePage }) {
   const [properties, setProperties] = useState([]);
   const [propertyLogs, setPropertyLogs] = useState([]);
@@ -49,6 +94,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   const [editingId, setEditingId] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [openDetailsId, setOpenDetailsId] = useState(null);
+  const [previewProperty, setPreviewProperty] = useState(null);
   const [search, setSearch] = useState('');
   const [facebookProfiles, setFacebookProfiles] = useState([]);
   const [toolbarFilter, setToolbarFilter] = useState('all');
@@ -642,6 +688,14 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
                   {openDetailsId === property.id ? 'Ascunde detalii' : 'Detalii'}
                 </button>
 
+                <button
+                  type="button"
+                  className="secondary-button small-button property-preview-button"
+                  onClick={() => setPreviewProperty(property)}
+                >
+                  Preview
+                </button>
+
                 <div className="menu-wrap">
                   <button
                     className="ghost-button menu-button"
@@ -713,6 +767,14 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
           <div className="empty-state-v2">Nu exista proprietati pentru cautarea curenta.</div>
         )}
       </section>
+
+      {previewProperty && (
+        <PropertyPreviewModal
+          property={previewProperty}
+          profileLabel={facebookProfiles.find((profile) => profile.id === previewProperty.facebookProfileId)?.label || 'Profil Facebook default'}
+          onClose={() => setPreviewProperty(null)}
+        />
+      )}
     </div>
   );
 }

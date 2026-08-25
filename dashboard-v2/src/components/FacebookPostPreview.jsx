@@ -2,15 +2,32 @@ import { useState } from 'react';
 import { Eye, ThumbsUp, MessageCircle, Share2 } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function FacebookPostPreview({ post, profileLabel = 'Profil Facebook' }) {
-  const [open, setOpen] = useState(false);
+export default function FacebookPostPreview({
+  post,
+  profileLabel = 'Profil Facebook',
+  open: controlledOpen,
+  onOpenChange,
+  hideToggle = false,
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = typeof controlledOpen === 'boolean' ? controlledOpen : internalOpen;
   const media = post.media?.length ? post.media : post.imagePath ? [post.imagePath] : [];
+
+  function togglePreview() {
+    if (typeof controlledOpen === 'boolean') {
+      onOpenChange?.(!controlledOpen);
+      return;
+    }
+    setInternalOpen((value) => !value);
+  }
 
   return (
     <div className="facebook-preview-wrap">
-      <button type="button" className="secondary-button preview-toggle" onClick={() => setOpen((value) => !value)}>
-        <Eye size={15} /> {open ? 'Inchide preview' : 'Preview Facebook'}
-      </button>
+      {!hideToggle && (
+        <button type="button" className="secondary-button preview-toggle" onClick={togglePreview}>
+          <Eye size={15} /> {open ? 'Inchide preview' : 'Preview Facebook'}
+        </button>
+      )}
       {open && (
         <article className="facebook-post-preview">
           <header><span className="facebook-avatar">RX</span><p><strong>{profileLabel}</strong><small>Acum · Public</small></p></header>

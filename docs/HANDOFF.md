@@ -28,6 +28,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Operational dashboard navigation and CTA buttons.
 - Dashboard summary and live API status.
 - Property and job creation with media drag-and-drop.
+- Each property row has a direct Preview action with day-by-day Facebook-style post previews, so copy and media can be checked without opening the editor or losing the list position.
 - Upload progress, cancel, preview, cover selection, and validation feedback.
 - Reusable media library, SHA-256 deduplication, and safe unused-media cleanup.
 - Media Library cards render the actual uploaded image/video preview, with a compact type badge and fallback when the underlying file is unavailable.

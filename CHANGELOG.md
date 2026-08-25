@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added a direct Preview button to every property in the Properties list. It opens the Facebook-style post preview with day-by-day tabs without entering edit mode, so the current list position is preserved.
 - Hardened Zonere bathroom and construction-year extraction against shifted duplicate label/value pairs: bathroom counts must be realistic and construction years must be plausible calendar years.
 - Prevented Zonere room-count extraction from treating area values such as `18 m²` as rooms; studio/garsonieră listings are normalized to one room.
 - Updated the Zonere extractor to treat `Toate Caracteristicile` as the authoritative property-detail section, including the current card and successive-label/value layouts.

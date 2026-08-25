@@ -1576,7 +1576,7 @@ textarea {
 
 .entity-main {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 150px 120px 140px 90px;
+  grid-template-columns: minmax(240px, 1fr) 150px 120px 140px 90px 90px;
   gap: 14px;
   align-items: center;
 }
@@ -3200,6 +3200,54 @@ textarea {
 .facebook-no-media { display: grid; place-items: center; min-height: 110px; color: #b0b3b8; background: #18191a; }
 .facebook-post-preview > footer { display: flex; justify-content: space-around; padding: 9px; border-top: 1px solid #3a3b3c; }
 .facebook-post-preview > footer span { display: flex; align-items: center; gap: 4px; color: #b0b3b8; font-size: 10px; }
+
+.property-preview-modal {
+  width: min(660px, 100%);
+  max-height: min(820px, 92vh);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(24,24,30,.99), rgba(12,12,16,.99));
+  box-shadow: 0 24px 80px rgba(0,0,0,.48);
+}
+
+.property-preview-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.property-preview-modal h2,
+.property-preview-modal p { margin: 0; }
+.property-preview-modal p { margin-top: 5px; color: var(--muted); }
+
+.property-preview-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.property-preview-tabs button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255,255,255,.045);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.property-preview-tabs button.active {
+  border-color: rgba(248,113,113,.55);
+  background: rgba(239,68,68,.15);
+  color: white;
+}
 
 @media (max-width: 720px) {
   .media-library-backdrop { padding: 8px; }
