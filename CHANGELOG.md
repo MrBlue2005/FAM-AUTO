@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Updated the Zonere extractor to treat `Toate Caracteristicile` as the authoritative property-detail section, including the current card and successive-label/value layouts.
 - Fixed LIVE schedules preparing instead of publishing: the Facebook publish action now uses the schedule worker's isolated LIVE configuration, rather than the shared runtime TEST default used for parallel-run safety.
 - Enlarged Media Library picker cards and preview area so images can be identified before selecting them for a campaign.
 - Restored property and total ETA propagation from each profile worker to the Robot dashboard after parallel campaign support was added.

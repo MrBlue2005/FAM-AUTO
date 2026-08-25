@@ -259,6 +259,40 @@ export class ZonereAdapter implements PropertySourceAdapter {
           "nr. balcoane", "nr. terase", "stare", "orientare",
           "structura", "clasa energetica", "comision", "cod proprietate",
         ]);
+        const allCharacteristicsHeading = marker("toate caracteristicile");
+        const characteristicsEndLabels = new Set([
+          "imprejurimi", "lifestyle in zona", "galerie foto", "toate fotografiile",
+          "facilitati", "dotari & facilitati", "locatie", "finantare",
+        ]);
+        const characteristicElements = (() => {
+          if (!allCharacteristicsHeading) return [] as HTMLElement[];
+          const startIndex = all.indexOf(allCharacteristicsHeading);
+          const endIndex = all.findIndex((element, index) =>
+            index > startIndex && characteristicsEndLabels.has(normalized(element.textContent))
+          );
+          return all.slice(startIndex + 1, endIndex === -1 ? all.length : endIndex);
+        })();
+        const collectDetailPair = (label: string | null, value: string | null) => {
+          const normalizedLabel = normalized(label).replace(/:$/, "");
+          if (!label || !value || !detailLabels.has(normalizedLabel)) return;
+          facts[label.replace(/:$/, "")] ??= value;
+        };
+
+        // "Toate Caracteristicile" is the authoritative detail section in the
+        // current Zonere layout. Its label/value pairs may be plain sibling
+        // elements instead of semantic list/table markup.
+        characteristicElements.forEach((element) => {
+          const children = [...element.children]
+            .map((child) => clean(child.textContent))
+            .filter((value): value is string => Boolean(value));
+          if (children.length >= 2) collectDetailPair(children[0], children.slice(1).join(" "));
+        });
+        const characteristicLeafTexts = characteristicElements
+          .filter((element) => element.children.length === 0)
+          .map((element) => clean(element.textContent))
+          .filter((value): value is string => typeof value === "string" && value.length <= 120);
+        characteristicLeafTexts.forEach((label, index) => collectDetailPair(label, characteristicLeafTexts[index + 1] ?? null));
+
         const leafTexts = all
           .filter((element) => element.children.length === 0)
           .map((element) => clean(element.textContent))
