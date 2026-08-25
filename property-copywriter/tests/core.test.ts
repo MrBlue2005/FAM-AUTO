@@ -84,6 +84,25 @@ describe("interfața Zonere nouă", () => {
     expect(property.bathrooms).toBe(2);
     expect(property.constructionYear).toBe(2020);
   });
+
+  it("nu confundă suprafața unei garsoniere cu numărul de camere", () => {
+    const property = normalizeZonereRaw({
+      sourceUrl: "https://www.zonere.ro/garsoniera-18-mp-cu-centrala-proprie-langa-piata-sudului-sun-plaza-158/",
+      title: "Garsonieră 18 mp cu centrală proprie",
+      description: null,
+      jsonLd: [],
+      openGraph: {},
+      facts: {
+        "Suprafață utilă": "18 m²",
+        "Nr. camere": "18 m²",
+      },
+      images: [],
+      pageText: "Garsonieră 18 mp",
+    });
+
+    expect(property.usableAreaSqm).toBe(18);
+    expect(property.rooms).toBe(1);
+  });
 });
 
 describe("generarea structurată", () => {

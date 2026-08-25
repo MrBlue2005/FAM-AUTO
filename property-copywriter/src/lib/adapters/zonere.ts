@@ -85,6 +85,13 @@ function transactionTypeFromValue(value: string): PropertyData["transactionType"
   return null;
 }
 
+function roomCountFromValue(value: string): number | null {
+  // A malformed label/value pairing can put an area such as "18 m²" next to
+  // "Nr. camere". Area values must never be interpreted as room counts.
+  if (/\b(?:mp|m2|m²)\b/i.test(value)) return null;
+  return normalizeNumber(value);
+}
+
 function addressFromDescription(value: string | null): string | null {
   if (!value) return null;
   return value.match(/\b(?:Strada|Str\.?)\s+[^,.\n]{2,80}?\s+nr\.?\s*\d+[A-Za-z]?(?:,\s*Sector(?:ul)?\s+\d)?/i)?.[0]
@@ -149,7 +156,7 @@ export function normalizeZonereRaw(raw: RawPropertyData): PropertyData {
     else if (key === "price") {
       result.price ??= normalizeNumber(rawValue);
       result.currency ??= normalizeCurrency(rawValue);
-    } else if (key === "rooms") result.rooms = normalizeNumber(rawValue);
+    } else if (key === "rooms") result.rooms = roomCountFromValue(rawValue);
     else if (key === "bedrooms") result.bedrooms = normalizeNumber(rawValue);
     else if (key === "bathrooms") result.bathrooms = normalizeNumber(rawValue);
     else if (key === "usableAreaSqm") result.usableAreaSqm = normalizeNumber(rawValue);
@@ -169,6 +176,11 @@ export function normalizeZonereRaw(raw: RawPropertyData): PropertyData {
     const combined = `${result.title ?? ""} ${result.originalDescription ?? ""}`.toLocaleLowerCase("ro");
     result.transactionType = /\b(închiriere|inchiriere|de închiriat)\b/.test(combined) ? "rent" :
       /\b(vânzare|vanzare|de vânzare|de vanzare)\b/.test(combined) ? "sale" : null;
+  }
+  // A garsonieră is a one-room dwelling. This also protects listings whose
+  // title contains its usable area (for example "Garsonieră 18 mp").
+  if (/\bgarsonier(?:a|ă|e|ei|elor)?\b/i.test(`${result.title ?? ""} ${result.propertyType ?? ""}`)) {
+    result.rooms = 1;
   }
   return result;
 }
