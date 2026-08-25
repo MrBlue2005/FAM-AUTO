@@ -92,6 +92,19 @@ function roomCountFromValue(value: string): number | null {
   return normalizeNumber(value);
 }
 
+function bathroomCountFromValue(value: string): number | null {
+  if (/\b(?:mp|m2|m²)\b/i.test(value)) return null;
+  const count = normalizeNumber(value);
+  // A construction year is a common symptom of a shifted label/value pair.
+  return count !== null && count > 0 && count <= 50 ? count : null;
+}
+
+function constructionYearFromValue(value: string): number | null {
+  const year = normalizeNumber(value);
+  const latestAcceptedYear = new Date().getFullYear() + 1;
+  return year !== null && Number.isInteger(year) && year >= 1800 && year <= latestAcceptedYear ? year : null;
+}
+
 function addressFromDescription(value: string | null): string | null {
   if (!value) return null;
   return value.match(/\b(?:Strada|Str\.?)\s+[^,.\n]{2,80}?\s+nr\.?\s*\d+[A-Za-z]?(?:,\s*Sector(?:ul)?\s+\d)?/i)?.[0]
@@ -151,14 +164,14 @@ export function normalizeZonereRaw(raw: RawPropertyData): PropertyData {
       continue;
     }
     if (key === "floor" || key === "layout" || key === "propertyType") result[key] = text(rawValue);
-    else if (key === "constructionYear") result[key] = normalizeNumber(rawValue)?.valueOf() ?? null;
+    else if (key === "constructionYear") result.constructionYear ??= constructionYearFromValue(rawValue);
     else if (key === "transactionType") result.transactionType ??= transactionTypeFromValue(rawValue);
     else if (key === "price") {
       result.price ??= normalizeNumber(rawValue);
       result.currency ??= normalizeCurrency(rawValue);
-    } else if (key === "rooms") result.rooms = roomCountFromValue(rawValue);
+    } else if (key === "rooms") result.rooms ??= roomCountFromValue(rawValue);
     else if (key === "bedrooms") result.bedrooms = normalizeNumber(rawValue);
-    else if (key === "bathrooms") result.bathrooms = normalizeNumber(rawValue);
+    else if (key === "bathrooms") result.bathrooms ??= bathroomCountFromValue(rawValue);
     else if (key === "usableAreaSqm") result.usableAreaSqm = normalizeNumber(rawValue);
     else if (key === "totalAreaSqm") result.totalAreaSqm = normalizeNumber(rawValue);
     else if (key === "landAreaSqm") result.landAreaSqm = normalizeNumber(rawValue);

@@ -103,6 +103,27 @@ describe("interfața Zonere nouă", () => {
     expect(property.usableAreaSqm).toBe(18);
     expect(property.rooms).toBe(1);
   });
+
+  it("nu confundă numărul de băi cu anul construcției", () => {
+    const property = normalizeZonereRaw({
+      sourceUrl: "https://www.zonere.ro/casa-test",
+      title: "Casă cu 3 camere",
+      description: null,
+      jsonLd: [],
+      openGraph: {},
+      facts: {
+        "Nr. băi": "2",
+        "Băi": "2020",
+        "An construcție": "2020",
+        "An constructie": "2",
+      },
+      images: [],
+      pageText: "",
+    });
+
+    expect(property.bathrooms).toBe(2);
+    expect(property.constructionYear).toBe(2020);
+  });
 });
 
 describe("generarea structurată", () => {

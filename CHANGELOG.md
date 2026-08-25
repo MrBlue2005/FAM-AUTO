@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Hardened Zonere bathroom and construction-year extraction against shifted duplicate label/value pairs: bathroom counts must be realistic and construction years must be plausible calendar years.
 - Prevented Zonere room-count extraction from treating area values such as `18 m²` as rooms; studio/garsonieră listings are normalized to one room.
 - Updated the Zonere extractor to treat `Toate Caracteristicile` as the authoritative property-detail section, including the current card and successive-label/value layouts.
 - Fixed LIVE schedules preparing instead of publishing: the Facebook publish action now uses the schedule worker's isolated LIVE configuration, rather than the shared runtime TEST default used for parallel-run safety.

@@ -78,6 +78,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Standalone Next.js application in `property-copywriter/`, served locally on port 3100.
 - The Zonere adapter supports the current listing layout, including the `Despre Proprietate` description and `Toate Caracteristicile` as the authoritative, bounded source of property details. It supports both card-based and successive label/value details and was validated against the Adunații Copăceni listing supplied on 2026-08-24.
 - Room-count normalization rejects area units (`mp`, `m²`, `m2`) and enforces one room for a garsonieră/studio, preventing a title or detail such as `18 mp` from being shown as `18 camere`.
+- Bathroom counts and construction years are validated independently (realistic count versus a plausible calendar year), preventing shifted duplicate details from swapping those two fields.
 - Its header uses the shared RX emblem in the generator green palette; the launcher displays red and green application-specific RX logos on the corresponding cards, with accessible labeling and reduced-motion support.
 - Secure Zonere listing extraction, including catalog and shortlink support.
 - Editable structured property data and formatted social-media descriptions.
