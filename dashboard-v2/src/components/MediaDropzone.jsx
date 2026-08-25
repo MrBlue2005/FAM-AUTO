@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FolderOpen, GripVertical, ImagePlus, LoaderCircle, Star, Trash2, UploadCloud, X } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -169,7 +170,7 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
           })}
         </div>
       )}
-      {libraryOpen && (
+      {libraryOpen && createPortal(
         <div className="media-library-backdrop" role="presentation" onMouseDown={() => setLibraryOpen(false)}>
           <section className="media-library-picker" role="dialog" aria-modal="true" aria-label="Media Library" onMouseDown={(event) => event.stopPropagation()}>
             <header><div><h3>Media Library</h3><p>Reutilizeaza un fisier deja incarcat.</p></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Inchide"><X size={18} /></button></header>
@@ -184,6 +185,8 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
             </div>
           </section>
         </div>
+        ,
+        document.body
       )}
     </div>
   );

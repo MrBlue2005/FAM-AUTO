@@ -10,7 +10,7 @@
 
 ## Unreleased
 
-- Enlarged Media Library cards and file previews in both the main library and the picker, giving images and videos substantially more visible detail before selection.
+- Enlarged and fixed Media Library cards and file previews in both the main library and the picker: every picker card now reserves full preview height instead of clipping media into thin strips, and the picker is rendered above the scrolling page.
 - Restricted the property-selection label to its checkbox and text, so clicking empty card space no longer changes selection.
 - Added a `Deschide grupul` action to each group row, opening its configured Facebook group URL in a separate tab after safe URL validation.
 - Property cards now open their preview directly when their non-control area is clicked; existing selection, detail, preview, and action buttons retain their individual behavior.

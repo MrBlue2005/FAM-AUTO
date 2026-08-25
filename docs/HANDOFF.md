@@ -34,7 +34,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Upload progress, cancel, preview, cover selection, and validation feedback.
 - Reusable media library, SHA-256 deduplication, and safe unused-media cleanup.
 - Media Library cards render the actual uploaded image/video preview, with a compact type badge and fallback when the underlying file is unavailable.
-- The Media Library uses 320px-minimum cards with 230px previews in the main library; its picker uses 300px-minimum cards and 230px previews, giving enough detail to identify images and videos before selection.
+- The Media Library uses 320px-minimum cards with 230px previews in the main library; its picker uses fixed 300px-tall cards with a 230px preview area, giving enough detail to identify images and videos before selection. The picker is rendered above the scrolling page, so its viewport layout is stable.
 - Automatic form drafts and protection against losing unsaved changes.
 - Unified campaign queue with exclusion, retry, and reordering.
 - The live worker rebuilds Queue state before every task, so campaign deactivation/deletion, selection changes, exclusions, and new history entries take effect without restarting the robot.

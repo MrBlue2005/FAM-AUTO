@@ -3161,11 +3161,15 @@ textarea {
   overflow: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-auto-rows: 300px;
   gap: 14px;
 }
 
 .media-library-results > button {
+  display: grid;
+  grid-template-rows: 230px minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   padding: 0;
   overflow: hidden;
   text-align: left;
@@ -3284,6 +3288,8 @@ textarea {
   .media-library-backdrop { padding: 8px; }
   .media-library-picker { max-height: 94vh; padding: 14px; }
   .media-library-results { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .media-library-results { grid-auto-rows: 235px; }
+  .media-library-results > button { grid-template-rows: 165px minmax(0, 1fr); }
   .media-library-results img,
   .media-library-results video { height: 165px; }
 }
