@@ -3068,7 +3068,15 @@ textarea {
   }
 }
 
-.entity-select { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.entity-select {
+  display: inline-flex;
+  width: fit-content;
+  justify-self: start;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .entity-select input { width: 16px; height: 16px; accent-color: #3b82f6; }
 
 .media-card-v2 { position: relative; }

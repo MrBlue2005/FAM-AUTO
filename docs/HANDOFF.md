@@ -30,6 +30,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Property and job creation with media drag-and-drop.
 - Each group row has a `Deschide grupul` action that safely opens the configured Facebook group URL in a separate tab.
 - Each property row opens the same day-by-day Facebook-style preview when its card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
+- The property selection control is restricted to its checkbox and `Selecteaza` text; unused card space does not alter selection.
 - Upload progress, cancel, preview, cover selection, and validation feedback.
 - Reusable media library, SHA-256 deduplication, and safe unused-media cleanup.
 - Media Library cards render the actual uploaded image/video preview, with a compact type badge and fallback when the underlying file is unavailable.
