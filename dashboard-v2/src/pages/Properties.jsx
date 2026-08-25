@@ -45,14 +45,16 @@ function PropertyPreviewModal({ property, profileLabel, onClose }) {
   const selectedPost = posts[selectedPostIndex] || posts[0];
 
   useEffect(() => {
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousDocumentOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
+    const pageContent = document.querySelector('.page-content');
+    if (!pageContent) return undefined;
+
+    const previousOverflow = pageContent.style.overflow;
+    const scrollTop = pageContent.scrollTop;
+    pageContent.style.overflow = 'hidden';
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overflow = previousDocumentOverflow;
+      pageContent.style.overflow = previousOverflow;
+      pageContent.scrollTop = scrollTop;
     };
   }, []);
 

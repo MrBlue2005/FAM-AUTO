@@ -10,7 +10,7 @@
 
 ## Unreleased
 
-- Made the property Preview a right-side panel with contained scrolling, preventing the Properties list from moving while checking a post.
+- Made the property Preview an animated right-side panel with contained scrolling, preserving the current Properties-list position while checking a post.
 - Added a direct Preview button to every property in the Properties list. It opens the Facebook-style post preview with day-by-day tabs without entering edit mode, so the current list position is preserved.
 - Hardened Zonere bathroom and construction-year extraction against shifted duplicate label/value pairs: bathroom counts must be realistic and construction years must be plausible calendar years.
 - Prevented Zonere room-count extraction from treating area values such as `18 m²` as rooms; studio/garsonieră listings are normalized to one room.
