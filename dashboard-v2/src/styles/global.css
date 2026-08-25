@@ -1754,7 +1754,7 @@ textarea {
   padding: 12px;
   box-shadow: var(--shadow);
   display: grid;
-  grid-template-columns: 28px 42px minmax(260px, 1fr) 100px 140px 170px 130px 170px;
+  grid-template-columns: 28px 42px minmax(260px, 1fr) 100px 140px 170px 130px 290px;
   gap: 12px;
   align-items: center;
 }
@@ -1938,6 +1938,7 @@ textarea {
   display: flex;
   gap: 7px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .validation-alert > div {

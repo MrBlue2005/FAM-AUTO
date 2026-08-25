@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added a `Deschide grupul` action to each group row, opening its configured Facebook group URL in a separate tab after safe URL validation.
 - Property cards now open their preview directly when their non-control area is clicked; existing selection, detail, preview, and action buttons retain their individual behavior.
 - Made the property Preview an animated right-side panel rendered above the page, with contained scrolling and a preserved Properties-list position while checking a post.
 - Added a direct Preview button to every property in the Properties list. It opens the Facebook-style post preview with day-by-day tabs without entering edit mode, so the current list position is preserved.

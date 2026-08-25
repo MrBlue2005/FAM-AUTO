@@ -89,6 +89,16 @@ export default function Groups() {
     });
   }
 
+  function openGroup(group) {
+    try {
+      const url = new URL(group.url);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+    } catch {
+      setMessage(`URL-ul grupului "${group.name}" nu este valid.`);
+    }
+  }
+
   function addGroup() {
     if (!newGroup.url.trim()) {
       setMessage('Adauga URL-ul grupului.');
@@ -402,6 +412,9 @@ export default function Groups() {
               </select>
 
               <div className="group-row-actions">
+                <button className="secondary-button small-button" onClick={() => openGroup(group)}>
+                  Deschide grupul
+                </button>
                 <button className="secondary-button small-button" onClick={() => focusGroupEditor(group.id)}>
                   Editeaza
                 </button>
