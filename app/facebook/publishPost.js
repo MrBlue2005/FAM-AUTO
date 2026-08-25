@@ -21,8 +21,8 @@ async function findPublishButton(page) {
   throw new Error('Butonul de publicare nu a fost gasit.');
 }
 
-async function publishPost(page) {
-  const runtimeConfig = DataManager.getRuntimeConfig();
+async function publishPost(page, executionConfig = null) {
+  const runtimeConfig = executionConfig || DataManager.getRuntimeConfig();
   const publishButton = await findPublishButton(page);
 
   if (!runtimeConfig.publishEnabled) {

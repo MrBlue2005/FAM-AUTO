@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Fixed LIVE schedules preparing instead of publishing: the Facebook publish action now uses the schedule worker's isolated LIVE configuration, rather than the shared runtime TEST default used for parallel-run safety.
 - Enlarged Media Library picker cards and preview area so images can be identified before selecting them for a campaign.
 - Restored property and total ETA propagation from each profile worker to the Robot dashboard after parallel campaign support was added.
 - Added persistent folders for campaigns. Campaigns can be assigned from their action menu, filtered by folder, and safely detached when a folder is deleted; folders are included in private backups.

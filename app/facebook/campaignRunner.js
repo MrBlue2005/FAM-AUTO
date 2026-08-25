@@ -391,9 +391,14 @@ async function runCampaign(page, item, groups, campaignDay, options = {}) {
 
       await createPost(page, post);
 
-      emitEvent('info', `Public postarea în: ${discoveredGroup.name}`);
+      emitEvent(
+        runtimeConfig.publishEnabled ? 'info' : 'warning',
+        runtimeConfig.publishEnabled
+          ? `Public postarea în: ${discoveredGroup.name}`
+          : `TEST: postarea rămâne pregătită în: ${discoveredGroup.name}`
+      );
 
-      const published = await publishPost(page);
+      const published = await publishPost(page, runtimeConfig);
 
       addHistoryEntry({
         propertyId: item.id,
