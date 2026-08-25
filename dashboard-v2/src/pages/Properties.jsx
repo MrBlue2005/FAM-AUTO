@@ -467,6 +467,11 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
     notify(`${selected.length} proprietati au fost ${active ? 'activate' : 'dezactivate'}.`);
   }
 
+  function handlePropertyCardClick(event, property) {
+    if (event.target.closest('button, input, label, a')) return;
+    setPreviewProperty(property);
+  }
+
   async function handleSave(nextAction = 'stay') {
     if (!form.name.trim()) {
       setValidationErrors({ name: true });
@@ -680,7 +685,11 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
           const lastEntry = log.lastEntry;
 
           return (
-            <article className="entity-card" key={property.id}>
+            <article
+              className="entity-card property-preview-card"
+              key={property.id}
+              onClick={(event) => handlePropertyCardClick(event, property)}
+            >
               <label className="entity-select"><input type="checkbox" checked={selectedIds.includes(property.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, property.id] : current.filter((id) => id !== property.id))} /><span>Selecteaza</span></label>
               <div className="entity-main">
                 <div>

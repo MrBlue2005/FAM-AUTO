@@ -28,7 +28,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Operational dashboard navigation and CTA buttons.
 - Dashboard summary and live API status.
 - Property and job creation with media drag-and-drop.
-- Each property row has a direct Preview action with day-by-day Facebook-style post previews. It slides in from the right and locks the current page scroll while keeping its own contained scroll, so copy and media can be checked without opening the editor or moving the list position.
+- Each property row opens the same day-by-day Facebook-style preview when its card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
 - Upload progress, cancel, preview, cover selection, and validation feedback.
 - Reusable media library, SHA-256 deduplication, and safe unused-media cleanup.
 - Media Library cards render the actual uploaded image/video preview, with a compact type badge and fallback when the underlying file is unavailable.
