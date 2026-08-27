@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Updated the Property Copywriter Shortlink-uri Zonere button to the new CRM address: `https://crm.zonere.ro/shortlinks`.
 - Added RX PROPULSE-style motion to the fullscreen Windows welcome screen: a slow nebula/starfield background, an animated logo pulse, and a light sweep, with reduced-motion support.
 - Centered the `Enter Workspace` action on the fullscreen Windows welcome screen.
 - Added a fullscreen `Welcome back, sir.` startup experience to the Windows Studio Launcher. The launcher can now be registered as a zero-delay user-logon Scheduled Task, starts the local Studio in the background, and keeps the welcome screen open until `Enter Workspace` is selected.

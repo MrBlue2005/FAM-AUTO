@@ -197,7 +197,7 @@ export function Workbench({ demo }: { demo: boolean }) {
               target="_blank" rel="noopener noreferrer">
               <span aria-hidden="true">🏘️</span> Proprietăți Zonere <span aria-hidden="true">↗</span>
             </a>
-            <a className="button secondary" href="https://zonere.ro/short/"
+            <a className="button secondary" href="https://crm.zonere.ro/shortlinks"
               target="_blank" rel="noopener noreferrer">
               <span aria-hidden="true">🔗</span> Shortlink-uri Zonere <span aria-hidden="true">↗</span>
             </a>
