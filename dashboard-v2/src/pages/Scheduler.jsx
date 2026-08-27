@@ -58,6 +58,20 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
+function scheduledWeekDays(schedule) {
+  const selectedDays = new Set(Array.isArray(schedule?.daysOfWeek) ? schedule.daysOfWeek : []);
+  return weekDays.filter((day) => selectedDays.has(day.value));
+}
+
+function formatScheduledDays(schedule) {
+  const selectedDays = scheduledWeekDays(schedule);
+  if (selectedDays.length === 7) return 'Zilnic';
+  if (selectedDays.length === 5 && [1, 2, 3, 4, 5].every((day) => selectedDays.some((item) => item.value === day))) {
+    return 'Luni - Vineri';
+  }
+  return selectedDays.map((day) => day.label).join(', ') || 'Nicio zi';
+}
+
 function schedulePayload(schedule) {
   return {
     ...schedule,
@@ -390,7 +404,14 @@ export default function Scheduler() {
             <article className={`schedule-card ${schedule.enabled ? '' : 'disabled'}`} key={schedule.id}>
               <div className="schedule-card-main">
                 <div className="schedule-card-title"><span className={`schedule-state ${schedule.enabled ? 'active' : ''}`}><CalendarClock size={15} />{schedule.enabled ? 'Activa' : 'Pauza'}</span><h3>{schedule.name}</h3></div>
-                <div className="schedule-when"><Clock3 size={16} /><strong>{schedule.time}</strong><span>{weekDays.filter((day) => schedule.daysOfWeek.includes(day.value)).map((day) => day.short).join(', ')}</span></div>
+                <div className="schedule-when"><Clock3 size={16} /><strong>{schedule.time}</strong><span>{formatScheduledDays(schedule)}</span></div>
+                <div className="schedule-days" aria-label={`Zile programate: ${formatScheduledDays(schedule)}`}>
+                  <span>Zile programate</span>
+                  <div>
+                    {scheduledWeekDays(schedule).map((day) => <span className="schedule-day-badge" title={day.label} key={day.value}>{day.label}</span>)}
+                    {!scheduledWeekDays(schedule).length && <span className="schedule-day-badge empty">Nicio zi</span>}
+                  </div>
+                </div>
                 <p>{folderNameById.get(schedule.folderId) || 'Fara folder'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
                 <div className="schedule-run-meta"><span>Urmatoarea: <strong>{formatDate(schedule.nextRunAt)}</strong></span><span>Ultima: <strong>{schedule.lastStatus === 'never' ? 'niciodata' : `${schedule.lastStatus} / ${formatDate(schedule.lastRunAt)}`}</strong></span></div>
                 {schedule.lastMessage && <small className="schedule-last-message">{schedule.lastMessage}</small>}

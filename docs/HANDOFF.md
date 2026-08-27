@@ -48,6 +48,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
 - Persistent schedule folders: create folders, assign existing or new schedules, filter schedules by folder, and safely delete a folder without deleting its schedules.
+- Every saved schedule card shows its programmed weekdays prominently, using a readable summary plus full weekday badges.
 - Persistent campaign folders: create and filter folders from the Campanii page, assign either property or job campaigns from the campaign action menu, and safely remove folders without deleting campaigns. Campaign folders are included in backup/restore.
 - In Scheduler, the selected Facebook profile filters the campaign checklist. Explicitly assigned campaigns appear only for their assigned profile; legacy campaigns without a profile appear only for their category's default profile. Backend validation prevents incompatible profile/campaign combinations from being saved.
 - Deleting a property or job now removes its reference from mixed schedules and deletes schedules left without campaigns.

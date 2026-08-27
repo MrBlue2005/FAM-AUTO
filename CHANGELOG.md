@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Made scheduled weekdays explicit on every saved schedule card, with a readable summary and individual full-name day badges.
 - Extended the desktop overlay with a scrollable card for every simultaneous active campaign/profile, including independent Pause/Resume and Stop controls, while retaining Pause all, Resume all, Stop all, and Refresh controls. The overlay token is restricted to status plus those explicit robot-control endpoints.
 - Fixed the desktop Studio Launcher so `Enter Workspace` is hidden in its normal control window and appears only in the fullscreen startup Welcome mode.
 - Kept local campaign-folder and schedule-folder operational data out of Git, matching the repository's existing policy for runtime JSON state.
