@@ -26,6 +26,8 @@ logs/
 app/data/groups.json
 app/data/runtimeConfig.json
 app/data/schedules.json
+app/data/campaignFolders.json
+app/data/scheduleFolders.json
 app/data/properties/
 app/data/jobs/
 app/uploads/

@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Kept local campaign-folder and schedule-folder operational data out of Git, matching the repository's existing policy for runtime JSON state.
 - Optimized the RX PROPULSE Workspace for Chrome sessions without GPU compositing: replaced continuously animated fullscreen blur/star layers, dashboard sweep, status pulse, and progress shimmer with lightweight static treatments while preserving the animated RX wordmark.
 - Removed GPU-heavy glass blur compositing from every operational Workspace panel and stopped the continuously glowing sidebar logo; the separate fullscreen Welcome experience retains its motion.
 - Reduced idle Workspace polling: queue/preflight dashboard and status refreshes run every 20 seconds while the robot is idle and retain rapid updates during an active run; desktop notifications use adaptive, non-overlapping checks.
