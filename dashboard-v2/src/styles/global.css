@@ -46,12 +46,7 @@ body::before {
     linear-gradient(238deg, transparent 0 24%, rgba(153,27,27,.075) 38%, transparent 52%),
     radial-gradient(ellipse at 24% 26%, rgba(255,255,255,.052), transparent 22%),
     radial-gradient(ellipse at 82% 70%, rgba(239,68,68,.050), transparent 30%);
-  /* Keep the depth treatment static: animating a full-screen blurred layer is
-     especially expensive on Chrome sessions that fall back to CPU compositing. */
-  filter: blur(6px) saturate(1.04);
-  opacity: .48;
-  transform: translate3d(-24px, -10px, 0) rotate(-3deg);
-  z-index: -2;
+  display: none;
 }
 
 body::after {
@@ -69,9 +64,7 @@ body::after {
     linear-gradient(118deg, transparent 0 66%, rgba(239,68,68,.052) 66.1% 66.34%, transparent 66.7% 100%);
   background-size: 280px 280px, 380px 380px, 520px 520px, 660px 660px, 430px 430px, 760px 760px, 100% 100%, 100% 100%;
   background-position: 0 0, 80px 30px, 140px 90px, -60px 120px, 40px -80px, 180px 140px, 0 0;
-  opacity: .48;
-  /* A static star field keeps the same visual hierarchy without repaints every frame. */
-  z-index: -1;
+  display: none;
 }
 
 @keyframes nebulaFlow {
@@ -163,11 +156,7 @@ textarea {
 }
 
 .app-shell::after {
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(0,0,0,.68), transparent 30% 76%, rgba(0,0,0,.46)),
-    linear-gradient(180deg, rgba(255,255,255,.026), transparent 18% 72%, rgba(0,0,0,.62));
-  opacity: .72;
+  display: none;
 }
 
 @keyframes depthBreathe {
