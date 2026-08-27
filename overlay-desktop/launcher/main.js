@@ -15,7 +15,6 @@ const serviceDefinitions = [
 let mainWindow = null;
 let starting = false;
 let stopping = false;
-let startupWindowShownAt = 0;
 
 if (process.platform === 'win32') app.setAppUserModelId(appUserModelId);
 
@@ -90,8 +89,7 @@ async function startStudio() {
   const current = await getStatus();
   if (starting || stopping) return current;
   if (current.allOnline) {
-    await shell.openExternal(studioUrl);
-    closeStartupWelcomeAfterLaunch();
+    if (!startupWelcome) await shell.openExternal(studioUrl);
     return { ...current, reused: true };
   }
 
@@ -121,8 +119,7 @@ async function startStudio() {
     child.unref();
 
     const ready = await waitForStudio();
-    await shell.openExternal(studioUrl);
-    closeStartupWelcomeAfterLaunch();
+    if (!startupWelcome) await shell.openExternal(studioUrl);
     return ready;
   } catch (error) {
     throw new Error(`Pornirea Studio a esuat: ${error.message}`);
@@ -130,17 +127,6 @@ async function startStudio() {
     starting = false;
     sendStatus(await getStatus());
   }
-}
-
-function closeStartupWelcomeAfterLaunch() {
-  if (!startupWelcome) return;
-  const minimumWelcomeMs = 2600;
-  const elapsed = Date.now() - startupWindowShownAt;
-  const delay = Math.max(900, minimumWelcomeMs - elapsed);
-
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
-  }, delay);
 }
 
 async function waitForStudioStop(timeoutMs = 20000) {
@@ -213,7 +199,6 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => {
-    startupWindowShownAt = Date.now();
     mainWindow.show();
     if (startupWelcome) {
       mainWindow.setFullScreen(true);

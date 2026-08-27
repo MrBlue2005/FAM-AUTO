@@ -126,7 +126,8 @@ h1 {
 }
 
 .startup-welcome,
-.startup-status {
+.startup-status,
+.enter-workspace {
   display: none;
 }
 
@@ -179,7 +180,8 @@ body.startup-welcome-mode h1 {
 }
 
 body.startup-welcome-mode .startup-welcome,
-body.startup-welcome-mode .startup-status {
+body.startup-welcome-mode .startup-status,
+body.startup-welcome-mode .enter-workspace {
   display: block;
 }
 
@@ -197,6 +199,31 @@ body.startup-welcome-mode .startup-status {
   font-size: 15px;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.enter-workspace {
+  margin-top: 26px;
+  padding: 14px 28px;
+  border: 1px solid rgba(248, 113, 113, .55);
+  border-radius: 13px;
+  color: white;
+  background: linear-gradient(135deg, #ef4444, #991b1b);
+  box-shadow: 0 15px 34px rgba(239, 68, 68, .24);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: .02em;
+  transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+}
+
+.enter-workspace:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(239, 68, 68, .34);
+}
+
+.enter-workspace:disabled {
+  cursor: wait;
+  opacity: .42;
 }
 
 @keyframes startup-arrival {

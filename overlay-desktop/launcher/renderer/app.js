@@ -4,9 +4,12 @@ const stopButton = document.getElementById('stopButton');
 const message = document.getElementById('message');
 const minimizeButton = document.getElementById('minimizeButton');
 const closeButton = document.getElementById('closeButton');
+const enterWorkspaceButton = document.getElementById('enterWorkspaceButton');
+const startupStatus = document.querySelector('.startup-status');
 
 let launchInProgress = false;
 let stopInProgress = false;
+let startupLaunch = false;
 
 function renderStatus(status) {
   for (const service of status.services || []) {
@@ -29,6 +32,13 @@ function renderStatus(status) {
     : status.starting || launchInProgress
       ? 'Pornesc serviciile...'
       : 'Porneste Studio';
+
+  if (startupLaunch) {
+    enterWorkspaceButton.disabled = !status.allOnline;
+    startupStatus.textContent = status.allOnline
+      ? 'Your workspace is ready.'
+      : 'Preparing your workspace...';
+  }
 
   if (status.stopping || stopInProgress) {
     message.className = 'message working';
@@ -90,10 +100,15 @@ openButton.addEventListener('click', () => window.rxStudioLauncher.open());
 stopButton.addEventListener('click', stopStudio);
 minimizeButton.addEventListener('click', () => window.rxStudioLauncher.minimize());
 closeButton.addEventListener('click', () => window.rxStudioLauncher.close());
+enterWorkspaceButton.addEventListener('click', async () => {
+  if (enterWorkspaceButton.disabled) return;
+  await window.rxStudioLauncher.open();
+  window.rxStudioLauncher.close();
+});
 window.rxStudioLauncher.onStatus(renderStatus);
 
 async function initializeLauncher() {
-  const startupLaunch = await window.rxStudioLauncher.isStartupLaunch();
+  startupLaunch = await window.rxStudioLauncher.isStartupLaunch();
   document.body.classList.toggle('startup-welcome-mode', startupLaunch);
 
   const status = await window.rxStudioLauncher.getStatus();
