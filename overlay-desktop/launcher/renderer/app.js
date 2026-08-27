@@ -92,11 +92,13 @@ minimizeButton.addEventListener('click', () => window.rxStudioLauncher.minimize(
 closeButton.addEventListener('click', () => window.rxStudioLauncher.close());
 window.rxStudioLauncher.onStatus(renderStatus);
 
-void window.rxStudioLauncher.getStatus().then((status) => {
+async function initializeLauncher() {
+  const startupLaunch = await window.rxStudioLauncher.isStartupLaunch();
+  document.body.classList.toggle('startup-welcome-mode', startupLaunch);
+
+  const status = await window.rxStudioLauncher.getStatus();
   renderStatus(status);
-  if (status.allOnline) {
-    window.rxStudioLauncher.open();
-  } else {
-    startStudio();
-  }
-});
+  startStudio();
+}
+
+void initializeLauncher();

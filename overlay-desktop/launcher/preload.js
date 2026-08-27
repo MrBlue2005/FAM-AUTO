@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('rxStudioLauncher', {
   start: () => ipcRenderer.invoke('studio:start'),
   stop: () => ipcRenderer.invoke('studio:stop'),
   open: () => ipcRenderer.invoke('studio:open'),
+  isStartupLaunch: () => ipcRenderer.invoke('studio:is-startup-launch'),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   close: () => ipcRenderer.invoke('window:close'),
   onStatus: (listener) => {

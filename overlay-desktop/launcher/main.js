@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 
 const appUserModelId = 'com.rxai.studio.launcher';
 const studioUrl = 'http://127.0.0.1:5173';
+const startupWelcome = process.argv.includes('--startup');
 const serviceDefinitions = [
   { id: 'api', name: 'API Robot', url: 'http://127.0.0.1:3000/readyz' },
   { id: 'dashboard', name: 'Dashboard', url: 'http://127.0.0.1:5173/' },
@@ -14,6 +15,7 @@ const serviceDefinitions = [
 let mainWindow = null;
 let starting = false;
 let stopping = false;
+let startupWindowShownAt = 0;
 
 if (process.platform === 'win32') app.setAppUserModelId(appUserModelId);
 
@@ -89,6 +91,7 @@ async function startStudio() {
   if (starting || stopping) return current;
   if (current.allOnline) {
     await shell.openExternal(studioUrl);
+    closeStartupWelcomeAfterLaunch();
     return { ...current, reused: true };
   }
 
@@ -119,6 +122,7 @@ async function startStudio() {
 
     const ready = await waitForStudio();
     await shell.openExternal(studioUrl);
+    closeStartupWelcomeAfterLaunch();
     return ready;
   } catch (error) {
     throw new Error(`Pornirea Studio a esuat: ${error.message}`);
@@ -126,6 +130,17 @@ async function startStudio() {
     starting = false;
     sendStatus(await getStatus());
   }
+}
+
+function closeStartupWelcomeAfterLaunch() {
+  if (!startupWelcome) return;
+  const minimumWelcomeMs = 2600;
+  const elapsed = Date.now() - startupWindowShownAt;
+  const delay = Math.max(900, minimumWelcomeMs - elapsed);
+
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  }, delay);
 }
 
 async function waitForStudioStop(timeoutMs = 20000) {
@@ -181,6 +196,9 @@ function createWindow() {
     minHeight: 520,
     show: false,
     frame: false,
+    fullscreen: startupWelcome,
+    alwaysOnTop: startupWelcome,
+    skipTaskbar: startupWelcome,
     transparent: true,
     backgroundColor: '#00000000',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
@@ -195,7 +213,12 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => {
+    startupWindowShownAt = Date.now();
     mainWindow.show();
+    if (startupWelcome) {
+      mainWindow.setFullScreen(true);
+      mainWindow.focus();
+    }
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -235,5 +258,6 @@ ipcMain.handle('studio:open', async () => {
   await shell.openExternal(studioUrl);
   return true;
 });
+ipcMain.handle('studio:is-startup-launch', () => startupWelcome);
 ipcMain.handle('window:minimize', () => mainWindow?.minimize());
 ipcMain.handle('window:close', () => mainWindow?.close());

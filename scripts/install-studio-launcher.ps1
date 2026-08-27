@@ -20,3 +20,13 @@ $shortcut.Description = 'Porneste RX AI Studio, dashboardul si generatorul de de
 $shortcut.Save()
 
 Write-Host ('Shortcut creat: {0}' -f $shortcutPath) -ForegroundColor Green
+
+$taskName = 'RX AI Studio Welcome'
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$taskAction = New-ScheduledTaskAction -Execute $launcher -Argument '--startup' -WorkingDirectory $projectRoot
+$taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
+$taskPrincipal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
+$taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+
+Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
+Write-Host ('Task de pornire creat: {0} (la logare, fara intarziere).' -f $taskName) -ForegroundColor Green

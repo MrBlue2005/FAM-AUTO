@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added a fullscreen `Welcome back, sir.` startup experience to the Windows Studio Launcher. The launcher can now be registered as a zero-delay user-logon Scheduled Task, starts the local Studio in the background, opens it when ready, then dismisses the welcome screen.
 - Added per-run ETA details to every active campaign card on the Robot page: ETA for the current campaign and ETA for the full profile run are shown independently for parallel runs.
 - Enlarged and fixed Media Library cards and file previews in both the main library and the picker: every picker card now reserves full preview height instead of clipping media into thin strips, and the picker is rendered above the scrolling page.
 - Restricted the property-selection label to its checkbox and text, so clicking empty card space no longer changes selection.
