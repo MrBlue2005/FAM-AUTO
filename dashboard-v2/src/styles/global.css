@@ -241,7 +241,6 @@ textarea {
   font-size: 20px;
   font-weight: 950;
   letter-spacing: -1px;
-  animation: brandPulse 2.6s var(--ease) infinite;
   position: relative;
   overflow: hidden;
 }
@@ -252,7 +251,6 @@ textarea {
   inset: -20%;
   background: linear-gradient(110deg, transparent 16%, rgba(255,255,255,.18) 44%, transparent 68%);
   transform: translateX(-130%) rotate(-12deg);
-  animation: brandSweep 4.8s var(--ease) infinite;
 }
 
 .brand-letter,
@@ -4469,6 +4467,19 @@ textarea {
 
 .launcher-logout { position: fixed; z-index: 20; top: 20px; right: 22px; display: flex; align-items: center; gap: 8px; padding: 10px 13px; color: #a1a1aa; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(15,15,18,.8); backdrop-filter: blur(14px); cursor: pointer; }
 .launcher-logout:hover { color: white; border-color: rgba(248,113,113,.3); }
+
+/* Workspace is used for long operational sessions. Avoid compositor layers that
+   keep the GPU busy even while the page is idle. The fullscreen Welcome screen
+   has its own visual language and is intentionally not affected by this rule. */
+.app-shell,
+.app-shell * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-shell::before {
+  display: none;
+}
 
 @media (max-width: 560px) {
   .login-shell { padding: 12px; }
