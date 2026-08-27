@@ -67,6 +67,7 @@ export default function Dashboard({ onChangePage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const refreshDelay = data.robot?.robotStatus === 'running' ? 5000 : 20000;
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setRefreshing(true);
@@ -102,14 +103,16 @@ export default function Dashboard({ onChangePage }) {
         }
       });
 
+    // Queue/preflight construction is intentionally thorough. Poll it frequently
+    // only while a run is active so idle workspaces stay responsive.
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') loadData({ silent: true });
-    }, 5000);
+    }, refreshDelay);
     return () => {
       ignore = true;
       clearInterval(interval);
     };
-  }, [loadData]);
+  }, [loadData, refreshDelay]);
 
   const robotStatus = data.robot?.robotStatus || 'idle';
   const robotProgress = Number(data.robot?.totalCampaignProgress || 0);

@@ -19,6 +19,7 @@ Always verify these values with `git status` and `git log`; this document descri
 
 - The Facebook posting application is branded `RX PROPULSE TOOL` with the motto `Stay active. Stay visible.` in the launcher, dashboard, robot controls, sidebar, browser title, and desktop overlay.
 - Workspace background and dashboard decorative effects use static treatments rather than continuous fullscreen animations. Operational panels do not use glass `backdrop-filter` compositing and the sidebar mark is static, avoiding high CPU/GPU use during long sessions. The separate fullscreen Welcome experience retains its motion.
+- Dashboard/status polling is adaptive: idle Workspace screens refresh their costly queue/preflight summary every 20 seconds, while active runs retain 5-second updates. Desktop notifications avoid overlapping requests and use 30-second checks while idle.
 
 - A shared login page now protects the studio launcher, dashboard/robot, description generator, and their API routes before access is granted.
 - Authentication uses versioned Scrypt hashes, a 12-hour HttpOnly/SameSite session cookie, login throttling, CSRF checks, no client-side token storage, and fail-closed generator checks.

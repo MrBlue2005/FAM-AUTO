@@ -20,6 +20,7 @@ function StatusItem({ label, value }) {
 export default function StatusBar() {
   const [health, setHealth] = useState(null);
   const [offline, setOffline] = useState(false);
+  const refreshDelay = health?.robotStatus === 'running' ? 5000 : 20000;
 
   useEffect(() => {
     let ignore = false;
@@ -37,12 +38,12 @@ export default function StatusBar() {
     }
 
     load();
-    const interval = setInterval(load, 5000);
+    const interval = setInterval(load, refreshDelay);
     return () => {
       ignore = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [refreshDelay]);
 
   return (
     <footer className={`status-bar ${offline ? 'offline' : ''}`} aria-live="polite">
