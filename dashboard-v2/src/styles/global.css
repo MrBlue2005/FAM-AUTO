@@ -46,10 +46,11 @@ body::before {
     linear-gradient(238deg, transparent 0 24%, rgba(153,27,27,.075) 38%, transparent 52%),
     radial-gradient(ellipse at 24% 26%, rgba(255,255,255,.052), transparent 22%),
     radial-gradient(ellipse at 82% 70%, rgba(239,68,68,.050), transparent 30%);
-  filter: blur(10px) saturate(1.08);
-  opacity: .58;
+  /* Keep the depth treatment static: animating a full-screen blurred layer is
+     especially expensive on Chrome sessions that fall back to CPU compositing. */
+  filter: blur(6px) saturate(1.04);
+  opacity: .48;
   transform: translate3d(-24px, -10px, 0) rotate(-3deg);
-  animation: nebulaFlow 18s cubic-bezier(.18,.82,.22,1) infinite alternate;
   z-index: -2;
 }
 
@@ -68,9 +69,8 @@ body::after {
     linear-gradient(118deg, transparent 0 66%, rgba(239,68,68,.052) 66.1% 66.34%, transparent 66.7% 100%);
   background-size: 280px 280px, 380px 380px, 520px 520px, 660px 660px, 430px 430px, 760px 760px, 100% 100%, 100% 100%;
   background-position: 0 0, 80px 30px, 140px 90px, -60px 120px, 40px -80px, 180px 140px, 0 0;
-  opacity: .64;
-  mask-image: radial-gradient(circle at 50% 44%, #000 0 70%, transparent 100%);
-  animation: starDrift 52s linear infinite, starTwinkle 5.8s var(--ease) infinite alternate;
+  opacity: .48;
+  /* A static star field keeps the same visual hierarchy without repaints every frame. */
   z-index: -1;
 }
 
@@ -160,7 +160,6 @@ textarea {
     radial-gradient(ellipse at 52% 38%, rgba(255,255,255,.032), transparent 28%);
   opacity: .30;
   mask-image: radial-gradient(circle at 52% 42%, #000 0 58%, transparent 88%);
-  animation: depthBreathe 13s var(--ease) infinite alternate;
 }
 
 .app-shell::after {
@@ -1095,13 +1094,8 @@ textarea {
 }
 
 .dashboard-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,.08) 48%, transparent 62%);
-  transform: translateX(-120%);
-  animation: heroSweep 7s var(--ease) infinite;
-  pointer-events: none;
+  /* The sweep previously repainted the entire Dashboard card indefinitely. */
+  display: none;
 }
 
 @keyframes heroSweep {
@@ -1170,7 +1164,7 @@ textarea {
   color: #4ade80;
   background: rgba(34,197,94,.12);
   border-color: rgba(34,197,94,.35);
-  animation: statusPulse 1.8s var(--ease) infinite;
+  box-shadow: 0 0 18px rgba(34,197,94,.12);
 }
 
 @keyframes statusPulse {
@@ -2348,7 +2342,7 @@ textarea {
 .property-progress-fill,
 .campaign-progress-fill {
   background-size: 160% 100%;
-  animation: progressFlow 2.8s linear infinite;
+  background-position: 0 0;
 }
 
 @keyframes progressFlow {
