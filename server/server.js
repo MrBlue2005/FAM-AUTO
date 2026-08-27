@@ -38,6 +38,15 @@ const OVERLAY_ACCESS_TOKEN = crypto.createHmac(
   'sha256',
   process.env.ADMIN_PASSWORD_SCRYPT || API_KEY || crypto.randomBytes(32)
 ).update('rx-propulse-overlay-v1').digest('hex');
+const OVERLAY_ACCESS_ROUTES = new Set([
+  'GET /overlay/status',
+  'POST /robot/pause',
+  'POST /robot/resume',
+  'POST /robot/stop',
+  'POST /robot/pause-profile',
+  'POST /robot/resume-profile',
+  'POST /robot/stop-profile',
+]);
 const authSessions = new Map();
 const propertyDescriptionTransfers = new Map();
 const PROPERTY_DESCRIPTION_TRANSFER_TTL_MS = 30 * 60 * 1000;
@@ -126,7 +135,11 @@ app.use((req, res, next) => {
 });
 app.use(cors((req, callback) => {
   const origin = req.get('origin');
-  const electronOverlay = origin === 'null' && req.path === '/api/overlay/status';
+  const overlayPath = req.path.startsWith('/api') ? req.path.slice(4) : req.path;
+  const requestedMethod = req.method === 'OPTIONS'
+    ? req.get('access-control-request-method') || req.method
+    : req.method;
+  const electronOverlay = origin === 'null' && OVERLAY_ACCESS_ROUTES.has(`${requestedMethod} ${overlayPath}`);
   callback(null, {
     origin: !origin || electronOverlay || allowedOrigins.includes(origin),
     credentials: true,
@@ -156,8 +169,7 @@ app.use('/api', (req, res, next) => {
   if (bucket.count > 300) return res.status(429).json({ error: 'Prea multe requesturi. Incearca din nou peste un minut.' });
   const authRoute = req.path.startsWith('/auth/');
   const apiKeyAuthenticated = Boolean(API_KEY && req.get('x-api-key') === API_KEY);
-  const overlayAuthenticated = req.method === 'GET'
-    && req.path === '/overlay/status'
+  const overlayAuthenticated = OVERLAY_ACCESS_ROUTES.has(`${req.method} ${req.path}`)
     && secureTokenMatch(req.get('x-overlay-token'), OVERLAY_ACCESS_TOKEN);
   if (!AUTH_ENABLED && API_KEY && !apiKeyAuthenticated && !overlayAuthenticated) return res.status(401).json({ error: 'Cheie API invalida sau lipsa.' });
   if (AUTH_ENABLED && !authRoute) {
@@ -943,9 +955,17 @@ app.get('/api/overlay/status', (req, res) => {
     (profile) => profile.id === data.config.facebookProfileId
   );
   const activeTasks = queuePlan.activeTasks || [];
+  const profileLabels = new Map((data.config.facebookProfiles || []).map((profile) => [profile.id, profile.label || profile.id]));
+  const overlayRobot = {
+    ...robot,
+    activeRuns: (robot.activeRuns || []).map((run) => ({
+      ...run,
+      profileLabel: profileLabels.get(run.profileId) || run.profileId,
+    })),
+  };
 
   res.json({
-    robot,
+    robot: overlayRobot,
     queue: {
       summary: queuePlan.summary || {},
       totalTasks: queuePlan.tasks?.length || 0,

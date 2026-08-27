@@ -87,6 +87,34 @@ assert.equal(unauthorizedMedia.status, 401);
       headers: { 'x-overlay-token': overlayToken },
     });
     assert.equal(overlayTokenCannotReadOtherApis.status, 401);
+    const overlayControlWithoutCsrf = await fetch(`http://127.0.0.1:${port}/api/robot/pause-profile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-overlay-token': overlayToken },
+      body: JSON.stringify({ profileId: 'main' }),
+    });
+    assert.equal(overlayControlWithoutCsrf.status, 403);
+    const overlayProfileControl = await fetch(`http://127.0.0.1:${port}/api/robot/pause-profile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-overlay-token': overlayToken, 'x-rx-csrf': '1' },
+      body: JSON.stringify({ profileId: 'main' }),
+    });
+    assert.equal(overlayProfileControl.status, 200);
+    const overlayControlPreflight = await fetch(`http://127.0.0.1:${port}/api/robot/pause-profile`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'null',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type,x-overlay-token,x-rx-csrf',
+      },
+    });
+    assert.equal(overlayControlPreflight.status, 204);
+    assert.equal(overlayControlPreflight.headers.get('access-control-allow-origin'), 'null');
+    const overlayTokenCannotMutateOtherApis = await fetch(`http://127.0.0.1:${port}/api/groups`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-overlay-token': overlayToken, 'x-rx-csrf': '1' },
+      body: '[]',
+    });
+    assert.equal(overlayTokenCannotMutateOtherApis.status, 401);
 
     const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',

@@ -98,7 +98,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ### Desktop overlay
 
-- Desktop overlay launch now prefers the fast unpacked executable, confirms process creation, survives the Codex Electron-as-Node environment, and uses a process-only token restricted to `GET /api/overlay/status`.
+- The desktop overlay lists every simultaneous active profile run with its campaign, current group, progress, ETA, and separate Pause/Resume and Stop actions. Global Pause all, Resume all, and Stop all controls remain available. Its process-only token is authorized only for overlay status and these explicit robot control endpoints, with CSRF still required for mutations.
+- Desktop overlay launch now prefers the fast unpacked executable, confirms process creation, survives the Codex Electron-as-Node environment, and uses a process-only token restricted to overlay status plus the explicit global/per-profile Pause, Resume, and Stop endpoints.
 - The Windows Studio Launcher supports a `--startup` mode: a fullscreen `Welcome back, sir.` screen is displayed while Studio starts. It uses the RX PROPULSE motion language (slow nebula/starfield drift, logo pulse, and light sweep) and honors Windows reduced-motion preferences. Its centered `Enter Workspace` button activates once Studio is ready and opens the local dashboard. `npm.cmd run launcher:install` creates the Desktop shortcut and the `RX AI Studio Welcome` user-logon Scheduled Task with no configured delay. Windows does not guarantee an absolute ordering against every third-party startup app, but the task starts as soon as the user logon trigger is available.
 - `Enter Workspace` is scoped to fullscreen startup Welcome mode and remains hidden in the launcher's normal service-control window.
 

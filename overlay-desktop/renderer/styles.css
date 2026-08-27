@@ -55,7 +55,7 @@ button {
   height: 100vh;
   padding: 10px;
   display: grid;
-  grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr);
   gap: 7px;
   overflow: hidden;
   border-radius: 22px;
@@ -106,6 +106,7 @@ button {
 .status-strip,
 .metric-card,
 .progress-card,
+.active-runs-card,
 .feed-card,
 .settings-panel {
   position: relative;
@@ -513,6 +514,7 @@ button {
 }
 
 .progress-card,
+.active-runs-card,
 .feed-card {
   border-radius: 15px;
   padding: 9px;
@@ -609,6 +611,136 @@ button {
   gap: 4px;
 }
 
+.active-runs-card {
+  min-width: 0;
+  max-height: 188px;
+  border-radius: 15px;
+  padding: 9px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.active-runs-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.active-runs-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.active-runs-list::-webkit-scrollbar-thumb {
+  background: rgba(239, 68, 68, .38);
+  border-radius: 999px;
+}
+
+.active-run-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(118px, .8fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 9px;
+  border: 1px solid rgba(74, 222, 128, .18);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .24);
+}
+
+.active-run-card.paused {
+  border-color: rgba(251, 191, 36, .28);
+}
+
+.active-run-copy,
+.active-run-stats {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.active-run-copy small,
+.active-run-copy span,
+.active-run-stats span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-run-copy strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-status {
+  width: fit-content;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, .12);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.run-status.paused {
+  color: #fde68a;
+  background: rgba(251, 191, 36, .12);
+}
+
+.run-status.error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, .14);
+}
+
+.active-run-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(58px, 1fr));
+  gap: 5px;
+}
+
+.active-run-actions button {
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: white;
+  background: rgba(255, 255, 255, .05);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.active-run-actions .pause,
+.active-run-actions .resume {
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, .32);
+  background: rgba(251, 191, 36, .10);
+}
+
+.active-run-actions .resume {
+  color: #bbf7d0;
+  border-color: rgba(74, 222, 128, .32);
+  background: rgba(34, 197, 94, .10);
+}
+
+.active-run-actions .stop,
+.control-grid .stop {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, .38);
+  background: rgba(239, 68, 68, .13);
+}
+
+.active-run-actions button:disabled {
+  cursor: wait;
+  opacity: .45;
+}
+
 .next-task-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -629,7 +761,7 @@ button {
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 7px;
   position: relative;
   z-index: 2;
@@ -748,6 +880,11 @@ button {
   border-radius: 13px;
   padding: 14px;
   text-align: center;
+}
+
+.empty-state.compact {
+  padding: 9px;
+  font-size: 11px;
 }
 
 .settings-panel {

@@ -38,6 +38,7 @@ const state = {
   notifiedEvents: new Set(),
   actionMessage: '',
   pollTimer: null,
+  pendingActions: new Set(),
 };
 
 const elements = {};
@@ -49,6 +50,8 @@ function $(id) {
 function cacheElements() {
   [
     'alwaysOnTopInput',
+    'activeRunCount',
+    'activeRunsList',
     'apiKeyInput',
     'apiUrlInput',
     'averageTime',
@@ -89,6 +92,7 @@ function cacheElements() {
     'sizeMediumButton',
     'statusLabel',
     'statusStrip',
+    'stopAllButton',
     'testNotificationButton',
     'totalEta',
     'totalEtaMeta',
@@ -134,6 +138,7 @@ async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (state.settings.apiKey) headers['x-api-key'] = state.settings.apiKey;
   if (state.settings.overlayToken) headers['x-overlay-token'] = state.settings.overlayToken;
+  if (String(options.method || 'GET').toUpperCase() === 'POST') headers['x-rx-csrf'] = '1';
 
   const response = await fetch(apiUrl(path), {
     headers,
@@ -366,11 +371,87 @@ function renderNextTasks(tasks = []) {
   });
 }
 
+function renderActiveRuns(runs = []) {
+  elements.activeRunCount.textContent = String(runs.length);
+  elements.activeRunsList.innerHTML = '';
+
+  if (runs.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state compact';
+    empty.textContent = 'Nu exista campanii active.';
+    elements.activeRunsList.appendChild(empty);
+    return;
+  }
+
+  runs.forEach((run) => {
+    const profileId = String(run.profileId || 'main');
+    const paused = run.robotStatus === 'paused';
+    const pauseKey = `pause-${profileId}`;
+    const stopKey = `stop-${profileId}`;
+    const progress = Number(run.progress || 0);
+    const total = Number(run.totalGroups || 0);
+    const percent = getPercent(progress, total);
+
+    const card = document.createElement('article');
+    card.className = `active-run-card ${run.robotStatus || 'running'}`;
+
+    const copy = document.createElement('div');
+    copy.className = 'active-run-copy';
+    const profile = document.createElement('small');
+    profile.textContent = run.profileLabel || profileId;
+    const campaign = document.createElement('strong');
+    campaign.textContent = run.currentProperty || 'Se pregateste campania...';
+    const group = document.createElement('span');
+    group.textContent = run.currentGroup || run.lastMessage || 'Astept urmatorul grup';
+    copy.append(profile, campaign, group);
+
+    const stats = document.createElement('div');
+    stats.className = 'active-run-stats';
+    const status = document.createElement('em');
+    status.className = `run-status ${run.robotStatus || 'running'}`;
+    status.textContent = run.robotStatus === 'error' ? 'Eroare' : paused ? 'Pauza' : 'Ruleaza';
+    const progressText = document.createElement('span');
+    progressText.textContent = `${progress}/${total} · ${percent}%`;
+    const eta = document.createElement('span');
+    eta.textContent = `ETA ${formatEta(run.etaCurrentProperty)} / total ${formatEta(run.etaTotal)}`;
+    stats.append(status, progressText, eta);
+
+    const actions = document.createElement('div');
+    actions.className = 'active-run-actions';
+    const pauseButton = document.createElement('button');
+    pauseButton.type = 'button';
+    pauseButton.className = paused ? 'resume' : 'pause';
+    pauseButton.textContent = paused ? 'Resume' : 'Pauza';
+    pauseButton.disabled = state.pendingActions.has(pauseKey);
+    pauseButton.addEventListener('click', () => runRobotAction(
+      paused ? `Campania ${run.profileLabel || profileId} a fost reluata.` : `Pauza ceruta pentru ${run.profileLabel || profileId}.`,
+      paused ? '/robot/resume-profile' : '/robot/pause-profile',
+      { profileId },
+      pauseKey
+    ));
+
+    const stopButton = document.createElement('button');
+    stopButton.type = 'button';
+    stopButton.className = 'stop';
+    stopButton.textContent = 'Stop';
+    stopButton.disabled = state.pendingActions.has(stopKey);
+    stopButton.addEventListener('click', () => {
+      if (!window.confirm(`Opresti campania de pe profilul ${run.profileLabel || profileId}?`)) return;
+      runRobotAction(`Campania ${run.profileLabel || profileId} a fost oprita.`, '/robot/stop-profile', { profileId }, stopKey);
+    });
+    actions.append(pauseButton, stopButton);
+
+    card.append(copy, stats, actions);
+    elements.activeRunsList.appendChild(card);
+  });
+}
+
 function render() {
   const data = state.data || {};
   const robot = data.robot || {};
   const queue = data.queue || {};
   const runtime = data.runtime || {};
+  const activeRuns = robot.activeRuns || [];
   const status = robot.robotStatus || 'idle';
   const pauseRequested = robot.pauseRequested === true;
 
@@ -383,8 +464,8 @@ function render() {
   const currentEta = formatEta(robot.etaCurrentProperty);
   const totalEta = formatEta(robot.etaTotal);
   const feedItems = buildFeedItems(data);
-  const canPause = ['running', 'error'].includes(status) && !pauseRequested;
-  const canResume = status === 'paused' || pauseRequested;
+  const canPause = activeRuns.some((run) => ['running', 'error'].includes(run.robotStatus)) && !pauseRequested;
+  const canResume = activeRuns.some((run) => run.robotStatus === 'paused') || pauseRequested;
 
   elements.statusStrip.className = `status-strip ${status}`;
   elements.statusLabel.textContent = statusLabel(status, pauseRequested);
@@ -417,10 +498,12 @@ function render() {
   elements.totalProgressMeta.textContent = `${totalProgress}/${totalCampaignGroups} grupuri`;
   elements.totalEtaMeta.textContent = `ETA ${totalEta}`;
 
-  elements.pauseButton.disabled = !canPause;
-  elements.resumeButton.disabled = !canResume;
+  elements.pauseButton.disabled = !canPause || state.pendingActions.has('pause-all');
+  elements.resumeButton.disabled = !canResume || state.pendingActions.has('resume-all');
+  elements.stopAllButton.disabled = activeRuns.length === 0 || state.pendingActions.has('stop-all');
 
   renderNextTasks(queue.nextTasks || []);
+  renderActiveRuns(activeRuns);
   renderFeed(feedItems);
 
   if (state.actionMessage) {
@@ -508,18 +591,23 @@ async function refreshStatus() {
   }, 850);
 }
 
-async function runRobotAction(label, actionPath) {
+async function runRobotAction(label, actionPath, payload = null, pendingKey = actionPath) {
+  state.pendingActions.add(pendingKey);
   try {
     state.actionMessage = label;
     state.data = {
       ...(state.data || {}),
-      robot: await request(actionPath, { method: 'POST' }),
+      robot: await request(actionPath, {
+        method: 'POST',
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
+      }),
     };
     render();
     await loadStatus();
   } catch {
     showMessage('Nu am putut trimite comanda catre API.', 'error');
   } finally {
+    state.pendingActions.delete(pendingKey);
     setTimeout(() => {
       state.actionMessage = '';
       render();
@@ -562,11 +650,15 @@ function bindEvents() {
   elements.closeButton.addEventListener('click', () => window.rxOverlay?.close());
   elements.refreshButton.addEventListener('click', refreshStatus);
   elements.pauseButton.addEventListener('click', () =>
-    runRobotAction('Pauza ceruta. Robotul se opreste la primul punct sigur.', '/robot/pause')
+    runRobotAction('Pauza ceruta pentru toate campaniile.', '/robot/pause', null, 'pause-all')
   );
   elements.resumeButton.addEventListener('click', () =>
-    runRobotAction('Robot reluat.', '/robot/resume')
+    runRobotAction('Toate campaniile au fost reluate.', '/robot/resume', null, 'resume-all')
   );
+  elements.stopAllButton.addEventListener('click', () => {
+    if (!window.confirm('Opresti toate campaniile active?')) return;
+    runRobotAction('Toate campaniile au fost oprite.', '/robot/stop', null, 'stop-all');
+  });
 
   elements.opacityInput.addEventListener('input', async () => {
     elements.opacityValue.textContent = `${elements.opacityInput.value}%`;
