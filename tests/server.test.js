@@ -160,6 +160,19 @@ assert.equal(unauthorizedMedia.status, 401);
       body: JSON.stringify({ id: 'SCHEDULE_FOLDER_PROPERTY', name: 'Property folder test', active: true, posts: [] }),
     });
     assert.equal(propertyCreated.status, 200);
+    const sharedMediaPropertyCreated = await fetch(`http://127.0.0.1:${port}/api/properties`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        id: 'SHARED_MEDIA_COPY', name: 'Property media copy', active: true,
+        posts: [{
+          day: 1,
+          imagePath: 'app/uploads/SCHEDULE_FOLDER_PROPERTY/day-1/test-image.png',
+          media: ['app/uploads/SCHEDULE_FOLDER_PROPERTY/day-1/test-image.png'],
+        }],
+      }),
+    });
+    assert.equal(sharedMediaPropertyCreated.status, 200);
     const scheduleCreated = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
@@ -220,6 +233,9 @@ assert.equal(unauthorizedMedia.status, 401);
     }).then((response) => response.json());
     assert.equal(propertiesAfterRename.some((item) => item.id === 'SCHEDULE_FOLDER_PROPERTY'), false);
     assert.equal(propertiesAfterRename.some((item) => item.id === 'PROPERTY_SHORT'), true);
+    const sharedMediaProperty = propertiesAfterRename.find((item) => item.id === 'SHARED_MEDIA_COPY');
+    assert.equal(sharedMediaProperty.posts[0].imagePath, 'app/uploads/PROPERTY_SHORT/day-1/test-image.png');
+    assert.deepEqual(sharedMediaProperty.posts[0].media, ['app/uploads/PROPERTY_SHORT/day-1/test-image.png']);
     const runtimeAfterRename = await fetch(`http://127.0.0.1:${port}/api/runtime-config`, {
       headers: { cookie: sessionCookie },
     }).then((response) => response.json());
@@ -244,6 +260,50 @@ assert.equal(unauthorizedMedia.status, 401);
     });
     const restoredSchedule = (await schedulesAfterFolderDelete.json()).schedules.find((item) => item.id === schedule.id);
     assert.equal(restoredSchedule.folderId, null);
+    const diagnosticGroups = await fetch(`http://127.0.0.1:${port}/api/groups`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify([{
+        id: 'DIAGNOSTIC_GROUP', name: 'Diagnostic group', active: true,
+        category: 'real_estate', groupListCategory: 'Romania', url: 'https://www.facebook.com/groups/diagnostic-test',
+      }]),
+    });
+    assert.equal(diagnosticGroups.status, 200);
+    const brokenPropertyCreated = await fetch(`http://127.0.0.1:${port}/api/properties`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        id: 'BROKEN_MEDIA_PROPERTY', name: 'Broken media property', active: true, transactionType: 'sale', facebookProfileId: 'main',
+        posts: [{ day: 1, text: 'Test', imagePath: 'app/uploads/missing/file.png', media: ['app/uploads/missing/file.png'] }],
+      }),
+    });
+    assert.equal(brokenPropertyCreated.status, 200);
+    const blockedScheduleCreated = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        name: 'Programare cu media lipsa', enabled: false, daysOfWeek: [1], time: '10:00',
+        campaignCategory: 'real_estate', groupListCategory: 'Romania', campaignIds: ['BROKEN_MEDIA_PROPERTY'],
+        facebookProfileId: 'main', campaignDay: 1, groupLimit: 1, startFromGroup: 1, publishEnabled: false,
+      }),
+    });
+    assert.equal(blockedScheduleCreated.status, 201);
+    const blockedSchedule = await blockedScheduleCreated.json();
+    const blockedRun = await fetch(`http://127.0.0.1:${port}/api/schedules/${blockedSchedule.id}/run-now`, {
+      method: 'POST',
+      headers: { cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: '{}',
+    });
+    assert.equal(blockedRun.status, 200);
+    assert.equal((await blockedRun.json()).lastStatus, 'blocked');
+    const scheduledDiagnostics = await fetch(`http://127.0.0.1:${port}/api/diagnostics`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(scheduledDiagnostics.status, 200);
+    const scheduledDiagnosticsBody = await scheduledDiagnostics.json();
+    assert.ok(scheduledDiagnosticsBody.issues.some((issue) =>
+      issue.code === 'MEDIA_NOT_FOUND' && issue.scheduleName === 'Programare cu media lipsa'
+    ));
     const transferCreated = await fetch(`http://127.0.0.1:${port}/api/property-description-transfers`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },

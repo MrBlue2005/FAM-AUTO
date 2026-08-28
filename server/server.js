@@ -778,12 +778,45 @@ app.get('/api/preflight', (req, res) => {
 
 app.get('/api/diagnostics', (req, res) => {
   const data = getCampaignToolData();
-  res.json(buildDiagnostics({
+  const diagnostics = buildDiagnostics({
     ...data,
     preflight: buildPreflightReport(data),
     validations: validateCampaigns(data),
     queuePlan: buildQueuePlan(data),
-  }));
+  });
+  const blockedScheduleIssues = DataManager.getSchedules()
+    .filter((schedule) => schedule.lastStatus === 'blocked')
+    .flatMap((schedule) => {
+      const scheduleData = {
+        ...data,
+        config: ScheduleManager.createExecutionConfig(schedule, data.config),
+      };
+      const scheduleDiagnostics = buildDiagnostics({
+        ...scheduleData,
+        preflight: buildPreflightReport(scheduleData),
+        validations: { globalIssues: [], campaigns: [] },
+        queuePlan: buildQueuePlan(scheduleData),
+      });
+      return scheduleDiagnostics.issues
+        .filter((issue) => issue.level === 'error')
+        .map((issue) => ({
+          ...issue,
+          id: `schedule-${schedule.id}-${issue.id}`,
+          source: 'schedule-preflight',
+          scheduleId: schedule.id,
+          scheduleName: schedule.name,
+        }));
+    });
+  const issues = [...diagnostics.issues, ...blockedScheduleIssues];
+  const errors = issues.filter((issue) => issue.level === 'error').length;
+  const warnings = issues.filter((issue) => issue.level === 'warning').length;
+  res.json({
+    ...diagnostics,
+    ok: errors === 0,
+    status: errors ? 'blocked' : warnings ? 'warning' : 'ready',
+    summary: { ...diagnostics.summary, errors, warnings },
+    issues,
+  });
 });
 
 app.get('/api/logs/errors', (req, res) => {

@@ -91,7 +91,7 @@ export default function Diagnostics({ onChangePage }) {
     return (data?.issues || []).filter((issue) => {
       if (filter !== 'all' && issue.level !== filter) return false;
       if (!normalizedQuery) return true;
-      return `${issue.title} ${issue.explanation} ${issue.resolution} ${issue.originalMessage} ${issue.campaignTitle || ''}`
+      return `${issue.title} ${issue.explanation} ${issue.resolution} ${issue.originalMessage} ${issue.campaignTitle || ''} ${issue.scheduleName || ''}`
         .toLocaleLowerCase('ro-RO')
         .includes(normalizedQuery);
     });
@@ -177,7 +177,7 @@ export default function Diagnostics({ onChangePage }) {
                         <span>{issue.level === 'error' ? 'BLOCANT' : 'ATENTIE'} · {issue.code}</span>
                         <h2>{issue.title}</h2>
                       </div>
-                      {issue.campaignTitle && <strong className='diagnostic-campaign'>{issue.campaignTitle}</strong>}
+                      {(issue.scheduleName || issue.campaignTitle) && <strong className='diagnostic-campaign'>{issue.scheduleName || issue.campaignTitle}</strong>}
                     </div>
 
                     <div className='diagnostic-interpretation'>

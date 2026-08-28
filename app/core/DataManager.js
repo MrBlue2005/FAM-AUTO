@@ -320,7 +320,16 @@ function updateProperty(originalId, property) {
   const runtimeConfig = getRuntimeConfig();
   const history = getHistory();
   const runs = getCampaignRuns();
+  const properties = getProperties();
+  const jobs = getJobs();
   const updatedProperty = replacePropertyMediaReferences({ ...property, id: newId }, originalId, newId);
+  const linkedProperties = properties
+    .filter((item) => item.id !== originalId)
+    .map((item) => ({ original: item, updated: replacePropertyMediaReferences(item, originalId, newId) }))
+    .filter(({ original, updated }) => JSON.stringify(original) !== JSON.stringify(updated));
+  const linkedJobs = jobs
+    .map((item) => ({ original: item, updated: replacePropertyMediaReferences(item, originalId, newId) }))
+    .filter(({ original, updated }) => JSON.stringify(original) !== JSON.stringify(updated));
   const updatedSchedules = schedules.map((schedule) => schedule?.campaignCategory === 'jobs' ? schedule : ({
     ...schedule,
     campaignIds: Array.isArray(schedule.campaignIds)
@@ -351,6 +360,8 @@ function updateProperty(originalId, property) {
       mediaMoved = true;
     }
     saveProperty(updatedProperty);
+    linkedProperties.forEach(({ updated }) => saveProperty(updated));
+    linkedJobs.forEach(({ updated }) => saveJob(updated));
     saveSchedules(updatedSchedules);
     saveRuntimeConfig(updatedRuntimeConfig);
     writeJson(path.join(logsPath, 'history.json'), updatedHistory);
@@ -362,6 +373,8 @@ function updateProperty(originalId, property) {
     if (mediaMoved && fs.existsSync(destinationUploads) && !fs.existsSync(sourceUploads)) {
       fs.renameSync(destinationUploads, sourceUploads);
     }
+    linkedProperties.forEach(({ original }) => saveProperty(original));
+    linkedJobs.forEach(({ original }) => saveJob(original));
     saveSchedules(schedules);
     saveRuntimeConfig(runtimeConfig);
     writeJson(path.join(logsPath, 'history.json'), history);

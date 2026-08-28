@@ -21,7 +21,20 @@ const {
 } = require('../app/utils/historyManager');
 const DataManager = require('../app/core/DataManager');
 const ScheduleManager = require('../app/core/ScheduleManager');
+const { summarizeBlockingIssues } = require('../app/core/RobotManager');
 const { buildDiagnostics, diagnoseEmptyQueue } = require('../app/core/Diagnostics');
+
+test('preflight blocking summary groups repeated task failures by root cause', () => {
+  const message = summarizeBlockingIssues({
+    issues: [
+      { level: 'error', code: 'MEDIA_NOT_FOUND', campaignId: 'P1', message: 'P1: media lipsa.' },
+      { level: 'error', code: 'MEDIA_NOT_FOUND', campaignId: 'P1', message: 'P1: media lipsa.' },
+      { level: 'warning', code: 'LIVE_MODE', message: 'Live.' },
+    ],
+  });
+
+  assert.equal(message, 'Start blocat de preflight: 1 problema unica (2 taskuri afectate).');
+});
 
 function fixture(overrides = {}) {
   const config = {

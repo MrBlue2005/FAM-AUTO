@@ -238,6 +238,25 @@ function saveExecutionResult(schedule, changes, advanceSchedule) {
   return schedules[index];
 }
 
+function createExecutionConfig(schedule, currentConfig = DataManager.getRuntimeConfig()) {
+  return {
+    ...currentConfig,
+    campaignDay: schedule.campaignDay,
+    groupLimit: schedule.groupLimit,
+    startFromGroup: schedule.startFromGroup,
+    publishEnabled: schedule.publishEnabled,
+    selectedPropertyIds: schedule.campaignIds,
+    campaignCategory: schedule.campaignCategory,
+    selectedGroupListCategory: schedule.groupListCategory,
+    facebookProfileId: schedule.facebookProfileId,
+    queueExcludedTaskIds: [],
+    queueRetryTaskIds: [],
+    queueOrder: [],
+    pauseRequested: false,
+    stopAfterCurrentGroup: false,
+  };
+}
+
 function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
   const scheduled = trigger === 'scheduled';
   if (scheduled) {
@@ -260,22 +279,7 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
   }
 
   const currentConfig = DataManager.getRuntimeConfig();
-  const executionConfig = {
-    ...currentConfig,
-    campaignDay: schedule.campaignDay,
-    groupLimit: schedule.groupLimit,
-    startFromGroup: schedule.startFromGroup,
-    publishEnabled: schedule.publishEnabled,
-    selectedPropertyIds: schedule.campaignIds,
-    campaignCategory: schedule.campaignCategory,
-    selectedGroupListCategory: schedule.groupListCategory,
-    facebookProfileId: schedule.facebookProfileId,
-    queueExcludedTaskIds: [],
-    queueRetryTaskIds: [],
-    queueOrder: [],
-    pauseRequested: false,
-    stopAfterCurrentGroup: false,
-  };
+  const executionConfig = createExecutionConfig(schedule, currentConfig);
 
   const robot = RobotManager.start({
     facebookProfileId: schedule.facebookProfileId,
@@ -332,6 +336,7 @@ function stop() {
 
 module.exports = {
   computeNextRun,
+  createExecutionConfig,
   create,
   execute,
   getSystemTimeZone,

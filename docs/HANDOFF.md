@@ -33,7 +33,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Property and job creation with media drag-and-drop.
 - Each group row has a `Deschide grupul` action that safely opens the configured Facebook group URL in a separate tab.
 - Each property row opens the same day-by-day Facebook-style preview when its card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
-- Existing property IDs are editable. A rename migrates the property JSON filename, owned media folder and references, real-estate schedules, Queue selections/order/retry state, history, and saved real-estate run references; duplicate or invalid IDs are rejected and the existing robot-running mutation guard applies.
+- Existing property IDs are editable. A rename migrates the property JSON filename, owned media folder and references (including references reused by cloned properties or jobs), real-estate schedules, Queue selections/order/retry state, history, and saved real-estate run references; duplicate or invalid IDs are rejected and the existing robot-running mutation guard applies.
 - The property selection control is restricted to its checkbox and `Selecteaza` text; unused card space does not alter selection.
 - Upload progress, cancel, preview, cover selection, and validation feedback.
 - Reusable media library, SHA-256 deduplication, and safe unused-media cleanup.
@@ -44,6 +44,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - The live worker rebuilds Queue state before every task, so campaign deactivation/deletion, selection changes, exclusions, and new history entries take effect without restarting the robot.
 - A property/group pair is treated as processed only after a `prepared` or `posted` entry from the current server-local calendar day, regardless of campaign content day or Facebook profile. Older history remains available for reports and no longer requires manual deletion; property progress spans all pending groups instead of resetting for every task.
 - Campaign preview, validations, and mandatory preflight checks.
+- Diagnostics rebuilds the isolated execution configuration of every blocked schedule, exposes its exact blocking preflight issues under the schedule name, and deduplicates repeated per-group failures in the Live Feed summary while retaining the affected-task count.
 - Live Feed, reports, CSV exports, backup/restore, and audit log.
 - Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.

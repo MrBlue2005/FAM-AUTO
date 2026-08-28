@@ -55,6 +55,21 @@ function status() {
   return refreshAggregateState();
 }
 
+function summarizeBlockingIssues(preflight) {
+  const errors = (preflight?.issues || []).filter((issue) => issue.level === 'error');
+  const uniqueErrors = new Set(errors.map((issue) => [
+    issue.code || '',
+    issue.campaignId || '',
+    issue.message || '',
+  ].join('|'))).size;
+
+  if (uniqueErrors === errors.length) {
+    return `Start blocat de preflight: ${uniqueErrors} ${uniqueErrors === 1 ? 'problema' : 'probleme'}.`;
+  }
+
+  return `Start blocat de preflight: ${uniqueErrors} ${uniqueErrors === 1 ? 'problema unica' : 'probleme unice'} (${errors.length} taskuri afectate).`;
+}
+
 function start(options = {}) {
   const storedConfig = DataManager.getRuntimeConfig();
   const baseConfig = options.executionConfig || storedConfig;
@@ -102,7 +117,7 @@ function start(options = {}) {
     const noGroupsToday = preflight.issues.some((issue) => issue.code === 'NO_ELIGIBLE_GROUPS_TODAY');
     const message = noGroupsToday
       ? preflight.issues.find((issue) => issue.code === 'NO_ELIGIBLE_GROUPS_TODAY').message
-      : `Start blocat de preflight: ${preflight.summary.errors} probleme.`;
+      : summarizeBlockingIssues(preflight);
     addLiveFeed({ type: noGroupsToday ? 'warning' : 'error', message, profileId });
     return { ...status(), startedProfileId: null, lastMessage: message, preflight };
   }
@@ -221,4 +236,4 @@ function resume(profileId = null) {
 }
 function isRunning(profileId = null) { return profileId ? activeRobots.has(profileId) : activeRobots.size > 0; }
 
-module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume };
+module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume, summarizeBlockingIssues };
