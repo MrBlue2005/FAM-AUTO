@@ -319,6 +319,14 @@ app.post('/api/properties', (req, res) => {
   }
 });
 
+app.put('/api/properties/:propertyId', (req, res) => {
+  try {
+    res.json(DataManager.updateProperty(req.params.propertyId, req.body));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.post('/api/property-description-transfers', (req, res) => {
   const descriptions = Array.isArray(req.body?.descriptions) ? req.body.descriptions : [];
   if (descriptions.length !== 3) {

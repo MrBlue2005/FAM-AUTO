@@ -86,6 +86,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(property),
     }),
+  updateProperty: (propertyId, property) =>
+    request(`/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(property),
+    }),
   deleteProperty: (propertyId) =>
     request(`/properties/${propertyId}`, {
       method: 'DELETE',

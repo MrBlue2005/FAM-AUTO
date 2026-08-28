@@ -480,8 +480,18 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
       return;
     }
 
-    const nextId = form.id || generateIdFromName(form.name);
-    if (!editingId && properties.some((property) => property.id === nextId)) {
+    const nextId = String(form.id || generateIdFromName(form.name)).trim();
+    if (!/^[a-zA-Z0-9_-]+$/.test(nextId)) {
+      setValidationErrors({ id: true });
+      setMessage('ID-ul poate contine doar litere, cifre, underscore si cratima.');
+      return;
+    }
+    if (nextId.length > 80) {
+      setValidationErrors({ id: true });
+      setMessage('ID-ul poate avea maximum 80 de caractere.');
+      return;
+    }
+    if (properties.some((property) => property.id === nextId && property.id !== editingId)) {
       setValidationErrors({ id: true });
       setMessage(`Exista deja o proprietate cu ID-ul ${nextId}.`);
       return;
@@ -502,7 +512,8 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
       posts: form.posts.map((post, index) => ({ ...post, day: index + 1 })),
     };
 
-    await api.saveProperty(propertyToSave);
+    if (editingId) await api.updateProperty(editingId, propertyToSave);
+    else await api.saveProperty(propertyToSave);
 
     setMessage(
       editingId
@@ -552,8 +563,9 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               value={form.id}
               onChange={(event) => updateField('id', event.target.value)}
               placeholder="ex: IANCULUI_001"
-              disabled={Boolean(editingId)}
+              maxLength={80}
             />
+            {editingId && <small>Poate fi schimbat. Programarile, Queue, istoricul si media vor fi actualizate automat.</small>}
           </label>
 
           <label data-validation-error={validationErrors.name || undefined} className={validationErrors.name ? 'field-error' : ''}>
@@ -619,7 +631,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               </label>
 
               <MediaDropzone
-                entityId={form.id || generateIdFromName(form.name) || 'TEMP'}
+                entityId={editingId || form.id || generateIdFromName(form.name) || 'TEMP'}
                 day={post.day}
                 media={post.media || []}
                 onChange={(paths) => {

@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { normalizeCampaignMedia } = require('../utils/mediaPath');
-const { dataPath, logsPath } = require('../config/storagePaths');
+const { normalizeCampaignMedia, normalizeMediaReference } = require('../utils/mediaPath');
+const { dataPath, logsPath, uploadsPath } = require('../config/storagePaths');
 
 const defaultRuntimeConfig = {
   campaignDay: 1,
@@ -262,6 +262,112 @@ function saveProperty(property) {
   writeJson(path.join(propertiesDir, `${property.id}.json`), normalizedProperty);
 
   return normalizedProperty;
+}
+
+function replaceTaskCampaignId(taskId, oldId, newId) {
+  const parts = String(taskId || '').split('::');
+  const campaignIndex = parts.length === 3 ? 1 : parts.length === 2 ? 0 : -1;
+  if (campaignIndex < 0 || parts[campaignIndex] !== oldId) return taskId;
+  parts[campaignIndex] = newId;
+  return parts.join('::');
+}
+
+function replacePropertyMediaReferences(property, oldId, newId) {
+  const oldPrefix = `app/uploads/${oldId}/`;
+  const newPrefix = `app/uploads/${newId}/`;
+  const replaceReference = (value) => {
+    if (typeof value !== 'string') return value;
+    const normalized = normalizeMediaReference(value);
+    return normalized.startsWith(oldPrefix) ? `${newPrefix}${normalized.slice(oldPrefix.length)}` : normalized;
+  };
+
+  return {
+    ...property,
+    posts: Array.isArray(property.posts) ? property.posts.map((post) => ({
+      ...post,
+      imagePath: replaceReference(post.imagePath),
+      media: Array.isArray(post.media) ? post.media.map((item) => (
+        typeof item === 'string'
+          ? replaceReference(item)
+          : item && typeof item === 'object'
+            ? { ...item, path: replaceReference(item.path) }
+            : item
+      )) : post.media,
+    })) : property.posts,
+  };
+}
+
+function updateProperty(originalId, property) {
+  assertEntityId(originalId, 'Property');
+  assertEntityId(property?.id, 'Property');
+
+  const propertiesDir = path.join(dataPath, 'properties');
+  const sourcePath = path.join(propertiesDir, `${originalId}.json`);
+  if (!fs.existsSync(sourcePath)) throw new Error(`Proprietatea ${originalId} nu exista.`);
+
+  const newId = property.id;
+  if (newId.length > 80) throw new Error('Noul Property ID poate avea maximum 80 de caractere.');
+  if (newId === originalId) return saveProperty(property);
+
+  const destinationPath = path.join(propertiesDir, `${newId}.json`);
+  if (fs.existsSync(destinationPath)) throw new Error(`Exista deja o proprietate cu ID-ul ${newId}.`);
+
+  const sourceUploads = path.join(uploadsPath, originalId);
+  const destinationUploads = path.join(uploadsPath, newId);
+  if (fs.existsSync(destinationUploads)) throw new Error(`Exista deja un folder media pentru ID-ul ${newId}.`);
+
+  const schedules = getSchedules();
+  const runtimeConfig = getRuntimeConfig();
+  const history = getHistory();
+  const runs = getCampaignRuns();
+  const updatedProperty = replacePropertyMediaReferences({ ...property, id: newId }, originalId, newId);
+  const updatedSchedules = schedules.map((schedule) => schedule?.campaignCategory === 'jobs' ? schedule : ({
+    ...schedule,
+    campaignIds: Array.isArray(schedule.campaignIds)
+      ? schedule.campaignIds.map((id) => id === originalId ? newId : id)
+      : schedule.campaignIds,
+  }));
+  const updatedRuntimeConfig = runtimeConfig.campaignCategory === 'jobs' ? runtimeConfig : {
+    ...runtimeConfig,
+    selectedPropertyIds: (runtimeConfig.selectedPropertyIds || []).map((id) => id === originalId ? newId : id),
+    queueExcludedTaskIds: (runtimeConfig.queueExcludedTaskIds || []).map((id) => replaceTaskCampaignId(id, originalId, newId)),
+    queueRetryTaskIds: (runtimeConfig.queueRetryTaskIds || []).map((id) => replaceTaskCampaignId(id, originalId, newId)),
+    queueOrder: (runtimeConfig.queueOrder || []).map((id) => replaceTaskCampaignId(id, originalId, newId)),
+  };
+  const updatedHistory = history.map((entry) => entry.propertyId === originalId ? { ...entry, propertyId: newId } : entry);
+  const updatedRuns = runs.map((run) => run.campaignCategory === 'jobs' ? run : ({
+    ...run,
+    campaignIds: Array.isArray(run.campaignIds) ? run.campaignIds.map((id) => id === originalId ? newId : id) : run.campaignIds,
+    configSnapshot: run.configSnapshot ? {
+      ...run.configSnapshot,
+      selectedPropertyIds: (run.configSnapshot.selectedPropertyIds || []).map((id) => id === originalId ? newId : id),
+    } : run.configSnapshot,
+  }));
+
+  let mediaMoved = false;
+  try {
+    if (fs.existsSync(sourceUploads)) {
+      fs.renameSync(sourceUploads, destinationUploads);
+      mediaMoved = true;
+    }
+    saveProperty(updatedProperty);
+    saveSchedules(updatedSchedules);
+    saveRuntimeConfig(updatedRuntimeConfig);
+    writeJson(path.join(logsPath, 'history.json'), updatedHistory);
+    writeJson(path.join(logsPath, 'runs.json'), updatedRuns);
+    fs.unlinkSync(sourcePath);
+    return updatedProperty;
+  } catch (error) {
+    if (fs.existsSync(destinationPath)) fs.unlinkSync(destinationPath);
+    if (mediaMoved && fs.existsSync(destinationUploads) && !fs.existsSync(sourceUploads)) {
+      fs.renameSync(destinationUploads, sourceUploads);
+    }
+    saveSchedules(schedules);
+    saveRuntimeConfig(runtimeConfig);
+    writeJson(path.join(logsPath, 'history.json'), history);
+    writeJson(path.join(logsPath, 'runs.json'), runs);
+    throw error;
+  }
 }
 
 function deleteProperty(propertyId) {
@@ -587,6 +693,7 @@ module.exports = {
 
   getProperties,
   saveProperty,
+  updateProperty,
   deleteProperty,
 
   getJobs,

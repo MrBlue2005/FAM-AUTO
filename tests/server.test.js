@@ -178,11 +178,62 @@ assert.equal(unauthorizedMedia.status, 401);
     });
     assert.equal(scheduleMoved.status, 200);
     assert.equal((await scheduleMoved.json()).folderId, folder.id);
+    const runtimeBeforeRename = await fetch(`http://127.0.0.1:${port}/api/runtime-config`, {
+      headers: { cookie: sessionCookie },
+    }).then((response) => response.json());
+    const runtimeConfigured = await fetch(`http://127.0.0.1:${port}/api/runtime-config`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        ...runtimeBeforeRename,
+        campaignCategory: 'real_estate',
+        selectedPropertyIds: ['SCHEDULE_FOLDER_PROPERTY'],
+        queueExcludedTaskIds: ['main::SCHEDULE_FOLDER_PROPERTY::G1'],
+        queueRetryTaskIds: ['SCHEDULE_FOLDER_PROPERTY::G2'],
+        queueOrder: ['main::SCHEDULE_FOLDER_PROPERTY::G1'],
+      }),
+    });
+    assert.equal(runtimeConfigured.status, 200);
+    const originalMediaDirectory = path.join(storageRoot, 'uploads', 'SCHEDULE_FOLDER_PROPERTY', 'day-1');
+    fs.mkdirSync(originalMediaDirectory, { recursive: true });
+    fs.writeFileSync(path.join(originalMediaDirectory, 'test-image.png'), 'test-media');
+    const propertyRenamed = await fetch(`http://127.0.0.1:${port}/api/properties/SCHEDULE_FOLDER_PROPERTY`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', cookie: sessionCookie, 'x-rx-csrf': '1' },
+      body: JSON.stringify({
+        id: 'PROPERTY_SHORT', name: 'Property folder test', active: true,
+        posts: [{
+          day: 1,
+          imagePath: 'app/uploads/SCHEDULE_FOLDER_PROPERTY/day-1/test-image.png',
+          media: ['app/uploads/SCHEDULE_FOLDER_PROPERTY/day-1/test-image.png'],
+        }],
+      }),
+    });
+    assert.equal(propertyRenamed.status, 200);
+    const renamedProperty = await propertyRenamed.json();
+    assert.equal(renamedProperty.id, 'PROPERTY_SHORT');
+    assert.equal(renamedProperty.posts[0].imagePath, 'app/uploads/PROPERTY_SHORT/day-1/test-image.png');
+    assert.equal(fs.existsSync(path.join(storageRoot, 'uploads', 'SCHEDULE_FOLDER_PROPERTY')), false);
+    assert.equal(fs.existsSync(path.join(storageRoot, 'uploads', 'PROPERTY_SHORT', 'day-1', 'test-image.png')), true);
+    const propertiesAfterRename = await fetch(`http://127.0.0.1:${port}/api/properties`, {
+      headers: { cookie: sessionCookie },
+    }).then((response) => response.json());
+    assert.equal(propertiesAfterRename.some((item) => item.id === 'SCHEDULE_FOLDER_PROPERTY'), false);
+    assert.equal(propertiesAfterRename.some((item) => item.id === 'PROPERTY_SHORT'), true);
+    const runtimeAfterRename = await fetch(`http://127.0.0.1:${port}/api/runtime-config`, {
+      headers: { cookie: sessionCookie },
+    }).then((response) => response.json());
+    assert.deepEqual(runtimeAfterRename.selectedPropertyIds, ['PROPERTY_SHORT']);
+    assert.deepEqual(runtimeAfterRename.queueExcludedTaskIds, ['main::PROPERTY_SHORT::G1']);
+    assert.deepEqual(runtimeAfterRename.queueRetryTaskIds, ['PROPERTY_SHORT::G2']);
+    assert.deepEqual(runtimeAfterRename.queueOrder, ['main::PROPERTY_SHORT::G1']);
     const schedulesWithFolder = await fetch(`http://127.0.0.1:${port}/api/schedules`, {
       headers: { cookie: sessionCookie },
     });
     assert.equal(schedulesWithFolder.status, 200);
-    assert.ok((await schedulesWithFolder.json()).folders.some((item) => item.id === folder.id));
+    const schedulesWithFolderBody = await schedulesWithFolder.json();
+    assert.ok(schedulesWithFolderBody.folders.some((item) => item.id === folder.id));
+    assert.deepEqual(schedulesWithFolderBody.schedules.find((item) => item.id === schedule.id).campaignIds, ['PROPERTY_SHORT']);
     const folderDeleted = await fetch(`http://127.0.0.1:${port}/api/schedule-folders/${folder.id}`, {
       method: 'DELETE',
       headers: { cookie: sessionCookie, 'x-rx-csrf': '1' },
