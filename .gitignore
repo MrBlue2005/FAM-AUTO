@@ -18,6 +18,8 @@ dashboard-v2/dist/
 overlay-desktop/dist/
 overlay-desktop/out/
 overlay-desktop/launcher/dist/
+installer/.staging/
+installer/dist/
 .env
 .env.production
 dashboard-v2/.env.*

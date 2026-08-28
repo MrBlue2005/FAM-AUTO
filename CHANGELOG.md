@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added a Windows `Setup.exe` workflow that bundles the application source, downloads a private Node.js 22 runtime, installs all npm/Playwright dependencies, initializes the local database and authentication, and creates the Desktop/startup launcher without packaging private runtime data.
 - Made scheduled weekdays explicit on every saved schedule card, with a readable summary and individual full-name day badges.
 - Extended the desktop overlay with a scrollable card for every simultaneous active campaign/profile, including independent Pause/Resume and Stop controls, while retaining Pause all, Resume all, Stop all, and Refresh controls. The overlay token is restricted to status plus those explicit robot-control endpoints.
 - Fixed the desktop Studio Launcher so `Enter Workspace` is hidden in its normal control window and appears only in the fullscreen startup Welcome mode.

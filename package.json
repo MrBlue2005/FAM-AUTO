@@ -24,6 +24,7 @@
     "launcher:dev": "npm --prefix overlay-desktop run launcher:dev",
     "launcher:dist": "npm --prefix overlay-desktop run launcher:dist",
     "launcher:install": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-studio-launcher.ps1",
+    "installer:dist": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "studio:stop": "node scripts/stop-studio.js"
   },
   "keywords": [],

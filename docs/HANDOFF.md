@@ -114,6 +114,7 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## Reproducible clone baseline
 
+- `npm.cmd run installer:dist` builds a Windows online installer with Inno Setup. The generated `RX-AI-Studio-Setup-1.1.0.exe` installs under the current user's LocalAppData, provisions a private Node.js 22 runtime, runs the full dependency/Playwright/Prisma/auth setup, and installs the launcher shortcuts. The payload is assembled only from Git-tracked or non-ignored files, so private runtime data is excluded.
 - `npm.cmd run setup:new-pc` installs root, dashboard, copywriter, and overlay dependencies from lockfiles; creates missing local env files; initializes Prisma/SQLite; installs Playwright Chromium; configures the Scrypt login; and runs baseline checks.
 - Operational groups, runtime configuration, schedules, property/job campaigns, uploads, logs, databases, and browser profiles are excluded from Git. Existing files remain local; new clones start safely with empty data and publishing disabled.
 - All four npm dependency audits report zero vulnerabilities after pinning the fixed overlay transitive packages.

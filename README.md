@@ -13,6 +13,23 @@ Cele trei descrieri generate in RX CREATIVE Tool pot fi trimise direct in formul
 
 ## Instalare pe un PC nou
 
+### Installer Windows (recomandat)
+
+Ruleaza `RX-AI-Studio-Setup-1.1.0.exe`. Setup-ul instaleaza aplicatia in profilul utilizatorului, descarca propriul runtime Node.js 22, instaleaza toate dependintele npm si Chromium pentru robot, initializeaza baza generatorului, cere parola de administrator si creeaza shortcutul plus pornirea automata. Nu este necesar ca Node.js sau Git sa fie deja instalate.
+
+Installerul nu contine si nu suprascrie date private: parole, fisiere `.env` existente, profiluri Facebook, media si date operationale. Este un installer online si are nevoie de internet pentru Node.js, pachetele npm si Chromium.
+
+Pentru a construi setup-ul din sursa pe PC-ul de dezvoltare:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e
+npm.cmd run installer:dist
+```
+
+Executabilul rezultat este creat in `installer\dist`.
+
+### Instalare din sursa
+
 Cerinte: Windows 10/11, Git, Node.js 22.12 sau mai nou si Google Chrome. Deschide PowerShell:
 
 ```powershell

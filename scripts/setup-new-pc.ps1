@@ -22,9 +22,9 @@ function Invoke-Checked {
   }
 }
 
-foreach ($requiredCommand in @('git.exe', 'node.exe', 'npm.cmd')) {
+foreach ($requiredCommand in @('node.exe', 'npm.cmd')) {
   if (-not (Get-Command $requiredCommand -ErrorAction SilentlyContinue)) {
-    throw "Lipseste $requiredCommand. Instaleaza Git si Node.js 22.12+ si redeschide terminalul."
+    throw "Lipseste $requiredCommand. Instaleaza Node.js 22.12+ si redeschide terminalul."
   }
 }
 
@@ -67,7 +67,13 @@ if (-not $SkipBrowserInstall) {
   Invoke-Checked npm.cmd --prefix property-copywriter exec -- playwright install chromium
 }
 
-if (-not $NonInteractive) {
+$existingPasswordHash = if (Test-Path -LiteralPath '.env') {
+  Select-String -LiteralPath '.env' -Pattern '^ADMIN_PASSWORD_SCRYPT=.+$' -Quiet
+} else {
+  $false
+}
+
+if (-not $NonInteractive -and -not $existingPasswordHash) {
   $securePassword = Read-Host 'Alege parola administratorului (minimum 16 caractere)' -AsSecureString
   $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
   try {
@@ -77,6 +83,8 @@ if (-not $NonInteractive) {
     Remove-Item Env:PASSWORD -ErrorAction SilentlyContinue
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
   }
+} elseif ($existingPasswordHash) {
+  Write-Host 'Pastrez parola administratorului configurata deja. Foloseste npm.cmd run auth:setup pentru a o schimba.' -ForegroundColor Green
 } else {
   Write-Host 'Mod non-interactiv: autentificarea nu a fost modificata. Ruleaza npm.cmd run auth:setup pentru a seta parola.' -ForegroundColor Yellow
 }

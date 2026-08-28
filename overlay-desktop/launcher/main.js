@@ -46,6 +46,12 @@ function resolveStudioRoot() {
   return root;
 }
 
+function resolveNodeExecutable(root) {
+  const bundledNode = path.join(root, 'runtime', 'node', 'node.exe');
+  if (process.platform === 'win32' && fs.existsSync(bundledNode)) return bundledNode;
+  return process.env.RX_NODE_EXE || 'node';
+}
+
 async function serviceOnline(service) {
   try {
     const response = await fetch(service.url, { signal: AbortSignal.timeout(1200) });
@@ -98,7 +104,7 @@ async function startStudio() {
 
   try {
     const root = resolveStudioRoot();
-    const child = spawn('node', ['--env-file-if-exists=.env', 'scripts/start-studio.js'], {
+    const child = spawn(resolveNodeExecutable(root), ['--env-file-if-exists=.env', 'scripts/start-studio.js'], {
       cwd: root,
       detached: true,
       windowsHide: true,
@@ -150,7 +156,7 @@ async function stopStudio() {
 
   try {
     const root = resolveStudioRoot();
-    const child = spawn('node', ['scripts/stop-studio.js'], {
+    const child = spawn(resolveNodeExecutable(root), ['scripts/stop-studio.js'], {
       cwd: root,
       windowsHide: true,
       stdio: 'ignore',

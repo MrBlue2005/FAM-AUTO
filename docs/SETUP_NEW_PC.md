@@ -1,5 +1,22 @@
 # Instalare RX AI Studio pe alt PC Windows
 
+## Varianta recomandata: Setup.exe
+
+Ruleaza `RX-AI-Studio-Setup-1.1.0.exe`. Installerul copiaza aplicatia in `%LOCALAPPDATA%\Programs\RX AI Studio`, descarca un runtime privat Node.js 22 si ruleaza automat configurarea completa: dependinte, Chromium Playwright, Prisma/SQLite, parola, launcher, shortcut Desktop si task-ul de pornire la logare.
+
+Nu sunt necesare Git sau Node.js instalate anterior. Este necesara o conexiune la internet. Setup-ul nu include date private si pastreaza configuratiile locale existente la reinstalare. Inaintea unei reinstalari, opreste Studio si orice campanie activa.
+
+Pentru generarea installerului din repository:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e
+npm.cmd run installer:dist
+```
+
+Rezultatul este `installer\dist\RX-AI-Studio-Setup-1.1.0.exe`. Buildul include numai fisierele urmarite sau neignorate de Git; `.env`, datele operationale, media, logurile, profilele Facebook si `node_modules` nu sunt incluse.
+
+## Varianta pentru dezvoltare: instalare din sursa
+
 ## 1. Instaleaza uneltele
 
 Instaleaza Git, Node.js 22.12+ (LTS recomandat), Google Chrome si GitHub CLI:
