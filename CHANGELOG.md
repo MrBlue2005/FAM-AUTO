@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Restored zero-vulnerability npm audits across all four workspaces by updating lockfiles and pinning patched `deepmerge-ts`, `fast-uri`, `nanoid`, and `brace-expansion` transitive releases; Prisma remains on 7.9.0 and its schema/client workflows are revalidated against the safe dependency tree.
 - Added backend-only Gemini description generation to RX CREATIVE Tool using the official `@google/genai` SDK and configurable `GEMINI_API_KEY`/`GEMINI_MODEL`. The new UI action reuses the validated property JSON and existing editorial/template guidance, writes into the existing result/history workflow, keeps prior results on failure, maps API/configuration/quota/network/timeout errors safely, and removes only the `Detalii esențiale` heading from Gemini output.
 - Added a portable, self-contained Windows offline installer and ZIP containing the private Node.js runtime, all four npm dependency trees, both required Playwright Chromium revisions, prebuilt dashboard/copywriter/overlay/launcher applications, and the Microsoft VC++ runtime. A target PC needs neither Visual Studio, a global Node.js installation, nor internet access during setup.
 - Connected the Windows Studio Launcher to public GitHub Releases. It compares semantic versions, displays `Update available`, downloads only the matching full offline installer after explicit confirmation, validates the GitHub SHA-256 digest, stops Studio only after validation succeeds, and then starts the installer.

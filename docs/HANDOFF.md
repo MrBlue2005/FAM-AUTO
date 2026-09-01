@@ -98,7 +98,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Reusable description models are managed from `/templates`. The selected model is sent in full to GPT together with explicit matching rules; inapplicable criteria are omitted, relevant data absent from the model may be added in the same style, and validated property data always takes precedence. History stores a snapshot, so editing or deleting a model does not alter previous generations.
 - Local Prisma/SQLite history and dedicated unit tests.
 - Integrated verification passes: dashboard lint and production build, 12 backend tests, and the complete 16-test studio E2E suite, including login, Facebook-profile persistence, Reports contrast, and real Media Library image-preview coverage.
-- The earlier vulnerable `eslint-config-next` bundle was replaced with explicit ESLint 10, TypeScript, React Hooks, and Next.js plugin configuration. As of 2026-09-01, `property-copywriter` still reports five high-severity transitive advisories (`deepmerge-ts` through Prisma, `fast-uri`, and `nanoid`); the only complete automated fix currently offered includes a breaking Prisma downgrade, so it was not applied as part of the Gemini feature.
+- The earlier vulnerable `eslint-config-next` bundle was replaced with explicit ESLint 10, TypeScript, React Hooks, and Next.js plugin configuration. The 2026 advisories in Prisma's transitive `deepmerge-ts` plus `fast-uri`, `nanoid`, and `brace-expansion` are pinned through targeted overrides to their patched releases; both full and production-only `property-copywriter` npm audits report zero vulnerabilities, while Prisma stays on 7.9.0.
 
 ### Desktop overlay
 
