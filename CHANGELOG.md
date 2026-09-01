@@ -10,7 +10,7 @@
 
 ## Unreleased
 
-- Job schedules now rotate their configured posts automatically using each campaign's latest successfully prepared or published history. The cursor is shared across all schedules containing the same job, supports mixed 5-post and 20-post campaigns, ignores blocked/error-only attempts, and wraps to the first configured post after the last; real-estate schedules retain their fixed selected day.
+- Job schedules now rotate their configured posts automatically using each campaign's latest successfully prepared or published history and the chronological order of its upcoming schedules. The cursor is shared across weekday folders/schedules containing the same job (for example Tuesday gets day 11 and Thursday day 12), supports mixed 5-post and 20-post campaigns, ignores blocked/error-only attempts, and wraps to the first configured post after the last; real-estate schedules retain their fixed selected day.
 - Scheduler cards expose the next post day for every included job campaign, while the job-schedule editor replaces the fixed day input with a clear automatic-rotation notice.
 - Added the same day-by-day Facebook preview drawer to job campaigns as property campaigns. It opens from either the Preview button or the non-interactive area of a job card, while selection and action controls retain their own behavior.
 - Fixed property-ID renames for campaigns that share another property's media: references are now migrated across every property and job, not only inside the renamed campaign. Existing broken references for `ADUNATII_COPACENI_ENG` were repaired and verified against all 33 media entries.

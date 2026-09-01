@@ -352,14 +352,28 @@ test('job schedules rotate each campaign through its own configured post days', 
     { propertyId: 'JOB_20', day: 19, status: 'posted', date: '2026-08-25T10:00:00.000Z' },
     { propertyId: 'JOB_20', day: 20, status: 'error', date: '2026-08-26T10:00:00.000Z' },
   ];
+  const tuesdaySchedule = {
+    ...schedule,
+    id: 'TUESDAY',
+    enabled: true,
+    nextRunAt: '2026-09-01T14:00:00.000Z',
+  };
+  const thursdaySchedule = {
+    ...schedule,
+    id: 'THURSDAY',
+    enabled: true,
+    nextRunAt: '2026-09-03T14:00:00.000Z',
+  };
+  const schedules = [thursdaySchedule, tuesdaySchedule];
 
-  assert.deepEqual(ScheduleManager.buildJobPostDayMap(schedule, jobs, history), { JOB_5: 1, JOB_20: 20 });
+  assert.deepEqual(ScheduleManager.buildJobPostDayMap(tuesdaySchedule, jobs, history, schedules), { JOB_5: 1, JOB_20: 20 });
+  assert.deepEqual(ScheduleManager.buildJobPostDayMap(thursdaySchedule, jobs, history, schedules), { JOB_5: 2, JOB_20: 1 });
 
-  const executionConfig = ScheduleManager.createExecutionConfig(schedule, {
+  const executionConfig = ScheduleManager.createExecutionConfig(thursdaySchedule, {
     facebookProfiles: [],
     campaignDay: 3,
-  }, jobs, history);
-  assert.deepEqual(executionConfig.campaignDayById, { JOB_5: 1, JOB_20: 20 });
+  }, jobs, history, schedules);
+  assert.deepEqual(executionConfig.campaignDayById, { JOB_5: 2, JOB_20: 1 });
 });
 
 test('deleting a campaign reference updates mixed schedules and removes empty schedules', () => {

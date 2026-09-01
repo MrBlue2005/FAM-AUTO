@@ -70,7 +70,28 @@ function getConfiguredPostDays(campaign) {
   return Array.from(new Set(days)).sort((a, b) => a - b);
 }
 
-function buildJobPostDayMap(schedule, jobs = DataManager.getJobs(), history = DataManager.getHistory()) {
+function getScheduleCampaignOffset(schedule, campaignId, schedules) {
+  const ordered = (schedules || [])
+    .filter((item) =>
+      item.campaignCategory === 'jobs' &&
+      item.enabled !== false &&
+      item.nextRunAt &&
+      (item.campaignIds || []).includes(campaignId)
+    )
+    .sort((a, b) => {
+      const timeDifference = new Date(a.nextRunAt) - new Date(b.nextRunAt);
+      return timeDifference || String(a.id || '').localeCompare(String(b.id || ''));
+    });
+  const index = ordered.findIndex((item) => item.id === schedule.id);
+  return index >= 0 ? index : 0;
+}
+
+function buildJobPostDayMap(
+  schedule,
+  jobs = DataManager.getJobs(),
+  history = DataManager.getHistory(),
+  schedules = DataManager.getSchedules()
+) {
   if (schedule.campaignCategory !== 'jobs') return {};
   const byId = new Map(jobs.map((job) => [job.id, job]));
   const fallbackDay = Number(schedule.campaignDay || 1);
@@ -91,10 +112,15 @@ function buildJobPostDayMap(schedule, jobs = DataManager.getJobs(), history = Da
     const latestSuccessfulEntry = latestSuccessfulByCampaign.get(campaignId);
     const latestDay = Number(latestSuccessfulEntry?.day);
     if (!availableDays.includes(latestDay)) {
-      return [campaignId, availableDays.includes(fallbackDay) ? fallbackDay : availableDays[0]];
+      const initialIndex = availableDays.indexOf(
+        availableDays.includes(fallbackDay) ? fallbackDay : availableDays[0]
+      );
+      const offset = getScheduleCampaignOffset(schedule, campaignId, schedules);
+      return [campaignId, availableDays[(initialIndex + offset) % availableDays.length]];
     }
     const latestIndex = availableDays.indexOf(latestDay);
-    return [campaignId, availableDays[(latestIndex + 1) % availableDays.length]];
+    const offset = getScheduleCampaignOffset(schedule, campaignId, schedules);
+    return [campaignId, availableDays[(latestIndex + 1 + offset) % availableDays.length]];
   }));
 }
 
@@ -199,9 +225,10 @@ function normalizeSchedule(input = {}, existing = null) {
 function list() {
   const jobs = DataManager.getJobs();
   const history = DataManager.getHistory();
-  return DataManager.getSchedules().map((schedule) => schedule.campaignCategory === 'jobs' ? {
+  const schedules = DataManager.getSchedules();
+  return schedules.map((schedule) => schedule.campaignCategory === 'jobs' ? {
     ...schedule,
-    nextJobPostDayByCampaign: buildJobPostDayMap(schedule, jobs, history),
+    nextJobPostDayByCampaign: buildJobPostDayMap(schedule, jobs, history, schedules),
   } : schedule).sort((a, b) => {
     if (!a.nextRunAt && !b.nextRunAt) return String(a.name || '').localeCompare(String(b.name || ''));
     if (!a.nextRunAt) return 1;
@@ -283,9 +310,10 @@ function createExecutionConfig(
   schedule,
   currentConfig = DataManager.getRuntimeConfig(),
   jobs = DataManager.getJobs(),
-  history = DataManager.getHistory()
+  history = DataManager.getHistory(),
+  schedules = DataManager.getSchedules()
 ) {
-  const campaignDayById = buildJobPostDayMap(schedule, jobs, history);
+  const campaignDayById = buildJobPostDayMap(schedule, jobs, history, schedules);
   return {
     ...currentConfig,
     campaignDay: schedule.campaignDay,
@@ -327,7 +355,13 @@ function execute(schedule, { trigger = 'manual', now = new Date() } = {}) {
   }
 
   const currentConfig = DataManager.getRuntimeConfig();
-  const executionConfig = createExecutionConfig(schedule, currentConfig);
+  const executionConfig = createExecutionConfig(
+    schedule,
+    currentConfig,
+    DataManager.getJobs(),
+    DataManager.getHistory(),
+    scheduled ? DataManager.getSchedules() : [schedule]
+  );
 
   const robot = RobotManager.start({
     facebookProfileId: schedule.facebookProfileId,
@@ -385,6 +419,7 @@ function stop() {
 module.exports = {
   computeNextRun,
   buildJobPostDayMap,
+  getScheduleCampaignOffset,
   createExecutionConfig,
   create,
   execute,
