@@ -1,10 +1,17 @@
 const fs = require('fs');
+const crypto = require('crypto');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { pipeline } = require('stream/promises');
+const { Readable } = require('stream');
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 
 const appUserModelId = 'com.rxai.studio.launcher';
 const studioUrl = 'http://127.0.0.1:5173';
+const githubRepository = 'MrBlue2005/FAM-AUTO';
+const latestReleaseApi = `https://api.github.com/repos/${githubRepository}/releases/latest`;
+const releaseAssetPrefix = `https://github.com/${githubRepository}/releases/download/`;
 const startupWelcome = process.argv.includes('--startup');
 const serviceDefinitions = [
   { id: 'api', name: 'API Robot', url: 'http://127.0.0.1:3000/readyz' },
@@ -15,6 +22,7 @@ const serviceDefinitions = [
 let mainWindow = null;
 let starting = false;
 let stopping = false;
+let installingUpdate = false;
 
 if (process.platform === 'win32') app.setAppUserModelId(appUserModelId);
 
@@ -50,6 +58,114 @@ function resolveNodeExecutable(root) {
   const bundledNode = path.join(root, 'runtime', 'node', 'node.exe');
   if (process.platform === 'win32' && fs.existsSync(bundledNode)) return bundledNode;
   return process.env.RX_NODE_EXE || 'node';
+}
+
+function currentStudioVersion() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(resolveStudioRoot(), 'package.json'), 'utf8'));
+  return String(manifest.version || '0.0.0');
+}
+
+function versionParts(value) {
+  return String(value).replace(/^v/i, '').split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function isNewerVersion(candidate, current) {
+  const next = versionParts(candidate);
+  const installed = versionParts(current);
+  for (let index = 0; index < 3; index += 1) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+}
+
+async function fetchLatestRelease() {
+  const response = await fetch(latestReleaseApi, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'RX-AI-Studio-Launcher',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GitHub a raspuns cu status ${response.status}.`);
+  return response.json();
+}
+
+function releaseUpdateInfo(release) {
+  const currentVersion = currentStudioVersion();
+  if (!release) return { currentVersion, available: false, noRelease: true };
+  const latestVersion = String(release.tag_name || '').replace(/^v/i, '');
+  const assetName = `RX-AI-Studio-Offline-Setup-${latestVersion}.exe`;
+  const asset = (release.assets || []).find((item) => item.name === assetName);
+  const available = isNewerVersion(latestVersion, currentVersion) && Boolean(asset);
+  return {
+    currentVersion,
+    latestVersion,
+    available,
+    assetName: asset?.name,
+    assetSize: asset?.size,
+    releaseUrl: release.html_url,
+    downloadUrl: asset?.browser_download_url,
+    digest: asset?.digest,
+  };
+}
+
+async function checkForUpdate() {
+  return releaseUpdateInfo(await fetchLatestRelease());
+}
+
+async function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+async function downloadAndInstallUpdate() {
+  if (installingUpdate) throw new Error('Un update este deja in curs de descarcare.');
+  installingUpdate = true;
+  try {
+    const update = await checkForUpdate();
+    if (!update.available) throw new Error('Nu exista un update nou disponibil.');
+    if (!update.downloadUrl?.startsWith(releaseAssetPrefix)) {
+      throw new Error('Adresa pachetului de update nu este valida.');
+    }
+    const expectedDigest = String(update.digest || '');
+    if (!/^sha256:[a-f0-9]{64}$/i.test(expectedDigest)) {
+      throw new Error('Release-ul nu contine semnatura SHA-256 necesara instalarii sigure.');
+    }
+
+    const updateDirectory = path.join(os.tmpdir(), 'RX-AI-Studio-Updates');
+    fs.mkdirSync(updateDirectory, { recursive: true });
+    const installerPath = path.join(updateDirectory, update.assetName);
+    const partialPath = `${installerPath}.download`;
+    fs.rmSync(partialPath, { force: true });
+
+    const response = await fetch(update.downloadUrl, {
+      headers: { 'User-Agent': 'RX-AI-Studio-Launcher' },
+      signal: AbortSignal.timeout(30 * 60 * 1000),
+    });
+    if (!response.ok || !response.body) throw new Error(`Descarcarea update-ului a esuat (${response.status}).`);
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partialPath));
+
+    const actualHash = await sha256File(partialPath);
+    const requiredHash = expectedDigest.slice('sha256:'.length).toLowerCase();
+    if (actualHash.toLowerCase() !== requiredHash) {
+      fs.rmSync(partialPath, { force: true });
+      throw new Error('Verificarea SHA-256 a update-ului a esuat. Fisierul nu va fi rulat.');
+    }
+    fs.rmSync(installerPath, { force: true });
+    fs.renameSync(partialPath, installerPath);
+
+    const status = await getStatus();
+    if (status.anyOnline) await stopStudio();
+    const launchError = await shell.openPath(installerPath);
+    if (launchError) throw new Error(`Installerul nu a putut porni: ${launchError}`);
+    setTimeout(() => app.quit(), 1200);
+    return { launched: true, version: update.latestVersion };
+  } finally {
+    installingUpdate = false;
+  }
 }
 
 async function serviceOnline(service) {
@@ -183,7 +299,7 @@ async function stopStudio() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 620,
-    height: 610,
+    height: 700,
     minWidth: 520,
     minHeight: 520,
     show: false,
@@ -250,5 +366,7 @@ ipcMain.handle('studio:open', async () => {
   return true;
 });
 ipcMain.handle('studio:is-startup-launch', () => startupWelcome);
+ipcMain.handle('studio:check-update', () => checkForUpdate());
+ipcMain.handle('studio:install-update', () => downloadAndInstallUpdate());
 ipcMain.handle('window:minimize', () => mainWindow?.minimize());
 ipcMain.handle('window:close', () => mainWindow?.close());

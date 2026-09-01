@@ -1,0 +1,61 @@
+name: Build offline Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dashboard-v2/package-lock.json
+            property-copywriter/package-lock.json
+            overlay-desktop/package-lock.json
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build complete offline installer
+        shell: powershell
+        run: npm.cmd run installer:offline
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          gh release create "${{ github.ref_name }}" `
+            "installer/dist/RX-AI-Studio-Offline-Setup-$version.exe" `
+            "installer/dist/RX-AI-Studio-Offline-Setup-$version.exe.sha256" `
+            "installer/dist/RX-AI-Studio-Offline-$version.zip" `
+            --title "RX AI Studio $version" `
+            --generate-notes
+
+      - name: Upload workflow artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: RX-AI-Studio-Offline
+          path: |
+            installer/dist/RX-AI-Studio-Offline-Setup-*.exe
+            installer/dist/RX-AI-Studio-Offline-Setup-*.exe.sha256
+            installer/dist/RX-AI-Studio-Offline-*.zip
+          if-no-files-found: error

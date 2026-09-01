@@ -3,6 +3,14 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const backgroundMode = process.env.RX_STUDIO_BACKGROUND === '1';
+const bundledPlaywrightBrowsers = path.join(root, 'runtime', 'ms-playwright');
+const offlineBundle = require('node:fs').existsSync(path.join(root, 'runtime', 'offline-bundle.json'));
+const serviceEnvironment = {
+  ...process.env,
+  ...(require('node:fs').existsSync(bundledPlaywrightBrowsers)
+    ? { PLAYWRIGHT_BROWSERS_PATH: bundledPlaywrightBrowsers }
+    : {}),
+};
 const serviceDefinitions = [
   {
     name: 'API',
@@ -23,7 +31,7 @@ const serviceDefinitions = [
     url: 'http://127.0.0.1:3100/',
     cwd: path.join(root, 'property-copywriter'),
     command: process.execPath,
-    args: ['node_modules/next/dist/bin/next', 'dev', '-H', '127.0.0.1', '-p', '3100'],
+    args: ['node_modules/next/dist/bin/next', offlineBundle ? 'start' : 'dev', '-H', '127.0.0.1', '-p', '3100'],
   },
 ];
 
@@ -67,7 +75,7 @@ async function startStudio() {
       cwd: definition.cwd,
       stdio: backgroundMode ? 'ignore' : 'inherit',
       windowsHide: backgroundMode,
-      env: process.env,
+      env: serviceEnvironment,
     });
     children.push(child);
     child.on('exit', (code, signal) => {

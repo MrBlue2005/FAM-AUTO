@@ -6,10 +6,15 @@ const minimizeButton = document.getElementById('minimizeButton');
 const closeButton = document.getElementById('closeButton');
 const enterWorkspaceButton = document.getElementById('enterWorkspaceButton');
 const startupStatus = document.querySelector('.startup-status');
+const checkUpdateButton = document.getElementById('checkUpdateButton');
+const installUpdateButton = document.getElementById('installUpdateButton');
+const updateStatus = document.getElementById('updateStatus');
 
 let launchInProgress = false;
 let stopInProgress = false;
 let startupLaunch = false;
+let updateCheckInProgress = false;
+let updateInstallInProgress = false;
 
 function renderStatus(status) {
   for (const service of status.services || []) {
@@ -95,6 +100,52 @@ async function startStudio() {
   }
 }
 
+async function checkForUpdate() {
+  if (updateCheckInProgress || updateInstallInProgress) return;
+  updateCheckInProgress = true;
+  checkUpdateButton.disabled = true;
+  updateStatus.textContent = 'Verific GitHub Releases...';
+  try {
+    const update = await window.rxStudioLauncher.checkUpdate();
+    installUpdateButton.hidden = !update.available;
+    if (update.available) {
+      updateStatus.textContent = `Versiunea ${update.latestVersion} este disponibila. Ai instalat ${update.currentVersion}.`;
+    } else if (update.noRelease) {
+      updateStatus.textContent = `Versiunea ${update.currentVersion}. Nu exista inca un release publicat.`;
+    } else {
+      updateStatus.textContent = `Versiunea ${update.currentVersion} este la zi.`;
+    }
+  } catch (error) {
+    updateStatus.textContent = error.message || 'Nu am putut verifica actualizarile.';
+  } finally {
+    updateCheckInProgress = false;
+    checkUpdateButton.disabled = false;
+  }
+}
+
+async function installUpdate() {
+  if (updateInstallInProgress) return;
+  const confirmed = window.confirm('Descarc si instalez update-ul? Studio va fi oprit automat numai dupa verificarea completa a pachetului.');
+  if (!confirmed) return;
+  updateInstallInProgress = true;
+  installUpdateButton.disabled = true;
+  checkUpdateButton.disabled = true;
+  updateStatus.textContent = 'Descarc si verific update-ul. Nu inchide launcherul...';
+  message.className = 'message working';
+  message.textContent = 'Update in curs. Studio va fi oprit inainte de pornirea installerului.';
+  try {
+    await window.rxStudioLauncher.installUpdate();
+    updateStatus.textContent = 'Installerul a pornit. Urmeaza pasii afisati.';
+  } catch (error) {
+    updateStatus.textContent = error.message || 'Update-ul nu a putut fi instalat.';
+    message.className = 'message error';
+    message.textContent = updateStatus.textContent;
+    updateInstallInProgress = false;
+    installUpdateButton.disabled = false;
+    checkUpdateButton.disabled = false;
+  }
+}
+
 startButton.addEventListener('click', startStudio);
 openButton.addEventListener('click', () => window.rxStudioLauncher.open());
 stopButton.addEventListener('click', stopStudio);
@@ -105,6 +156,8 @@ enterWorkspaceButton.addEventListener('click', async () => {
   await window.rxStudioLauncher.open();
   window.rxStudioLauncher.close();
 });
+checkUpdateButton.addEventListener('click', checkForUpdate);
+installUpdateButton.addEventListener('click', installUpdate);
 window.rxStudioLauncher.onStatus(renderStatus);
 
 async function initializeLauncher() {
@@ -113,6 +166,7 @@ async function initializeLauncher() {
 
   const status = await window.rxStudioLauncher.getStatus();
   renderStatus(status);
+  void checkForUpdate();
   startStudio();
 }
 

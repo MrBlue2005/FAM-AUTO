@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-08-24
+Last updated: 2026-09-01
 
 ## Repository state
 
@@ -106,6 +106,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Desktop overlay launch now prefers the fast unpacked executable, confirms process creation, survives the Codex Electron-as-Node environment, and uses a process-only token restricted to overlay status plus the explicit global/per-profile Pause, Resume, and Stop endpoints.
 - The Windows Studio Launcher supports a `--startup` mode: a fullscreen `Welcome back, sir.` screen is displayed while Studio starts. It uses the RX PROPULSE motion language (slow nebula/starfield drift, logo pulse, and light sweep) and honors Windows reduced-motion preferences. Its centered `Enter Workspace` button activates once Studio is ready and opens the local dashboard. `npm.cmd run launcher:install` creates the Desktop shortcut and the `RX AI Studio Welcome` user-logon Scheduled Task with no configured delay. Windows does not guarantee an absolute ordering against every third-party startup app, but the task starts as soon as the user logon trigger is available.
 - `Enter Workspace` is scoped to fullscreen startup Welcome mode and remains hidden in the launcher's normal service-control window.
+- The normal Windows Studio Launcher checks the public `MrBlue2005/FAM-AUTO` GitHub Releases endpoint. When a newer semantic version has a matching `RX-AI-Studio-Offline-Setup-<version>.exe` asset, it shows `Update available`. Installation remains operator-triggered; the launcher downloads to the Windows temporary folder, requires GitHub's SHA-256 asset digest to match, and stops local Studio services only after validation, immediately before opening the installer.
 
 - Electron overlay connected to the local API.
 - Custom R.X. AI icon in the executable, window, and Windows taskbar.
@@ -117,6 +118,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## Reproducible clone baseline
 
+- `npm.cmd run installer:offline` builds a movable, self-contained Windows Setup and ZIP under `installer/dist/`. It includes the private Node runtime, lockfile-installed dependencies for every application, both Playwright Chromium versions, compiled web/Electron outputs, and a Microsoft-signed VC++ runtime. The install itself does not need Visual Studio, global Node.js, npm downloads, or Playwright downloads. Generated staging, packages, binaries, operational state, secrets, and browser profiles remain Git-ignored.
+- `.github/workflows/release-offline.yml` runs the same build on Windows for version tags (`v*`) and publishes the Setup, its `.sha256`, and the ZIP as GitHub Release assets. The root `package.json` version, release tag, and generated filename must agree (for example version `1.1.0` and tag `v1.1.0`). A manual workflow run produces a downloadable Actions artifact but does not create a release.
 - `npm.cmd run installer:dist` builds a Windows online installer with Inno Setup. The generated `RX-AI-Studio-Setup-1.1.0.exe` installs under the current user's LocalAppData, provisions a private Node.js 22 runtime, runs the full dependency/Playwright/Prisma/auth setup, and installs the launcher shortcuts. The payload is assembled only from Git-tracked or non-ignored files, so private runtime data is excluded.
 - `npm.cmd run setup:new-pc` installs root, dashboard, copywriter, and overlay dependencies from lockfiles; creates missing local env files; initializes Prisma/SQLite; installs Playwright Chromium; configures the Scrypt login; and runs baseline checks.
 - Operational groups, runtime configuration, schedules, property/job campaigns, uploads, logs, databases, and browser profiles are excluded from Git. Existing files remain local; new clones start safely with empty data and publishing disabled.

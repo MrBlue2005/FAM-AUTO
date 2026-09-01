@@ -10,6 +10,9 @@
 
 ## Unreleased
 
+- Added a portable, self-contained Windows offline installer and ZIP containing the private Node.js runtime, all four npm dependency trees, both required Playwright Chromium revisions, prebuilt dashboard/copywriter/overlay/launcher applications, and the Microsoft VC++ runtime. A target PC needs neither Visual Studio, a global Node.js installation, nor internet access during setup.
+- Connected the Windows Studio Launcher to public GitHub Releases. It compares semantic versions, displays `Update available`, downloads only the matching full offline installer after explicit confirmation, validates the GitHub SHA-256 digest, stops Studio only after validation succeeds, and then starts the installer.
+- Added a tag-driven GitHub Actions release workflow that rebuilds the offline Setup/ZIP from lockfiles and publishes the installer, checksum, and portable archive, keeping future launcher updates synchronized with repository releases.
 - Job schedules now rotate their configured posts automatically using each campaign's latest successfully prepared or published history and the chronological order of its upcoming schedules. The cursor is shared across weekday folders/schedules containing the same job (for example Tuesday gets day 11 and Thursday day 12), supports mixed 5-post and 20-post campaigns, ignores blocked/error-only attempts, and wraps to the first configured post after the last; real-estate schedules retain their fixed selected day.
 - Scheduler cards expose the next post day for every included job campaign, while the job-schedule editor replaces the fixed day input with a clear automatic-rotation notice.
 - Added the same day-by-day Facebook preview drawer to job campaigns as property campaigns. It opens from either the Preview button or the non-interactive area of a job card, while selection and action controls retain their own behavior.

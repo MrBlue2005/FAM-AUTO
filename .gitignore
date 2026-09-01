@@ -19,6 +19,9 @@ overlay-desktop/dist/
 overlay-desktop/out/
 overlay-desktop/launcher/dist/
 installer/.staging/
+installer/.offline-staging/
+installer/.offline-package/
+installer/.offline-excluded/
 installer/dist/
 .env
 .env.production

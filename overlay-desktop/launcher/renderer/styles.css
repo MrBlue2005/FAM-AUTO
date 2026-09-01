@@ -182,6 +182,7 @@ body.startup-welcome-mode .launcher-shell::after {
 body.startup-welcome-mode .titlebar,
 body.startup-welcome-mode .services,
 body.startup-welcome-mode .message,
+body.startup-welcome-mode .update-panel,
 body.startup-welcome-mode .actions,
 body.startup-welcome-mode .footer-note {
   display: none;
@@ -400,6 +401,61 @@ body.startup-welcome-mode .startup-status {
   color: #fecaca;
   border-color: rgba(239, 68, 68, .35);
   background: rgba(127, 29, 29, .18);
+}
+
+.update-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.update-panel > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.update-panel strong {
+  font-size: 12px;
+}
+
+.update-panel small {
+  overflow: hidden;
+  color: #a1a1aa;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-actions {
+  display: flex;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.update-actions button {
+  padding: 8px 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.update-actions button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.update-button {
+  border: 1px solid rgba(52, 211, 153, .4);
+  color: #d1fae5;
+  background: rgba(6, 95, 70, .28);
 }
 
 .actions {

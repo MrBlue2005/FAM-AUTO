@@ -1,6 +1,23 @@
 # Instalare RX AI Studio pe alt PC Windows
 
-## Varianta recomandata: Setup.exe
+## Varianta recomandata: pachetul offline complet
+
+Descarca sau muta arhiva `RX-AI-Studio-Offline-<versiune>.zip`, extrage-o complet si ruleaza executabilul `RX-AI-Studio-Offline-Setup-<versiune>.exe` din interior. Pachetul instaleaza aplicatia completa, Node.js privat, toate dependentele npm, Chromium Playwright, baza Prisma/SQLite, parola, overlay-ul, launcherul, shortcutul Desktop si pornirea la logare.
+
+Pe calculatorul destinatie nu sunt necesare Visual Studio, Git, Node.js global sau conexiune la internet. Fisierul `SHA256.txt` din ZIP permite verificarea installerului. Datele private, configuratiile `.env`, media operationala si profilurile Facebook nu sunt incluse; acestea se muta separat prin backup.
+
+Dupa instalare, launcherul verifica automat ultimul GitHub Release. Daca exista o versiune mai noua, afiseaza `Update available`. Update-ul porneste numai dupa apasarea butonului si confirmare, iar Studio este oprit numai dupa ce descarcarea a trecut verificarea SHA-256.
+
+Pentru generarea pachetului offline din repository:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e
+npm.cmd run installer:offline
+```
+
+Rezultatele sunt scrise in `installer\dist`: Setup-ul complet, checksum-ul `.sha256` si arhiva ZIP portabila. Un tag Git cu forma `v<versiune>` declanseaza workflow-ul GitHub care construieste aceleasi fisiere si le publica in Releases.
+
+## Varianta online: Setup.exe compact
 
 Ruleaza `RX-AI-Studio-Setup-1.1.0.exe`. Installerul copiaza aplicatia in `%LOCALAPPDATA%\Programs\RX AI Studio`, descarca un runtime privat Node.js 22 si ruleaza automat configurarea completa: dependinte, Chromium Playwright, Prisma/SQLite, parola, launcher, shortcut Desktop si task-ul de pornire la logare.
 
