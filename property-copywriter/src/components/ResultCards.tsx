@@ -7,6 +7,7 @@ type Props = {
   value: Descriptions;
   busyVariant: DescriptionKind | "all" | null;
   transferBusy: boolean;
+  externalBusy?: boolean;
   onRegenerate: (variant?: DescriptionKind) => void;
   onTransfer: () => void;
 };
@@ -43,7 +44,7 @@ function DescriptionPreview({ text }: { text: string }) {
   );
 }
 
-export function ResultCards({ value, busyVariant, transferBusy, onRegenerate, onTransfer }: Props) {
+export function ResultCards({ value, busyVariant, transferBusy, externalBusy = false, onRegenerate, onTransfer }: Props) {
   const [copied, setCopied] = useState<DescriptionKind | null>(null);
   const copy = async (kind: DescriptionKind) => {
     const item = value[kind];
@@ -56,11 +57,11 @@ export function ResultCards({ value, busyVariant, transferBusy, onRegenerate, on
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div><p className="eyebrow">Rezultate</p><h2 className="mt-2 text-3xl font-black">Trei abordări distincte</h2></div>
         <div className="flex flex-wrap gap-2">
-          <button className="button" disabled={busyVariant !== null || transferBusy} onClick={onTransfer}>
+          <button className="button" disabled={busyVariant !== null || transferBusy || externalBusy} onClick={onTransfer}>
             {transferBusy && <span className="spinner" />}
             {transferBusy ? "Se transferă..." : "Trimite în RX PROPULSE"}
           </button>
-          <button className="button secondary" disabled={busyVariant !== null || transferBusy} onClick={() => onRegenerate()}>
+          <button className="button secondary" disabled={busyVariant !== null || transferBusy || externalBusy} onClick={() => onRegenerate()}>
             {busyVariant === "all" && <span className="spinner" />} Regenerare toate variantele
           </button>
         </div>
@@ -76,7 +77,7 @@ export function ResultCards({ value, busyVariant, transferBusy, onRegenerate, on
             <DescriptionPreview text={value[kind].description} />
             <div className="mt-6 grid grid-cols-2 gap-2">
               <button className="button" onClick={() => copy(kind)}>{copied === kind ? "Copiat!" : "Copiază"}</button>
-              <button className="button ghost" disabled={busyVariant !== null} onClick={() => onRegenerate(kind)}>
+              <button className="button ghost" disabled={busyVariant !== null || externalBusy} onClick={() => onRegenerate(kind)}>
                 {busyVariant === kind ? "Se generează…" : "Regenerează"}
               </button>
             </div>

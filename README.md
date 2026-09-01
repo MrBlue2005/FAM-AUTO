@@ -3,7 +3,7 @@
 RX AI Studio reuneste doua aplicatii locale:
 
 - **RX PROPULSE TOOL** — robotul Facebook, dashboardul si overlay-ul desktop; motto: **Stay active. Stay visible.**
-- **Property Copywriter** — generatorul de descrieri imobiliare, cu modele reutilizabile trimise integral către GPT pentru adaptare.
+- **Property Copywriter** — generatorul de descrieri imobiliare, cu OpenAI, flux manual ChatGPT și generare automată Gemini pe baza JSON-ului validat.
 
 Launcherul si ambele aplicatii folosesc o singura sesiune de autentificare.
 

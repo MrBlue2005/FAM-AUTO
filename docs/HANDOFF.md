@@ -94,11 +94,11 @@ Always verify these values with `git status` and `git log`; this document descri
 - Its header uses the shared RX emblem in the generator green palette; the launcher displays red and green application-specific RX logos on the corresponding cards, with accessible labeling and reduced-motion support.
 - Secure Zonere listing extraction, including catalog and shortlink support.
 - Editable structured property data and formatted social-media descriptions.
-- OpenAI/demo generation plus a manual ChatGPT copy/paste workflow.
+- OpenAI/demo generation plus a manual ChatGPT copy/paste workflow. A separate backend-only Gemini flow uses the official `@google/genai` SDK, defaults to the configurable `gemini-3.7-flash` model, sends only the existing validated property/options JSON (never the full HTML), validates the same three-description schema, persists through the existing history path, and leaves the previous UI result untouched on failure. Gemini output removes only the `Detalii esențiale` heading while retaining the facts below it; `GEMINI_API_KEY` stays in the Git-ignored `property-copywriter/.env`.
 - Reusable description models are managed from `/templates`. The selected model is sent in full to GPT together with explicit matching rules; inapplicable criteria are omitted, relevant data absent from the model may be added in the same style, and validated property data always takes precedence. History stores a snapshot, so editing or deleting a model does not alter previous generations.
 - Local Prisma/SQLite history and dedicated unit tests.
 - Integrated verification passes: dashboard lint and production build, 12 backend tests, and the complete 16-test studio E2E suite, including login, Facebook-profile persistence, Reports contrast, and real Media Library image-preview coverage.
-- Full npm audit is clean. The vulnerable `eslint-config-next` bundle was replaced with explicit ESLint 10, TypeScript, React Hooks, and Next.js plugin configuration, preserving lint coverage without vulnerable legacy minimatch dependencies.
+- The earlier vulnerable `eslint-config-next` bundle was replaced with explicit ESLint 10, TypeScript, React Hooks, and Next.js plugin configuration. As of 2026-09-01, `property-copywriter` still reports five high-severity transitive advisories (`deepmerge-ts` through Prisma, `fast-uri`, and `nanoid`); the only complete automated fix currently offered includes a breaking Prisma downgrade, so it was not applied as part of the Gemini feature.
 
 ### Desktop overlay
 

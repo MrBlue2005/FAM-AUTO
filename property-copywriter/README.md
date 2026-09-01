@@ -7,7 +7,7 @@ RX CREATIVE Tool este o aplicație locală Next.js care analizează un anunț de
 - Next.js 16 cu App Router, React și TypeScript strict;
 - Tailwind CSS 4;
 - Node.js și Playwright pentru analiza paginii;
-- OpenAI Responses API cu răspuns JSON Schema;
+- OpenAI Responses API și Gemini API cu răspuns JSON Schema;
 - Prisma 7 și SQLite;
 - Zod pentru validare;
 - Vitest și ESLint.
@@ -16,7 +16,7 @@ RX CREATIVE Tool este o aplicație locală Next.js care analizează un anunț de
 
 - Node.js 22 sau 24;
 - npm;
-- o cheie OpenAI pentru generarea reală (modul demo funcționează fără cheie).
+- o cheie OpenAI și/sau Gemini pentru generarea automată (modul demo și fluxul manual ChatGPT funcționează fără cheie).
 
 ## Instalare
 
@@ -35,11 +35,26 @@ Editează `.env`:
 ```env
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.7-flash
 DATABASE_URL="file:./dev.db"
 DEMO_MODE=true
 ```
 
 Nu introduce cheia în cod și nu comite `.env`. Pentru generare OpenAI setează cheia și `DEMO_MODE=false`. Modelul poate fi înlocuit fără modificarea codului.
+
+### Generare automată cu Gemini
+
+Butonul `Generează cu Gemini` trimite exclusiv JSON-ul proprietății deja extras și validat, împreună cu opțiunile și modelul editorial selectat, către ruta backend locală `/api/generate-gemini`. Linkul nu este folosit pentru o nouă extragere și pagina HTML nu este trimisă către Gemini. Cheia rămâne exclusiv în procesul Next.js de pe server și nu este inclusă în bundle-ul browserului.
+
+Adaugă cheia în `property-copywriter/.env`:
+
+```env
+GEMINI_API_KEY=cheia_creata_in_Google_AI_Studio
+GEMINI_MODEL=gemini-3.7-flash
+```
+
+Modelul implicit este configurabil. Rezultatul este validat cu aceeași schemă Zod, salvat în același istoric și afișat în aceleași carduri ca rezultatele OpenAI/ChatGPT. Fluxul Gemini elimină numai linia `Detalii esențiale`, păstrând informațiile care o urmează. La eroare, rezultatul afișat anterior rămâne neschimbat.
 
 ### Modele de descrieri
 
@@ -102,7 +117,8 @@ src/lib/adapters/        contractul surselor și ZonereAdapter
 src/lib/schemas.ts       tipurile și schemele Zod
 src/lib/url-security.ts  allowlist și validare URL
 src/lib/network-security.ts verificare DNS și blocare rețele private
-src/lib/openai-generator.ts generare JSON și reparare controlată
+src/lib/openai-generator.ts generare OpenAI JSON și reparare controlată
+src/lib/gemini-generator.ts generare Gemini JSON, validare și erori sigure
 src/lib/prompts.ts       promptul de sistem separat
 prisma/                  schema bazei de date
 tests/                   teste și fixture HTML

@@ -47,6 +47,8 @@ export function Workbench({ demo }: { demo: boolean }) {
   const [manualInfo, setManualInfo] = useState<string | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualBusy, setManualBusy] = useState(false);
+  const [geminiBusy, setGeminiBusy] = useState(false);
+  const [geminiError, setGeminiError] = useState<string | null>(null);
   const [transferBusy, setTransferBusy] = useState(false);
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function Workbench({ demo }: { demo: boolean }) {
 
   const analyze = async () => {
     setBusy("analyze"); setError(null); setMessage(null); setDescriptions(null); setRecordId(undefined);
-    setManualOpen(false); setManualResponse(""); setManualError(null); setManualInfo(null);
+    setManualOpen(false); setManualResponse(""); setManualError(null); setManualInfo(null); setGeminiError(null);
     try {
       const result = await jsonRequest<{ property: PropertyData }>("/api/analyze", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }),
@@ -76,14 +78,15 @@ export function Workbench({ demo }: { demo: boolean }) {
     finally { setBusy(null); }
   };
 
-  const persistDescriptions = async (next: Descriptions, successMessage: string) => {
+  const persistDescriptions = async (next: Descriptions, successMessage: string, deferResultUpdate = false) => {
     if (!property || !extracted) return;
-    setDescriptions(next);
+    if (!deferResultUpdate) setDescriptions(next);
     const saved = await jsonRequest<{ record: { id: string } }>("/api/history", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: recordId, extractedData: extracted, correctedData: property, options, descriptions: next }),
     });
     setRecordId(saved.record.id);
+    if (deferResultUpdate) setDescriptions(next);
     setMessage(successMessage);
   };
 
@@ -151,6 +154,40 @@ export function Workbench({ demo }: { demo: boolean }) {
     }
   };
 
+  const generateWithGemini = async () => {
+    if (geminiBusy) return;
+    if (!property || !extracted) {
+      setGeminiError("Analizează mai întâi proprietatea, apoi încearcă generarea cu Gemini.");
+      return;
+    }
+    const hasData = Object.entries(property).some(([key, value]) => {
+      if (["sourceUrl", "images"].includes(key) || value === null || value === undefined) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === "object") return Object.keys(value).length > 0;
+      return true;
+    });
+    if (!hasData) {
+      setGeminiError("Datele proprietății lipsesc. Analizează proprietatea înainte de generare.");
+      return;
+    }
+
+    setGeminiBusy(true); setGeminiError(null); setError(null); setMessage(null);
+    try {
+      const result = await jsonRequest<{ descriptions: Descriptions }>("/api/generate-gemini", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ property, options, recordId }),
+      });
+      const next = descriptionsSchema.parse(result.descriptions);
+      await persistDescriptions(next, "Descrierile Gemini au fost generate și salvate în istoric.", true);
+    } catch (caught) {
+      setGeminiError(caught instanceof Error ? caught.message : "Generarea Gemini a eșuat. Încearcă din nou.");
+    } finally {
+      setGeminiBusy(false);
+    }
+  };
+
   const transferToPropulse = async () => {
     if (!descriptions) return;
     setTransferBusy(true);
@@ -205,8 +242,8 @@ export function Workbench({ demo }: { demo: boolean }) {
         </div>
         <div className="mt-5 flex flex-col gap-3 md:flex-row">
           <input aria-label="URL proprietate" className="control flex-1" type="url" placeholder="https://zonere.ro/proprietate/..."
-            value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => event.key === "Enter" && analyze()} />
-          <button className="button min-w-56" disabled={!url || busy !== null} onClick={analyze}>
+            value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !geminiBusy && analyze()} />
+          <button className="button min-w-56" disabled={!url || busy !== null || geminiBusy} onClick={analyze}>
             {busy === "analyze" && <span className="spinner" />} {busy === "analyze" ? "Analizăm pagina…" : "Analizează proprietatea"}
           </button>
         </div>
@@ -220,13 +257,17 @@ export function Workbench({ demo }: { demo: boolean }) {
             Modelul „{options.descriptionTemplate.name}” este inclus integral în prompt. Pentru adaptare inteligentă folosește butonul „Deschide ChatGPT + copiază promptul”; fallbackul local nu copiază date din exemplu.
           </div>
         )}        <div className="flex flex-wrap justify-end gap-3">
-          <button className={demo ? "button secondary min-w-56" : "button min-w-56"} disabled={busy !== null || manualBusy || (demo && Boolean(options.descriptionTemplate))} onClick={() => generate()}>
+          <button className={demo ? "button secondary min-w-56" : "button min-w-56"} disabled={busy !== null || manualBusy || geminiBusy || (demo && Boolean(options.descriptionTemplate))} onClick={() => generate()}>
             {busy === "all" && <span className="spinner" />} {demo && options.descriptionTemplate ? "Modelul necesită GPT" : demo ? "Generează local (demo)" : "Generează cu OpenAI API"}
           </button>
-          <button className={demo ? "button min-w-72" : "button secondary min-w-72"} disabled={busy !== null || manualBusy} onClick={openManualChatGpt}>
+          <button className="button min-w-56" disabled={busy !== null || manualBusy || geminiBusy} onClick={generateWithGemini}>
+            {geminiBusy && <span className="spinner" />} {geminiBusy ? "Se generează..." : "Generează cu Gemini"}
+          </button>
+          <button className={demo ? "button min-w-72" : "button secondary min-w-72"} disabled={busy !== null || manualBusy || geminiBusy} onClick={openManualChatGpt}>
             <span aria-hidden="true">✨</span> Deschide ChatGPT + copiază promptul
           </button>
         </div>
+        {geminiError && <div className="notice error" role="alert">{geminiError} Rezultatul existent a fost păstrat; poți încerca din nou.</div>}
         {manualOpen && <ManualChatGptPanel
           prompt={manualPrompt}
           response={manualResponse}
@@ -242,6 +283,7 @@ export function Workbench({ demo }: { demo: boolean }) {
           value={descriptions}
           busyVariant={busy === "analyze" ? null : busy}
           transferBusy={transferBusy}
+          externalBusy={geminiBusy}
           onRegenerate={generate}
           onTransfer={transferToPropulse}
         />}
