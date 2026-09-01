@@ -32,7 +32,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Dashboard summary and live API status.
 - Property and job creation with media drag-and-drop.
 - Each group row has a `Deschide grupul` action that safely opens the configured Facebook group URL in a separate tab.
-- Each property row opens the same day-by-day Facebook-style preview when its card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
+- Property and job rows open the same shared day-by-day Facebook-style preview when their card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
 - Existing property IDs are editable. A rename migrates the property JSON filename, owned media folder and references (including references reused by cloned properties or jobs), real-estate schedules, Queue selections/order/retry state, history, and saved real-estate run references; duplicate or invalid IDs are rejected and the existing robot-running mutation guard applies.
 - The property selection control is restricted to its checkbox and `Selecteaza` text; unused card space does not alter selection.
 - Upload progress, cancel, preview, cover selection, and validation feedback.

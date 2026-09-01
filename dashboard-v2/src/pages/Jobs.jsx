@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import MediaDropzone from '../components/MediaDropzone';
 import FacebookPostPreview from '../components/FacebookPostPreview';
+import CampaignPreviewDrawer from '../components/CampaignPreviewDrawer';
 import { notify } from '../utils/notify';
 import { clearFormDraft, loadFormDraft, saveFormDraft } from '../utils/formDraft';
 
@@ -61,6 +62,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
   const [form, setForm] = useState(() => loadFormDraft(DRAFT_KEY, freshJob));
   const [editingId, setEditingId] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [previewJob, setPreviewJob] = useState(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
   const [facebookProfiles, setFacebookProfiles] = useState([]);
@@ -77,6 +79,11 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
     window.requestAnimationFrame(() => {
       editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  }
+
+  function handleJobCardClick(event, job) {
+    if (event.target.closest('button, input, label, a')) return;
+    setPreviewJob(job);
   }
 
   useEffect(() => {
@@ -551,7 +558,11 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
         <div className="panel-title-row"><h2>Joburi existente</h2>{selectedIds.length > 0 && <div className="button-row"><span className="muted-text">{selectedIds.length} selectate</span><button className="secondary-button small-button" onClick={() => bulkSetActive(true)}>Activeaza</button><button className="secondary-button small-button" onClick={() => bulkSetActive(false)}>Dezactiveaza</button><button className="ghost-button small-button" onClick={() => setSelectedIds([])}>Anuleaza</button></div>}</div>
 
         {filteredJobs.map((job) => (
-          <article className="entity-card" key={job.id}>
+          <article
+            className="entity-card property-preview-card"
+            key={job.id}
+            onClick={(event) => handleJobCardClick(event, job)}
+          >
             <label className="entity-select"><input type="checkbox" checked={selectedIds.includes(job.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, job.id] : current.filter((id) => id !== job.id))} /><span>Selecteaza</span></label>
             <div className="entity-main">
               <div>
@@ -566,6 +577,14 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
               </span>
 
               <span>{job.posts?.length || 0} postari</span>
+
+              <button
+                type="button"
+                className="secondary-button small-button property-preview-button"
+                onClick={() => setPreviewJob(job)}
+              >
+                Preview
+              </button>
 
               <div className="menu-wrap">
                 <button
@@ -600,6 +619,15 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
           <div className="empty-state-v2">Nu exista joburi pentru cautarea curenta.</div>
         )}
       </section>
+
+      {previewJob && (
+        <CampaignPreviewDrawer
+          campaign={previewJob}
+          fallbackPosts={[firstPost]}
+          profileLabel={facebookProfiles.find((profile) => profile.id === previewJob.facebookProfileId)?.label || 'Profil Facebook default'}
+          onClose={() => setPreviewJob(null)}
+        />
+      )}
     </div>
   );
 }

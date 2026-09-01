@@ -72,7 +72,11 @@ function smokeBackup() {
       transactionType: 'job',
       campaignCategory: 'jobs',
       facebookProfileId: 'jobs',
-      posts: [{ day: 1, title: 'Smoke job day 1', text: 'Smoke test job post', imagePath: mediaPath, media: [mediaPath] }],
+      posts: [
+        { day: 1, title: 'Smoke job day 1', text: 'Smoke test job post day 1', imagePath: mediaPath, media: [mediaPath] },
+        { day: 2, title: 'Smoke job day 2', text: 'Smoke test job post day 2', imagePath: mediaPath, media: [mediaPath] },
+        { day: 3, title: 'Smoke job day 3', text: 'Smoke test job post day 3', imagePath: mediaPath, media: [mediaPath] },
+      ],
     }],
     history: [],
     runs: [],
@@ -198,6 +202,25 @@ test('property and job editors expose media workflows', async ({ page }) => {
   await page.getByRole('button', { name: 'Joburi' }).first().click();
   await expect(page.getByRole('button', { name: /Preview Facebook/ })).toHaveCount(1);
   await expect(page.getByRole('button', { name: /Salveaza si mergi la Queue/ })).toBeVisible();
+});
+
+test('job campaign cards open the shared day-by-day preview drawer', async ({ page }) => {
+  await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Joburi' }).first().click();
+
+  const jobCard = page.locator('.entity-card').filter({ hasText: 'Smoke test job' });
+  await jobCard.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const drawer = page.getByRole('dialog', { name: 'Preview pentru Smoke test job' });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole('tab')).toHaveCount(3);
+  await drawer.getByRole('tab', { name: 'Ziua 2' }).click();
+  await expect(drawer.getByText('Smoke test job post day 2')).toBeVisible();
+  await drawer.getByRole('button', { name: 'Inchide' }).click();
+  await expect(drawer).toBeHidden();
+
+  await jobCard.locator('.entity-main > div').first().click();
+  await expect(drawer).toBeVisible();
 });
 
 test('Media Library renders uploaded image previews instead of IMG placeholders', async ({ page }) => {

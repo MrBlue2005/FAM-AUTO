@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Added the same day-by-day Facebook preview drawer to job campaigns as property campaigns. It opens from either the Preview button or the non-interactive area of a job card, while selection and action controls retain their own behavior.
 - Fixed property-ID renames for campaigns that share another property's media: references are now migrated across every property and job, not only inside the renamed campaign. Existing broken references for `ADUNATII_COPACENI_ENG` were repaired and verified against all 33 media entries.
 - Diagnostics now includes the exact preflight errors of blocked schedules and labels each issue with its schedule name, while Live Feed groups repeated per-group failures into unique root causes and still reports the number of affected tasks.
 - Property IDs can now be edited from the existing-property form. Renaming validates collisions and migrates the property file, media folder/references, schedules, Queue state, history, and saved run references while campaign mutations remain blocked during active robot runs.

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import ProfileStartModal from '../components/ProfileStartModal';
 import MediaDropzone from '../components/MediaDropzone';
 import FacebookPostPreview from '../components/FacebookPostPreview';
+import CampaignPreviewDrawer from '../components/CampaignPreviewDrawer';
 import { notify } from '../utils/notify';
 import { clearFormDraft, loadFormDraft, saveFormDraft } from '../utils/formDraft';
 
@@ -38,67 +38,6 @@ function freshForm() {
     ...emptyForm,
     posts: defaultPosts.map((post) => ({ ...post })),
   };
-}
-
-function PropertyPreviewModal({ property, profileLabel, onClose }) {
-  const posts = property.posts?.length ? property.posts : defaultPosts;
-  const [selectedPostIndex, setSelectedPostIndex] = useState(0);
-  const selectedPost = posts[selectedPostIndex] || posts[0];
-
-  useEffect(() => {
-    const pageContent = document.querySelector('.page-content');
-    if (!pageContent) return undefined;
-
-    const previousOverflow = pageContent.style.overflow;
-    const scrollTop = pageContent.scrollTop;
-    pageContent.style.overflow = 'hidden';
-
-    return () => {
-      pageContent.style.overflow = previousOverflow;
-      pageContent.scrollTop = scrollTop;
-    };
-  }, []);
-
-  return createPortal(
-    <div className="modal-backdrop property-preview-backdrop" onMouseDown={onClose}>
-      <section
-        className="property-preview-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Preview pentru ${property.name}`}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <div>
-            <h2>Preview postari</h2>
-            <p>{property.name}</p>
-          </div>
-          <button type="button" className="secondary-button small-button" onClick={onClose}>Inchide</button>
-        </header>
-
-        <div className="property-preview-tabs" role="tablist" aria-label="Alege ziua postarii">
-          {posts.map((post, index) => (
-            <button
-              key={`${post.day}-${index}`}
-              type="button"
-              role="tab"
-              aria-selected={selectedPostIndex === index}
-              className={selectedPostIndex === index ? 'active' : ''}
-              onClick={() => setSelectedPostIndex(index)}
-            >
-              Ziua {post.day || index + 1}
-            </button>
-          ))}
-        </div>
-
-        {selectedPost && (
-          <FacebookPostPreview post={selectedPost} profileLabel={profileLabel} open hideToggle />
-        )}
-      </section>
-    </div>
-    ,
-    document.body
-  );
 }
 
 export default function Properties({ editRequest, onEditHandled, onDirtyChange, onChangePage }) {
@@ -807,8 +746,9 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
       </section>
 
       {previewProperty && (
-        <PropertyPreviewModal
-          property={previewProperty}
+        <CampaignPreviewDrawer
+          campaign={previewProperty}
+          fallbackPosts={defaultPosts}
           profileLabel={facebookProfiles.find((profile) => profile.id === previewProperty.facebookProfileId)?.label || 'Profil Facebook default'}
           onClose={() => setPreviewProperty(null)}
         />
