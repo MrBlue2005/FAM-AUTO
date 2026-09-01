@@ -82,6 +82,34 @@ describe("integrarea Gemini", () => {
     expect(generated.commercial.description).toContain("2 camere");
   });
 
+  it("trece la modelul fallback numai după o eroare tranzitorie", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
+    vi.stubEnv("GEMINI_MODEL", "gemini-3.7-flash");
+    vi.stubEnv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash");
+    const unavailable = Object.assign(new Error("high demand"), { status: 503 });
+    const requester = vi.fn()
+      .mockRejectedValueOnce(unavailable)
+      .mockResolvedValueOnce(JSON.stringify(response));
+    const sleeper = vi.fn().mockResolvedValue(undefined);
+
+    const generated = await generateGeminiDescriptions(property, options, undefined, requester, sleeper);
+
+    expect(requester).toHaveBeenCalledTimes(2);
+    expect(requester.mock.calls.map(([request]) => request.model)).toEqual(["gemini-3.7-flash", "gemini-3.5-flash"]);
+    expect(sleeper).toHaveBeenCalledWith(750);
+    expect(generated.premium.description).toContain("95.000 EUR");
+  });
+
+  it("nu folosește fallback pentru o eroare permanentă de autentificare", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
+    vi.stubEnv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash");
+    const forbidden = Object.assign(new Error("forbidden"), { status: 403 });
+    const requester = vi.fn().mockRejectedValue(forbidden);
+
+    await expect(generateGeminiDescriptions(property, options, undefined, requester, vi.fn())).rejects.toThrow(/nu a putut genera/);
+    expect(requester).toHaveBeenCalledOnce();
+  });
+
   it("respinge datele goale înainte de apelarea API-ului", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
     const requester = vi.fn();

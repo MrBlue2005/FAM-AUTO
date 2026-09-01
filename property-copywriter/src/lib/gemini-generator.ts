@@ -12,7 +12,9 @@ import {
 } from "./schemas";
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
+const DEFAULT_GEMINI_FALLBACK_MODELS = ["gemini-3.5-flash"];
 const GEMINI_TIMEOUT_MS = 45_000;
+const GEMINI_FALLBACK_DELAY_MS = 750;
 
 const descriptionsJsonSchema = {
   type: "object",
@@ -52,6 +54,8 @@ type GeminiRequest = (params: {
   responseJsonSchema: unknown;
   timeoutMs: number;
 }) => Promise<string>;
+
+type GeminiSleeper = (delayMs: number) => Promise<void>;
 
 export function hasMeaningfulPropertyData(property: PropertyData): boolean {
   return Object.entries(property).some(([key, value]) => {
@@ -155,6 +159,26 @@ function friendlyGeminiError(error: unknown): Error {
   return new ApiHttpError(502, "Gemini nu a putut genera descrierile. Încearcă din nou.");
 }
 
+function isTransientGeminiError(error: unknown): boolean {
+  const status = typeof error === "object" && error !== null && "status" in error
+    ? Number(error.status)
+    : undefined;
+  if (status === 408 || status === 429 || (status !== undefined && status >= 500)) return true;
+  const message = error instanceof Error ? error.message : "";
+  return /timeout|timed out|deadline|abort|fetch failed|network|enotfound|econnreset|econnrefused/i.test(message);
+}
+
+function configuredGeminiModels(): string[] {
+  const primary = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const configuredFallbacks = process.env.GEMINI_FALLBACK_MODELS
+    ?.split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return [...new Set([primary, ...(configuredFallbacks?.length ? configuredFallbacks : DEFAULT_GEMINI_FALLBACK_MODELS)])];
+}
+
+const sleep: GeminiSleeper = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
+
 async function requestGemini(params: Parameters<GeminiRequest>[0]): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new ApiHttpError(503, "Gemini nu este configurat. Adaugă GEMINI_API_KEY în property-copywriter/.env.");
@@ -178,6 +202,7 @@ export async function generateGeminiDescriptions(
   options: GenerationOptions,
   variant?: DescriptionKind,
   requester: GeminiRequest = requestGemini,
+  sleeper: GeminiSleeper = sleep,
 ): Promise<Descriptions> {
   if (!hasMeaningfulPropertyData(property)) {
     throw new ApiHttpError(400, "Datele proprietății lipsesc. Analizează proprietatea înainte de generare.");
@@ -186,13 +211,26 @@ export async function generateGeminiDescriptions(
     throw new ApiHttpError(503, "Gemini nu este configurat. Adaugă GEMINI_API_KEY în property-copywriter/.env.");
   }
   try {
-    const output = await requester({
-      model: process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL,
+    const requestBase = {
       prompt: buildGeminiPrompt(property, options, variant),
       systemInstruction: geminiSystemPrompt,
       responseJsonSchema: descriptionsJsonSchema,
       timeoutMs: GEMINI_TIMEOUT_MS,
-    });
+    };
+    const models = configuredGeminiModels();
+    let output: string | undefined;
+    let lastError: unknown;
+    for (const [index, model] of models.entries()) {
+      try {
+        output = await requester({ model, ...requestBase });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!isTransientGeminiError(error) || index === models.length - 1) throw error;
+        await sleeper(GEMINI_FALLBACK_DELAY_MS * (index + 1));
+      }
+    }
+    if (output === undefined) throw lastError ?? new Error("Gemini nu a returnat un răspuns.");
     return parseGeminiOutput(output, options);
   } catch (error) {
     throw friendlyGeminiError(error);

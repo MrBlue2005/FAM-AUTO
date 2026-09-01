@@ -37,6 +37,7 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.7-flash
+GEMINI_FALLBACK_MODELS=gemini-3.5-flash
 DATABASE_URL="file:./dev.db"
 DEMO_MODE=true
 ```
@@ -52,9 +53,10 @@ Adaugă cheia în `property-copywriter/.env`:
 ```env
 GEMINI_API_KEY=cheia_creata_in_Google_AI_Studio
 GEMINI_MODEL=gemini-3.7-flash
+GEMINI_FALLBACK_MODELS=gemini-3.5-flash
 ```
 
-Modelul implicit este configurabil. Rezultatul este validat cu aceeași schemă Zod, salvat în același istoric și afișat în aceleași carduri ca rezultatele OpenAI/ChatGPT. Fluxul Gemini elimină numai linia `Detalii esențiale`, păstrând informațiile care o urmează. La eroare, rezultatul afișat anterior rămâne neschimbat.
+Modelul implicit este configurabil. Pentru erori tranzitorii de capacitate, limită, timeout sau rețea, aplicația trece automat de la modelul principal la lista separată prin virgulă din `GEMINI_FALLBACK_MODELS`; erorile permanente, precum cheia invalidă, nu declanșează fallback. Rezultatul este validat cu aceeași schemă Zod, salvat în același istoric și afișat în aceleași carduri ca rezultatele OpenAI/ChatGPT. Fluxul Gemini elimină numai linia `Detalii esențiale`, păstrând informațiile care o urmează. La eroare, rezultatul afișat anterior rămâne neschimbat.
 
 ### Modele de descrieri
 
