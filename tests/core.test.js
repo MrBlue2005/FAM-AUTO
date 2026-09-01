@@ -337,6 +337,31 @@ test('weekly schedule computes the next local weekday and skips elapsed times', 
   assert.equal(nextWednesday.getDate(), 15);
 });
 
+test('job schedules rotate each campaign through its own configured post days', () => {
+  const jobs = [
+    { id: 'JOB_5', posts: [1, 2, 3, 4, 5].map((day) => ({ day })) },
+    { id: 'JOB_20', posts: Array.from({ length: 20 }, (_, index) => ({ day: index + 1 })) },
+  ];
+  const schedule = {
+    campaignCategory: 'jobs',
+    campaignIds: ['JOB_5', 'JOB_20'],
+    campaignDay: 1,
+  };
+  const history = [
+    { propertyId: 'JOB_5', day: 5, status: 'posted', date: '2026-08-25T10:00:00.000Z' },
+    { propertyId: 'JOB_20', day: 19, status: 'posted', date: '2026-08-25T10:00:00.000Z' },
+    { propertyId: 'JOB_20', day: 20, status: 'error', date: '2026-08-26T10:00:00.000Z' },
+  ];
+
+  assert.deepEqual(ScheduleManager.buildJobPostDayMap(schedule, jobs, history), { JOB_5: 1, JOB_20: 20 });
+
+  const executionConfig = ScheduleManager.createExecutionConfig(schedule, {
+    facebookProfiles: [],
+    campaignDay: 3,
+  }, jobs, history);
+  assert.deepEqual(executionConfig.campaignDayById, { JOB_5: 1, JOB_20: 20 });
+});
+
 test('deleting a campaign reference updates mixed schedules and removes empty schedules', () => {
   const schedules = [
     { id: 'ONLY_PROPERTY', campaignCategory: 'real_estate', campaignIds: ['P1'] },

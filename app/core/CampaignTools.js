@@ -84,6 +84,10 @@ function getTaskId(campaignId, groupId, facebookProfileId = null) {
   return [facebookProfileId, campaignId, groupId].filter(Boolean).join('::');
 }
 
+function getCampaignDayForItem(config, campaignId) {
+  return Number(config.campaignDayById?.[campaignId] || config.campaignDay || 1);
+}
+
 function applySavedQueueState(tasks, config) {
   const excluded = new Set(config.queueExcludedTaskIds || []);
   const retry = new Set(config.queueRetryTaskIds || []);
@@ -107,7 +111,6 @@ function applySavedQueueState(tasks, config) {
 }
 
 function buildQueuePlan({ config, properties, jobs, groups, history = [], now = new Date() }) {
-  const campaignDay = Number(config.campaignDay || 1);
   const campaignCategory = getActiveCampaignCategory(config);
   const campaigns = getSelectedCampaigns(config, properties, jobs);
   const groupsPostedToday = config.skipGroupsPostedToday
@@ -115,6 +118,7 @@ function buildQueuePlan({ config, properties, jobs, groups, history = [], now = 
     : new Set();
   const skippedTodayGroupIds = new Set();
   const tasks = campaigns.flatMap((campaign) => {
+    const campaignDay = getCampaignDayForItem(config, campaign.id);
     const availableGroups = getEligibleGroups(campaign, groups, config).filter((group) => {
       const postedToday = groupsPostedToday.has(String(group.id));
       if (postedToday) skippedTodayGroupIds.add(String(group.id));
@@ -192,11 +196,11 @@ function buildQueuePlan({ config, properties, jobs, groups, history = [], now = 
 }
 
 function getCampaignPreview({ config, properties, jobs, campaignId, day }) {
-  const campaignDay = Number(day || config.campaignDay || 1);
   const source = getCategoryItems(config, properties, jobs).filter((item) =>
     matchesActiveProfile(item, config)
   );
   const campaign = source.find((item) => item.id === campaignId) || source[0] || null;
+  const campaignDay = Number(day || getCampaignDayForItem(config, campaign?.id) || 1);
   const post = campaign ? getPostForDay(campaign, campaignDay) : null;
   const campaignProfile = campaign ? getProfileForCampaign(campaign, config) : null;
   const campaignProfileId = campaign ? getProfileIdForCampaign(campaign, config) : null;
@@ -450,4 +454,5 @@ module.exports = {
   buildReport,
   buildPreflightReport,
   getTaskId,
+  getCampaignDayForItem,
 };

@@ -265,6 +265,10 @@ test('scheduler page exposes weekly and safety controls', async ({ page }) => {
   await expect(page.getByRole('option', { name: 'TEST - doar pregatire' })).toBeAttached();
   await expect(page.getByLabel('Exclude grupurile in care s-a publicat deja astazi.')).toBeChecked();
   await expect(page.getByRole('button', { name: /Creeaza programarea/ })).toBeVisible();
+  await expect(page.getByLabel('Ziua postarii')).toBeVisible();
+  await page.getByLabel('Tip campanie').selectOption('jobs');
+  await expect(page.getByText('Rotire automata a postarilor')).toBeVisible();
+  await expect(page.getByLabel('Ziua postarii')).toHaveCount(0);
 });
 
 test('a new Facebook profile is persisted before Chromium setup starts', async ({ page }) => {

@@ -63,6 +63,41 @@ function validateCampaignSelection(category, campaignIds, profileId, profiles) {
   return ids;
 }
 
+function getConfiguredPostDays(campaign) {
+  const days = (campaign?.posts || [])
+    .map((post) => Number(post.day))
+    .filter((day) => Number.isInteger(day) && day > 0);
+  return Array.from(new Set(days)).sort((a, b) => a - b);
+}
+
+function buildJobPostDayMap(schedule, jobs = DataManager.getJobs(), history = DataManager.getHistory()) {
+  if (schedule.campaignCategory !== 'jobs') return {};
+  const byId = new Map(jobs.map((job) => [job.id, job]));
+  const fallbackDay = Number(schedule.campaignDay || 1);
+  const selectedIds = new Set(schedule.campaignIds || []);
+  const latestSuccessfulByCampaign = new Map();
+  for (const entry of history || []) {
+    const campaignId = String(entry.propertyId || '');
+    if (!selectedIds.has(campaignId) || !['prepared', 'posted'].includes(entry.status)) continue;
+    const existing = latestSuccessfulByCampaign.get(campaignId);
+    if (!existing || new Date(entry.date || 0) >= new Date(existing.date || 0)) {
+      latestSuccessfulByCampaign.set(campaignId, entry);
+    }
+  }
+
+  return Object.fromEntries((schedule.campaignIds || []).map((campaignId) => {
+    const availableDays = getConfiguredPostDays(byId.get(campaignId));
+    if (!availableDays.length) return [campaignId, 1];
+    const latestSuccessfulEntry = latestSuccessfulByCampaign.get(campaignId);
+    const latestDay = Number(latestSuccessfulEntry?.day);
+    if (!availableDays.includes(latestDay)) {
+      return [campaignId, availableDays.includes(fallbackDay) ? fallbackDay : availableDays[0]];
+    }
+    const latestIndex = availableDays.indexOf(latestDay);
+    return [campaignId, availableDays[(latestIndex + 1) % availableDays.length]];
+  }));
+}
+
 function normalizeGroupLimit(value) {
   if (value === 'all') return 'all';
   const limit = Number(value);
@@ -126,6 +161,7 @@ function normalizeSchedule(input = {}, existing = null) {
     throw new Error('Toleranta trebuie sa fie intre 1 si 1440 minute.');
   }
 
+  const campaignIds = validateCampaignSelection(category, input.campaignIds, profileId, config.facebookProfiles || []);
   const schedule = {
     id: existing?.id || `SCHEDULE_${Date.now()}_${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
     name: String(input.name || '').trim(),
@@ -138,7 +174,7 @@ function normalizeSchedule(input = {}, existing = null) {
     // It chooses the list of Facebook groups, not the Facebook account or campaign type.
     groupListCategory: groupListCategory || DEFAULT_GROUP_LIST_CATEGORY,
     folderId,
-    campaignIds: validateCampaignSelection(category, input.campaignIds, profileId, config.facebookProfiles || []),
+    campaignIds,
     facebookProfileId: profileId,
     campaignDay,
     groupLimit: normalizeGroupLimit(input.groupLimit ?? 1),
@@ -161,7 +197,12 @@ function normalizeSchedule(input = {}, existing = null) {
 }
 
 function list() {
-  return DataManager.getSchedules().slice().sort((a, b) => {
+  const jobs = DataManager.getJobs();
+  const history = DataManager.getHistory();
+  return DataManager.getSchedules().map((schedule) => schedule.campaignCategory === 'jobs' ? {
+    ...schedule,
+    nextJobPostDayByCampaign: buildJobPostDayMap(schedule, jobs, history),
+  } : schedule).sort((a, b) => {
     if (!a.nextRunAt && !b.nextRunAt) return String(a.name || '').localeCompare(String(b.name || ''));
     if (!a.nextRunAt) return 1;
     if (!b.nextRunAt) return -1;
@@ -238,7 +279,13 @@ function saveExecutionResult(schedule, changes, advanceSchedule) {
   return schedules[index];
 }
 
-function createExecutionConfig(schedule, currentConfig = DataManager.getRuntimeConfig()) {
+function createExecutionConfig(
+  schedule,
+  currentConfig = DataManager.getRuntimeConfig(),
+  jobs = DataManager.getJobs(),
+  history = DataManager.getHistory()
+) {
+  const campaignDayById = buildJobPostDayMap(schedule, jobs, history);
   return {
     ...currentConfig,
     campaignDay: schedule.campaignDay,
@@ -254,6 +301,7 @@ function createExecutionConfig(schedule, currentConfig = DataManager.getRuntimeC
     queueOrder: [],
     pauseRequested: false,
     stopAfterCurrentGroup: false,
+    ...(schedule.campaignCategory === 'jobs' ? { campaignDayById } : {}),
   };
 }
 
@@ -336,6 +384,7 @@ function stop() {
 
 module.exports = {
   computeNextRun,
+  buildJobPostDayMap,
   createExecutionConfig,
   create,
   execute,

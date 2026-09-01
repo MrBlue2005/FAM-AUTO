@@ -539,6 +539,7 @@ function createCampaignRun({ config, tasks = [] }) {
     taskCount: tasks.length,
     configSnapshot: {
       campaignDay: config.campaignDay,
+      campaignDayById: config.campaignDayById || {},
       groupLimit: config.groupLimit,
       startFromGroup: config.startFromGroup,
       publishEnabled: Boolean(config.publishEnabled),

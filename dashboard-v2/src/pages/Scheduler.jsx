@@ -79,6 +79,10 @@ function schedulePayload(schedule) {
   };
 }
 
+function scheduledJobPostDay(schedule, campaignId) {
+  return Number(schedule.nextJobPostDayByCampaign?.[campaignId] || schedule.campaignDay || 1);
+}
+
 export default function Scheduler() {
   const [schedules, setSchedules] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -358,7 +362,14 @@ export default function Scheduler() {
           <label>Folder<select value={form.folderId || ''} onChange={(event) => updateField('folderId', event.target.value || null)}><option value="">Fără folder</option>{folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label>
           <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => setFacebookProfile(event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select><small>Se afișează doar campaniile asociate acestui profil.</small>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
           <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}>{groupListCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
-          <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
+          {form.campaignCategory === 'jobs' ? (
+            <div className="schedule-auto-rotation">
+              <strong>Rotire automata a postarilor</strong>
+              <small>Fiecare job avanseaza independent la urmatoarea postare si revine la prima dupa ultima.</small>
+            </div>
+          ) : (
+            <label>Ziua postarii<input type="number" min="1" max="31" value={form.campaignDay} onChange={(event) => updateField('campaignDay', Number(event.target.value))} /></label>
+          )}
           <label>Limita grupuri<select value={form.groupLimit} onChange={(event) => updateField('groupLimit', event.target.value === 'all' ? 'all' : Number(event.target.value))}><option value="1">1 grup</option><option value="5">5 grupuri</option><option value="10">10 grupuri</option><option value="all">Toate</option></select></label>
           <label>Incepe de la grupul<input type="number" min="1" value={form.startFromGroup} onChange={(event) => updateField('startFromGroup', Number(event.target.value))} /></label>
           <label className="schedule-live-confirm"><input type="checkbox" checked={form.skipGroupsPostedToday !== false} onChange={(event) => updateField('skipGroupsPostedToday', event.target.checked)} /><span>Exclude grupurile in care s-a publicat deja astazi.</span></label>
@@ -412,7 +423,22 @@ export default function Scheduler() {
                     {!scheduledWeekDays(schedule).length && <span className="schedule-day-badge empty">Nicio zi</span>}
                   </div>
                 </div>
-                <p>{folderNameById.get(schedule.folderId) || 'Fara folder'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / Ziua {schedule.campaignDay} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
+                <p>{folderNameById.get(schedule.folderId) || 'Fara folder'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / {schedule.campaignCategory === 'jobs' ? 'rotire automata' : `Ziua ${schedule.campaignDay}`} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
+                {schedule.campaignCategory === 'jobs' && (
+                  <div className="schedule-job-rotation">
+                    <span>Urmatoarele postari</span>
+                    <div>
+                      {schedule.campaignIds.map((campaignId) => {
+                        const job = jobs.find((item) => item.id === campaignId);
+                        return (
+                          <span className="schedule-day-badge" key={campaignId}>
+                            {job?.title || campaignId}: ziua {scheduledJobPostDay(schedule, campaignId)}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="schedule-run-meta"><span>Urmatoarea: <strong>{formatDate(schedule.nextRunAt)}</strong></span><span>Ultima: <strong>{schedule.lastStatus === 'never' ? 'niciodata' : `${schedule.lastStatus} / ${formatDate(schedule.lastRunAt)}`}</strong></span></div>
                 {schedule.lastMessage && <small className="schedule-last-message">{schedule.lastMessage}</small>}
               </div>

@@ -49,6 +49,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
+- Real-estate schedules keep their explicitly selected fixed post day. Job schedules derive an independent next post for every included job from the latest successful `prepared`/`posted` history, so the cursor is shared by Tuesday/Thursday or other schedules containing the same campaign, ignores blocked/error-only attempts, and wraps across each campaign's actual configured post days (including mixed 5-post and 20-post campaigns). Scheduler cards show every job's next post day.
 - Persistent schedule folders: create folders, assign existing or new schedules, filter schedules by folder, and safely delete a folder without deleting its schedules.
 - Every saved schedule card shows its programmed weekdays prominently, using a readable summary plus full weekday badges.
 - Persistent campaign folders: create and filter folders from the Campanii page, assign either property or job campaigns from the campaign action menu, and safely remove folders without deleting campaigns. Campaign folders are included in backup/restore.

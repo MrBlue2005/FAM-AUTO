@@ -1,6 +1,7 @@
 const { getPostForDay, getEligibleGroups } = require('../utils/campaignPlanner');
 const { getActiveCampaignCategory } = require('../utils/campaignCategory');
 const { matchesSelectedGroupListCategory } = require('../utils/groupListCategory');
+const { getCampaignDayForItem } = require('./CampaignTools');
 
 const preflightCatalog = {
   NO_ELIGIBLE_GROUPS_TODAY: {
@@ -104,7 +105,6 @@ function diagnoseEmptyQueue({ config, properties, jobs, groups }) {
       matchesSelectedGroupListCategory(group, config) &&
       (group.category || 'real_estate') === category
   );
-  const campaignDay = Number(config.campaignDay || 1);
 
   if (selectedIds.length && selectedItems.length === 0) {
     return {
@@ -158,11 +158,15 @@ function diagnoseEmptyQueue({ config, properties, jobs, groups }) {
     };
   }
 
-  const missingDay = selectedMatchingItems.filter((item) => !getPostForDay(item, campaignDay));
+  const missingDay = selectedMatchingItems.filter(
+    (item) => !getPostForDay(item, getCampaignDayForItem(config, item.id))
+  );
   if (missingDay.length) {
     return {
       title: 'Ziua selectata nu este configurata in campanie',
-      explanation: `${missingDay.map((item) => item.name || item.title || item.id).join(', ')} nu are postare pentru ziua ${campaignDay}.`,
+      explanation: missingDay.map((item) =>
+        `${item.name || item.title || item.id} nu are postare pentru ziua ${getCampaignDayForItem(config, item.id)}.`
+      ).join(' '),
       resolution: 'Adauga postarea pentru aceasta zi sau schimba Ziua campaniei din Queue.',
       actionPage: 'campaigns',
       actionLabel: 'Editeaza campania',
@@ -294,6 +298,7 @@ function buildDiagnostics({ preflight, validations, queuePlan, config, propertie
     context: {
       mode: config.publishEnabled ? 'live' : 'test',
       campaignDay: Number(config.campaignDay || 1),
+      campaignDayById: config.campaignDayById || {},
       category,
       facebookProfileId: config.facebookProfileId || 'main',
       facebookProfileLabel: profile?.label || config.facebookProfileId || 'main',
