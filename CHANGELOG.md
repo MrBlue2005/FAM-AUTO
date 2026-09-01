@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Prepared the complete portable/offline installer release as version 1.1.1 so existing 1.1.0 installations can detect the Gemini, security, and reliability updates.
 - Added automatic Gemini model failover for transient capacity, quota, timeout, and network errors. The generator keeps `gemini-3.7-flash` as primary and falls back to the configurable stable `gemini-3.5-flash`, while permanent API/configuration errors still fail immediately and preserve the existing result.
 - Restored zero-vulnerability npm audits across all four workspaces by updating lockfiles and pinning patched `deepmerge-ts`, `fast-uri`, `nanoid`, and `brace-expansion` transitive releases; Prisma remains on 7.9.0 and its schema/client workflows are revalidated against the safe dependency tree.
 - Added backend-only Gemini description generation to RX CREATIVE Tool using the official `@google/genai` SDK and configurable `GEMINI_API_KEY`/`GEMINI_MODEL`. The new UI action reuses the validated property JSON and existing editorial/template guidance, writes into the existing result/history workflow, keeps prior results on failure, maps API/configuration/quota/network/timeout errors safely, and removes only the `Detalii esențiale` heading from Gemini output.
