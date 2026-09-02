@@ -9,7 +9,10 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const {
   CONTINUOUS_MANIFEST_NAME,
   CONTINUOUS_RELEASE_TAG,
+  continuousLauncherTarget,
   continuousUpdateInfo,
+  continuousUpdateEnvironmentInfo,
+  readGitCommit,
   stableReleaseUpdateInfo,
 } = require('./update-client');
 
@@ -74,6 +77,8 @@ function currentStudioVersion() {
 
 function currentStudioCommit() {
   const root = resolveStudioRoot();
+  const repositoryCommit = readGitCommit(root);
+  if (repositoryCommit) return repositoryCommit;
   const markerPaths = [
     path.join(root, '.rx-update-state.json'),
     path.join(root, 'runtime', 'offline-bundle.json'),
@@ -88,6 +93,25 @@ function currentStudioCommit() {
     }
   }
   return null;
+}
+
+function continuousLauncherRelativePath() {
+  const root = resolveStudioRoot();
+  return continuousLauncherTarget({
+    root,
+    processExecutable: process.execPath,
+    portableExecutableFile: process.env.PORTABLE_EXECUTABLE_FILE,
+    sourceCheckout: fs.existsSync(path.join(root, '.git')),
+  });
+}
+
+function withContinuousInstallCapability(update) {
+  if (!update || update.kind !== 'continuous') return update;
+  const sourceCheckout = fs.existsSync(path.join(resolveStudioRoot(), '.git'));
+  return continuousUpdateEnvironmentInfo(update, {
+    sourceCheckout,
+    canAutoInstall: Boolean(continuousLauncherRelativePath()),
+  });
 }
 
 async function fetchGithubJson(url, notFoundValue = null) {
@@ -125,6 +149,8 @@ async function checkForUpdate() {
         currentVersion,
         currentCommit,
       });
+      continuous = withContinuousInstallCapability(continuous);
+      if (continuous.sourceCheckout) return continuous;
       if (continuous.available) return continuous;
     }
   }
@@ -183,9 +209,9 @@ async function launchContinuousUpdater(update, packagePath) {
   const helperSource = path.join(root, 'scripts', 'apply-continuous-update.ps1');
   if (!fs.existsSync(helperSource)) throw new Error('Lipseste componenta locala care aplica update-ul continuu.');
 
-  const relativeLauncherPath = path.relative(root, process.execPath);
-  if (!relativeLauncherPath || relativeLauncherPath.startsWith('..') || path.isAbsolute(relativeLauncherPath)) {
-    throw new Error('Launcherul trebuie sa fie instalat in folderul RX AI Studio pentru actualizare automata.');
+  const relativeLauncherPath = continuousLauncherRelativePath();
+  if (!relativeLauncherPath) {
+    throw new Error('Aceasta copie ruleaza direct din repository. Actualizeaz-o prin Git; update-ul automat este disponibil in launcherul instalat.');
   }
 
   const helperPath = path.join(path.dirname(packagePath), `apply-update-${update.latestCommit.slice(0, 12)}.ps1`);
@@ -224,6 +250,10 @@ async function downloadAndInstallUpdate() {
   try {
     const update = await checkForUpdate();
     if (!update.available) throw new Error('Nu exista un update nou disponibil.');
+
+    if (update.kind === 'continuous' && !update.canAutoInstall) {
+      throw new Error('Aceasta copie ruleaza direct din repository. Actualizeaz-o prin Git; nu este necesar installerul automat.');
+    }
 
     const updateDirectory = path.join(os.tmpdir(), 'RX-AI-Studio-Updates');
     fs.mkdirSync(updateDirectory, { recursive: true });

@@ -1,6 +1,75 @@
+const fs = require('fs');
+const path = require('path');
+
 const CONTINUOUS_RELEASE_TAG = 'continuous-main';
 const CONTINUOUS_MANIFEST_NAME = 'rx-update-manifest.json';
 const CONTINUOUS_FORMAT = 'rx-ai-studio-continuous-update';
+
+function readGitCommit(root) {
+  try {
+    const dotGitPath = path.join(root, '.git');
+    const dotGitStat = fs.statSync(dotGitPath);
+    let gitDirectory = dotGitPath;
+    if (dotGitStat.isFile()) {
+      const pointer = fs.readFileSync(dotGitPath, 'utf8').trim().match(/^gitdir:\s*(.+)$/i);
+      if (!pointer) return null;
+      gitDirectory = path.resolve(root, pointer[1]);
+    }
+
+    const head = fs.readFileSync(path.join(gitDirectory, 'HEAD'), 'utf8').trim();
+    if (/^[a-f0-9]{40}$/i.test(head)) return head.toLowerCase();
+    const reference = head.match(/^ref:\s*(refs\/[A-Za-z0-9._\/-]+)$/);
+    if (!reference || reference[1].includes('..')) return null;
+
+    const candidateDirectories = [gitDirectory];
+    try {
+      const commonDirectory = fs.readFileSync(path.join(gitDirectory, 'commondir'), 'utf8').trim();
+      if (commonDirectory) candidateDirectories.push(path.resolve(gitDirectory, commonDirectory));
+    } catch {
+      // Normal repositories do not have a separate common Git directory.
+    }
+
+    for (const candidateDirectory of candidateDirectories) {
+      try {
+        const commit = fs.readFileSync(path.join(candidateDirectory, reference[1]), 'utf8').trim();
+        if (/^[a-f0-9]{40}$/i.test(commit)) return commit.toLowerCase();
+      } catch {
+        // The reference may be stored in packed-refs instead.
+      }
+      try {
+        const packedRefs = fs.readFileSync(path.join(candidateDirectory, 'packed-refs'), 'utf8').split(/\r?\n/);
+        const packed = packedRefs.find((line) => line.endsWith(` ${reference[1]}`));
+        const commit = packed?.split(' ')[0] || '';
+        if (/^[a-f0-9]{40}$/i.test(commit)) return commit.toLowerCase();
+      } catch {
+        // No packed references are present.
+      }
+    }
+  } catch {
+    // Installed bundles intentionally do not include repository metadata.
+  }
+  return null;
+}
+
+function continuousLauncherTarget({ root, processExecutable, portableExecutableFile, sourceCheckout = false }) {
+  if (sourceCheckout) return null;
+  const executable = portableExecutableFile || processExecutable;
+  if (!root || !executable) return null;
+  const relativePath = path.relative(path.resolve(root), path.resolve(executable));
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return null;
+  return relativePath;
+}
+
+function continuousUpdateEnvironmentInfo(update, { sourceCheckout = false, canAutoInstall = false } = {}) {
+  if (!update || update.kind !== 'continuous') return update;
+  return {
+    ...update,
+    available: sourceCheckout ? false : update.available,
+    repositoryDiffers: sourceCheckout && update.available,
+    canAutoInstall: !sourceCheckout && canAutoInstall,
+    sourceCheckout,
+  };
+}
 
 function versionParts(value) {
   return String(value || '').replace(/^v/i, '').split(/[.-]/).slice(0, 3)
@@ -98,8 +167,11 @@ module.exports = {
   CONTINUOUS_MANIFEST_NAME,
   CONTINUOUS_RELEASE_TAG,
   compareVersions,
+  continuousLauncherTarget,
   continuousUpdateInfo,
+  continuousUpdateEnvironmentInfo,
   isNewerVersion,
+  readGitCommit,
   stableReleaseUpdateInfo,
   validateContinuousManifest,
 };

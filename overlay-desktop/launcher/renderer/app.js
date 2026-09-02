@@ -107,11 +107,14 @@ async function checkForUpdate() {
   updateStatus.textContent = 'Verific ultimul update din repository...';
   try {
     const update = await window.rxStudioLauncher.checkUpdate();
-    installUpdateButton.hidden = !update.available;
+    const canInstallAvailableUpdate = update.available && (update.kind !== 'continuous' || update.canAutoInstall !== false);
+    installUpdateButton.hidden = !canInstallAvailableUpdate;
     if (update.available) {
       updateStatus.textContent = update.kind === 'continuous'
         ? `Update disponibil din main (${update.latestCommit.slice(0, 7)}): ${update.summary || 'modificari noi'}.`
         : `Versiunea ${update.latestVersion} este disponibila. Ai instalat ${update.currentVersion}.`;
+    } else if (update.sourceCheckout && update.repositoryDiffers) {
+      updateStatus.textContent = `Repository-ul local si canalul public sunt pe commituri diferite. Aceasta copie se actualizeaza prin Git, nu prin installer.`;
     } else if (update.requiresInstaller) {
       updateStatus.textContent = `Updaterul necesita bootstrap ${update.latestVersion} sau mai nou. Instaleaza ultimul release stabil.`;
     } else if (update.noRelease) {

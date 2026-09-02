@@ -42,8 +42,8 @@ function New-TestPackage {
     schemaVersion = 1
     channel = 'test'
     commit = $Commit
-    appVersion = '1.1.2'
-    minimumBootstrapVersion = '1.1.2'
+    appVersion = '1.1.3'
+    minimumBootstrapVersion = '1.1.3'
     builtAt = (Get-Date).ToUniversalTime().ToString('o')
     summary = 'Updater helper test'
     files = @($Files.Keys)
@@ -74,14 +74,14 @@ function Invoke-TestUpdate {
 
 Reset-TestRoot
 try {
-  Set-TestFile -Root $installRoot -RelativePath 'package.json' -Content '{"name":"facebook-automation","version":"1.1.2"}'
+  Set-TestFile -Root $installRoot -RelativePath 'package.json' -Content '{"name":"facebook-automation","version":"1.1.3"}'
   Set-TestFile -Root $installRoot -RelativePath 'app\existing.txt' -Content 'old-value'
   Set-TestFile -Root $installRoot -RelativePath '.env' -Content 'GEMINI_API_KEY=must-stay-local'
   Set-TestFile -Root $installRoot -RelativePath 'app\data\groups.json' -Content '[{"private":true}]'
 
   $successCommit = 'e' * 40
   $successPackage = New-TestPackage -Commit $successCommit -Name 'success' -Files ([ordered]@{
-    'package.json' = '{"name":"facebook-automation","version":"1.1.2"}'
+    'package.json' = '{"name":"facebook-automation","version":"1.1.3"}'
     'app/existing.txt' = 'new-value'
     'restart.cmd' = '@exit /b 0'
   })

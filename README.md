@@ -15,11 +15,11 @@ Cele trei descrieri generate in RX CREATIVE Tool pot fi trimise direct in formul
 
 ### Installer Windows (recomandat)
 
-Ruleaza `RX-AI-Studio-Offline-Setup-1.1.2.exe`. Setup-ul instaleaza aplicatia completa, runtime-ul privat Node.js, dependintele, Chromium, buildurile web, overlay-ul si launcherul. Nu este necesar ca Visual Studio, Node.js sau Git sa fie instalate pe PC-ul destinatie.
+Ruleaza `RX-AI-Studio-Offline-Setup-1.1.3.exe`. Setup-ul instaleaza aplicatia completa, runtime-ul privat Node.js, dependintele, Chromium, buildurile web, overlay-ul si launcherul. Nu este necesar ca Visual Studio, Node.js sau Git sa fie instalate pe PC-ul destinatie.
 
 Installerul nu contine si nu suprascrie date private: parole, fisiere `.env` existente, profiluri Facebook, media si date operationale. Pachetul offline nu are nevoie de descarcari npm, Playwright sau Visual Studio in timpul instalarii.
 
-Incepand cu bootstrap-ul `1.1.2`, butonul **Check for updates** urmareste direct ultimul commit precompilat din `main`. GitHub Actions publica automat un pachet verificat dupa fiecare push, iar launcherul il aplica cu backup si rollback fara a cere un installer nou. Un release semantic nou este necesar numai cand se schimba bootstrap-ul, runtime-ul Node/Chromium sau cerintele installerului.
+Incepand cu bootstrap-ul `1.1.3`, butonul **Check for updates** urmareste direct ultimul commit precompilat din `main`. GitHub Actions publica automat un pachet verificat dupa fiecare push, iar launcherul il aplica cu backup si rollback fara a cere un installer nou. Un release semantic nou este necesar numai cand se schimba bootstrap-ul, runtime-ul Node/Chromium sau cerintele installerului.
 
 Pentru a construi setup-ul din sursa pe PC-ul de dezvoltare:
 

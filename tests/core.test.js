@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const ExcelJS = require('exceljs');
 
 const {
@@ -22,7 +25,10 @@ const {
 const DataManager = require('../app/core/DataManager');
 const ScheduleManager = require('../app/core/ScheduleManager');
 const {
+  continuousLauncherTarget,
   continuousUpdateInfo,
+  continuousUpdateEnvironmentInfo,
+  readGitCommit,
   stableReleaseUpdateInfo,
   validateContinuousManifest,
 } = require('../overlay-desktop/launcher/update-client');
@@ -384,6 +390,44 @@ test('continuous updater detects a newer commit without requiring a new semantic
   assert.equal(update.expectedSha256, manifest.package.sha256);
   assert.equal(continuousUpdateInfo({ ...{ release, manifest, currentVersion: '1.1.2' }, currentCommit: manifest.commit }).available, false);
   assert.equal(continuousUpdateInfo({ ...{ release, manifest, currentCommit: 'a'.repeat(40) }, currentVersion: '1.1.1' }).requiresInstaller, true);
+});
+
+test('development launcher reads the repository commit instead of requesting its own update', () => {
+  const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-updater-git-test-'));
+  try {
+    const expectedCommit = 'e'.repeat(40);
+    fs.mkdirSync(path.join(repositoryRoot, '.git', 'refs', 'heads'), { recursive: true });
+    fs.writeFileSync(path.join(repositoryRoot, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    fs.writeFileSync(path.join(repositoryRoot, '.git', 'refs', 'heads', 'main'), `${expectedCommit}\n`);
+    assert.equal(readGitCommit(repositoryRoot), expectedCommit);
+  } finally {
+    fs.rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
+test('portable launcher resolves its original executable but never overwrites a source checkout', () => {
+  const root = path.join('C:', 'Users', 'Operator', 'AppData', 'Local', 'Programs', 'RX AI Studio');
+  const portableExecutableFile = path.join(root, 'overlay-desktop', 'launcher', 'dist', 'RX-AI-Studio-Launcher-0.1.0.exe');
+  const extractedExecutable = path.join('C:', 'Users', 'Operator', 'AppData', 'Local', 'Temp', 'portable', 'RX AI Studio Launcher.exe');
+  assert.equal(continuousLauncherTarget({
+    root,
+    processExecutable: extractedExecutable,
+    portableExecutableFile,
+  }), path.join('overlay-desktop', 'launcher', 'dist', 'RX-AI-Studio-Launcher-0.1.0.exe'));
+  assert.equal(continuousLauncherTarget({
+    root,
+    processExecutable: extractedExecutable,
+    portableExecutableFile,
+    sourceCheckout: true,
+  }), null);
+
+  const sourceUpdate = continuousUpdateEnvironmentInfo({ kind: 'continuous', available: true }, {
+    sourceCheckout: true,
+    canAutoInstall: true,
+  });
+  assert.equal(sourceUpdate.available, false);
+  assert.equal(sourceUpdate.repositoryDiffers, true);
+  assert.equal(sourceUpdate.canAutoInstall, false);
 });
 
 test('stable installer updates remain available for bootstrap and runtime upgrades', () => {
