@@ -83,6 +83,22 @@ function scheduledJobPostDay(schedule, campaignId) {
   return Number(schedule.nextJobPostDayByCampaign?.[campaignId] || schedule.campaignDay || 1);
 }
 
+function weekdayFolderId(dayOfWeek) {
+  return `weekday:${dayOfWeek}`;
+}
+
+function selectedWeekdayValue(folderId) {
+  if (!String(folderId).startsWith('weekday:')) return null;
+  const value = Number(String(folderId).slice('weekday:'.length));
+  return Number.isInteger(value) && value >= 0 && value <= 6 ? value : null;
+}
+
+function compareSchedulesByTime(left, right) {
+  const timeComparison = String(left.time || '99:99').localeCompare(String(right.time || '99:99'));
+  if (timeComparison !== 0) return timeComparison;
+  return String(left.name || '').localeCompare(String(right.name || ''), 'ro');
+}
+
 export default function Scheduler() {
   const [schedules, setSchedules] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -181,11 +197,36 @@ export default function Scheduler() {
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders]
   );
+  const customFolders = useMemo(
+    () => folders.filter((folder) => !folder.system),
+    [folders]
+  );
+  const systemFolderIds = useMemo(
+    () => new Set(folders.filter((folder) => folder.system).map((folder) => folder.id)),
+    [folders]
+  );
   const visibleSchedules = useMemo(() => {
-    if (selectedFolderId === 'all') return schedules;
-    if (selectedFolderId === 'none') return schedules.filter((schedule) => !schedule.folderId);
-    return schedules.filter((schedule) => schedule.folderId === selectedFolderId);
-  }, [schedules, selectedFolderId]);
+    const weekday = selectedWeekdayValue(selectedFolderId);
+    let visible = schedules;
+    if (weekday !== null) {
+      visible = schedules.filter((schedule) => schedule.daysOfWeek?.includes(weekday));
+    } else if (selectedFolderId === 'none') {
+      visible = schedules.filter((schedule) => !schedule.folderId || systemFolderIds.has(schedule.folderId));
+    } else if (selectedFolderId !== 'all') {
+      visible = schedules.filter((schedule) => schedule.folderId === selectedFolderId);
+    }
+    return [...visible].sort(compareSchedulesByTime);
+  }, [schedules, selectedFolderId, systemFolderIds]);
+
+  function freshFormForSelection(baseConfig = config) {
+    const nextForm = freshForm(baseConfig);
+    const weekday = selectedWeekdayValue(selectedFolderId);
+    if (weekday !== null) return { ...nextForm, daysOfWeek: [weekday], folderId: null };
+    if (customFolders.some((folder) => folder.id === selectedFolderId)) {
+      return { ...nextForm, folderId: selectedFolderId };
+    }
+    return nextForm;
+  }
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -229,7 +270,7 @@ export default function Scheduler() {
 
   function resetForm() {
     setEditingId(null);
-    setForm({ ...freshForm(config), folderId: selectedFolderId === 'all' || selectedFolderId === 'none' ? null : selectedFolderId });
+    setForm(freshFormForSelection());
     setMessage('');
   }
 
@@ -263,7 +304,14 @@ export default function Scheduler() {
 
   function chooseFolder(folderId) {
     setSelectedFolderId(folderId);
-    if (!editingId) setForm((current) => ({ ...current, folderId: folderId === 'all' || folderId === 'none' ? null : folderId }));
+    if (!editingId) {
+      const weekday = selectedWeekdayValue(folderId);
+      setForm((current) => ({
+        ...current,
+        ...(weekday === null ? {} : { daysOfWeek: [weekday] }),
+        folderId: customFolders.some((folder) => folder.id === folderId) ? folderId : null,
+      }));
+    }
   }
 
   async function saveSchedule() {
@@ -276,15 +324,10 @@ export default function Scheduler() {
 
     setSaving(true);
     try {
-      const saved = editingId ? await api.updateSchedule(editingId, form) : await api.createSchedule(form);
+      editingId ? await api.updateSchedule(editingId, form) : await api.createSchedule(form);
       setMessage(editingId ? 'Programarea a fost actualizata.' : 'Programarea a fost creata.');
       setEditingId(null);
-      setForm({
-        ...freshForm(config),
-        folderId: selectedFolderId === 'all' || selectedFolderId === 'none'
-          ? saved.folderId || null
-          : selectedFolderId,
-      });
+      setForm(freshFormForSelection());
       await loadData();
     } catch (error) {
       setMessage(error.message);
@@ -298,6 +341,7 @@ export default function Scheduler() {
     setForm({
       ...freshForm(config),
       ...schedule,
+      folderId: systemFolderIds.has(schedule.folderId) ? null : schedule.folderId,
       confirmedPublishEnabled: schedule.publishEnabled && schedule.liveConfirmed,
     });
     setMessage('');
@@ -359,7 +403,7 @@ export default function Scheduler() {
 
         <div className="schedule-form-grid">
           <label>Tip campanie<select value={form.campaignCategory} onChange={(event) => setCategory(event.target.value)}><option value="real_estate">Imobiliare</option><option value="jobs">Joburi</option></select></label>
-          <label>Folder<select value={form.folderId || ''} onChange={(event) => updateField('folderId', event.target.value || null)}><option value="">Fără folder</option>{folders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label>
+          <label>Folder personalizat<select value={form.folderId || ''} onChange={(event) => updateField('folderId', event.target.value || null)}><option value="">Fara folder personalizat</option>{customFolders.map((folder) => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select><small>Zilele sunt organizate automat in calendarul saptamanal.</small></label>
           <label>Profil Facebook<select value={profiles.some((profile) => profile.id === form.facebookProfileId) ? form.facebookProfileId : ''} onChange={(event) => setFacebookProfile(event.target.value)} disabled={profilesLoading || !profiles.length}><option value="" disabled>{profilesLoading ? 'Se incarca profilurile...' : profiles.length ? 'Selecteaza profilul' : 'Niciun profil pentru categorie'}</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.label || profile.id}</option>)}</select><small>Se afișează doar campaniile asociate acestui profil.</small>{profilesError && <small className="schedule-field-error">{profilesError}</small>}</label>
           <label>Lista grupuri<select value={form.groupListCategory || 'Romania'} onChange={(event) => updateField('groupListCategory', event.target.value)}>{groupListCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select><small>Nu schimba profilul Facebook.</small></label>
           {form.campaignCategory === 'jobs' ? (
@@ -400,14 +444,37 @@ export default function Scheduler() {
       <section className="schedule-list-section">
         <div className="panel-title-row"><div><h2>Programari salvate</h2><p className="muted-text">Schedulerul functioneaza cat timp API-ul este pornit.</p></div><strong>{schedules.length}</strong></div>
         <div className="schedule-folder-toolbar">
+          <div className="schedule-folder-group">
+            <div className="schedule-folder-group-heading">
+              <strong>Calendar saptamanal</strong>
+              <small>Programarile sunt ordonate crescator dupa ora.</small>
+            </div>
+            <div className="schedule-week-calendar" aria-label="Calendar programari pe zile">
+              {weekDays.map((day) => {
+                const folderId = weekdayFolderId(day.value);
+                const count = schedules.filter((schedule) => schedule.daysOfWeek?.includes(day.value)).length;
+                return (
+                  <button className={selectedFolderId === folderId ? 'active' : ''} type="button" onClick={() => chooseFolder(folderId)} key={day.value}>
+                    <span>{day.short}</span>
+                    <strong>{day.label}</strong>
+                    <small>{count} programari</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="schedule-folder-create">
             <input value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Nume folder nou" maxLength="80" />
             <button className="secondary-button" type="button" onClick={createFolder}><FolderPlus size={16} /> Creeaza folder</button>
           </div>
+          <div className="schedule-folder-group-heading">
+            <strong>Foldere personalizate</strong>
+            <small>Poti crea in continuare orice organizare suplimentara.</small>
+          </div>
           <div className="schedule-folder-list" aria-label="Foldere programari">
             <button className={selectedFolderId === 'all' ? 'active' : ''} type="button" onClick={() => chooseFolder('all')}>Toate ({schedules.length})</button>
-            <button className={selectedFolderId === 'none' ? 'active' : ''} type="button" onClick={() => chooseFolder('none')}>Fara folder ({schedules.filter((schedule) => !schedule.folderId).length})</button>
-            {folders.map((folder) => <span className="schedule-folder-item" key={folder.id}><button className={selectedFolderId === folder.id ? 'active' : ''} type="button" onClick={() => chooseFolder(folder.id)}><Folder size={14} /> {folder.name} ({schedules.filter((schedule) => schedule.folderId === folder.id).length})</button><button className="schedule-folder-delete" type="button" title={`Sterge folderul ${folder.name}`} onClick={() => deleteFolder(folder)}><Trash2 size={13} /></button></span>)}
+            <button className={selectedFolderId === 'none' ? 'active' : ''} type="button" onClick={() => chooseFolder('none')}>Fara folder personalizat ({schedules.filter((schedule) => !schedule.folderId || systemFolderIds.has(schedule.folderId)).length})</button>
+            {customFolders.map((folder) => <span className="schedule-folder-item" key={folder.id}><button className={selectedFolderId === folder.id ? 'active' : ''} type="button" onClick={() => chooseFolder(folder.id)}><Folder size={14} /> {folder.name} ({schedules.filter((schedule) => schedule.folderId === folder.id).length})</button><button className="schedule-folder-delete" type="button" title={`Sterge folderul ${folder.name}`} onClick={() => deleteFolder(folder)}><Trash2 size={13} /></button></span>)}
           </div>
         </div>
         <div className="schedule-list">
@@ -423,7 +490,7 @@ export default function Scheduler() {
                     {!scheduledWeekDays(schedule).length && <span className="schedule-day-badge empty">Nicio zi</span>}
                   </div>
                 </div>
-                <p>{folderNameById.get(schedule.folderId) || 'Fara folder'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / {schedule.campaignCategory === 'jobs' ? 'rotire automata' : `Ziua ${schedule.campaignDay}`} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
+                <p>{systemFolderIds.has(schedule.folderId) ? 'Calendar saptamanal' : folderNameById.get(schedule.folderId) || 'Fara folder personalizat'} / {schedule.campaignIds.length} campanii / {schedule.groupListCategory || 'Romania'} / {schedule.campaignCategory === 'jobs' ? 'rotire automata' : `Ziua ${schedule.campaignDay}`} / {schedule.groupLimit === 'all' ? 'toate grupurile' : `${schedule.groupLimit} grupuri`} / {schedule.publishEnabled ? 'LIVE' : 'TEST'} / {schedule.skipGroupsPostedToday !== false ? 'fara repetare zilnica' : 'repetare permisa'}</p>
                 {schedule.campaignCategory === 'jobs' && (
                   <div className="schedule-job-rotation">
                     <span>Urmatoarele postari</span>

@@ -337,6 +337,13 @@ test('weekly schedule computes the next local weekday and skips elapsed times', 
   assert.equal(nextWednesday.getDate(), 15);
 });
 
+test('schedule weekday folder names are recognized as standardized calendar days', () => {
+  assert.equal(ScheduleManager.standardWeekdayValue('Luni'), 1);
+  assert.equal(ScheduleManager.standardWeekdayValue('sâmbătă'), 6);
+  assert.equal(ScheduleManager.standardWeekdayValue('DUMINICA'), 0);
+  assert.equal(ScheduleManager.standardWeekdayValue('Programari internationale'), undefined);
+});
+
 test('job schedules rotate each campaign through its own configured post days', () => {
   const jobs = [
     { id: 'JOB_5', posts: [1, 2, 3, 4, 5].map((day) => ({ day })) },

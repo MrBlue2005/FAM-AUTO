@@ -52,6 +52,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   const [openDetailsId, setOpenDetailsId] = useState(null);
   const [previewProperty, setPreviewProperty] = useState(null);
   const [search, setSearch] = useState('');
+  const [transactionFilter, setTransactionFilter] = useState('all');
   const [facebookProfiles, setFacebookProfiles] = useState([]);
   const [toolbarFilter, setToolbarFilter] = useState('all');
   const [toolbarSort, setToolbarSort] = useState('name');
@@ -472,7 +473,14 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   const filteredProperties = properties
     .filter((property) => `${property.name} ${property.id}`.toLowerCase().includes(search.toLowerCase()))
     .filter((property) => toolbarFilter === 'active' ? property.active : toolbarFilter === 'inactive' ? !property.active : true)
+    .filter((property) => transactionFilter === 'all' || (property.transactionType === 'rent' ? 'rent' : 'sale') === transactionFilter)
     .sort((a, b) => toolbarSort === 'recent' ? String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')) : toolbarSort === 'active' ? Number(Boolean(b.active)) - Number(Boolean(a.active)) : a.name.localeCompare(b.name));
+
+  const transactionCounts = properties.reduce((counts, property) => {
+    const type = property.transactionType === 'rent' ? 'rent' : 'sale';
+    counts[type] += 1;
+    return counts;
+  }, { rent: 0, sale: 0 });
 
   return (
     <div className="management-page">
@@ -630,6 +638,34 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
 
       <section className="entity-list">
         <div className="panel-title-row"><h2>Proprietati existente</h2>{selectedIds.length > 0 && <div className="button-row"><span className="muted-text">{selectedIds.length} selectate</span><button className="secondary-button small-button" onClick={() => bulkSetActive(true)}>Activeaza</button><button className="secondary-button small-button" onClick={() => bulkSetActive(false)}>Dezactiveaza</button><button className="ghost-button small-button" onClick={() => setSelectedIds([])}>Anuleaza</button></div>}</div>
+
+        <div className="property-transaction-filter" role="group" aria-label="Filtreaza proprietatile dupa tipul tranzactiei">
+          <button
+            type="button"
+            className={transactionFilter === 'all' ? 'active' : ''}
+            aria-pressed={transactionFilter === 'all'}
+            onClick={() => setTransactionFilter('all')}
+          >
+            Toate <span>{properties.length}</span>
+          </button>
+          <button
+            type="button"
+            className={transactionFilter === 'rent' ? 'active' : ''}
+            aria-pressed={transactionFilter === 'rent'}
+            onClick={() => setTransactionFilter('rent')}
+          >
+            Inchiriere <span>{transactionCounts.rent}</span>
+          </button>
+          <button
+            type="button"
+            className={transactionFilter === 'sale' ? 'active' : ''}
+            aria-pressed={transactionFilter === 'sale'}
+            onClick={() => setTransactionFilter('sale')}
+          >
+            Vanzare <span>{transactionCounts.sale}</span>
+          </button>
+          <small>{filteredProperties.length} afisate</small>
+        </div>
 
         {filteredProperties.map((property) => {
           const log = getLog(property.id);

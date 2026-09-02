@@ -7,8 +7,31 @@ const { DEFAULT_GROUP_LIST_CATEGORY } = require('../utils/groupListCategory');
 
 const DEFAULT_LATE_MINUTES = 10;
 const CHECK_INTERVAL_MS = 15000;
+const STANDARD_WEEKDAY_FOLDERS = [
+  { dayOfWeek: 1, name: 'Luni' },
+  { dayOfWeek: 2, name: 'Marti' },
+  { dayOfWeek: 3, name: 'Miercuri' },
+  { dayOfWeek: 4, name: 'Joi' },
+  { dayOfWeek: 5, name: 'Vineri' },
+  { dayOfWeek: 6, name: 'Sambata' },
+  { dayOfWeek: 0, name: 'Duminica' },
+];
 let timer = null;
 let tickRunning = false;
+
+function normalizedFolderName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function standardWeekdayValue(folderName) {
+  return STANDARD_WEEKDAY_FOLDERS.find(
+    (weekday) => normalizedFolderName(weekday.name) === normalizedFolderName(folderName)
+  )?.dayOfWeek;
+}
 
 function getSystemTimeZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
@@ -238,15 +261,28 @@ function list() {
 }
 
 function listFolders() {
-  return DataManager.getScheduleFolders().slice().sort((a, b) =>
-    String(a.name || '').localeCompare(String(b.name || ''), 'ro')
-  );
+  return DataManager.getScheduleFolders().map((folder) => {
+    const dayOfWeek = standardWeekdayValue(folder.name);
+    return dayOfWeek === undefined ? folder : { ...folder, system: true, dayOfWeek };
+  }).sort((a, b) => {
+    if (a.system && b.system) {
+      const leftIndex = STANDARD_WEEKDAY_FOLDERS.findIndex((weekday) => weekday.dayOfWeek === a.dayOfWeek);
+      const rightIndex = STANDARD_WEEKDAY_FOLDERS.findIndex((weekday) => weekday.dayOfWeek === b.dayOfWeek);
+      return leftIndex - rightIndex;
+    }
+    if (a.system) return -1;
+    if (b.system) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'ro');
+  });
 }
 
 function createFolder(input = {}) {
   const name = String(input.name || '').trim();
   if (!name) throw new Error('Numele folderului este obligatoriu.');
   if (name.length > 80) throw new Error('Numele folderului poate avea cel mult 80 de caractere.');
+  if (standardWeekdayValue(name) !== undefined) {
+    throw new Error('Zilele saptamanii sunt foldere standard si nu pot fi create manual.');
+  }
   const folders = DataManager.getScheduleFolders();
   if (folders.some((folder) => String(folder.name || '').localeCompare(name, 'ro', { sensitivity: 'accent' }) === 0)) {
     throw new Error('Exista deja un folder cu acest nume.');
@@ -258,7 +294,11 @@ function createFolder(input = {}) {
 
 function removeFolder(id) {
   const folders = DataManager.getScheduleFolders();
-  if (!folders.some((folder) => folder.id === id)) throw new Error('Folderul nu exista.');
+  const folder = folders.find((item) => item.id === id);
+  if (!folder) throw new Error('Folderul nu exista.');
+  if (standardWeekdayValue(folder.name) !== undefined) {
+    throw new Error('Folderele standard ale saptamanii nu pot fi sterse.');
+  }
   DataManager.saveScheduleFolders(folders.filter((folder) => folder.id !== id));
   const schedules = DataManager.getSchedules().map((schedule) =>
     schedule.folderId === id ? { ...schedule, folderId: null, updatedAt: new Date().toISOString() } : schedule
@@ -426,6 +466,7 @@ module.exports = {
   getSystemTimeZone,
   list,
   listFolders,
+  standardWeekdayValue,
   createFolder,
   removeFolder,
   normalizeSchedule,

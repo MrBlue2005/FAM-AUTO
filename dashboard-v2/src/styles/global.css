@@ -1557,6 +1557,63 @@ textarea {
 
 .property-preview-card { cursor: pointer; }
 
+.property-transaction-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, .24);
+}
+
+.property-transaction-filter button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.property-transaction-filter button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .055);
+}
+
+.property-transaction-filter button.active {
+  color: #fff;
+  border-color: rgba(59, 130, 246, .4);
+  background: rgba(59, 130, 246, .17);
+}
+
+.property-transaction-filter button span {
+  min-width: 24px;
+  padding: 2px 7px;
+  color: #dbeafe;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, .18);
+  text-align: center;
+  font-size: 11px;
+}
+
+.property-transaction-filter small {
+  padding: 0 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .entity-main {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 150px 120px 140px 90px 90px;
@@ -3491,6 +3548,66 @@ textarea {
   display: grid;
   gap: 12px;
   margin: 0 0 16px;
+}
+
+.schedule-folder-group {
+  display: grid;
+  gap: 9px;
+}
+
+.schedule-folder-group-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedule-folder-group-heading small {
+  color: var(--muted);
+}
+
+.schedule-week-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(105px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+
+.schedule-week-calendar button {
+  display: grid;
+  gap: 3px;
+  min-width: 105px;
+  padding: 11px 12px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .24);
+  text-align: left;
+  cursor: pointer;
+}
+
+.schedule-week-calendar button > span {
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+
+.schedule-week-calendar button > strong {
+  color: rgba(255, 255, 255, .9);
+  font-size: 13px;
+}
+
+.schedule-week-calendar button > small {
+  font-size: 10px;
+}
+
+.schedule-week-calendar button.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .schedule-folder-create,
