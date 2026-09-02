@@ -10,6 +10,10 @@
 
 ## Unreleased
 
+- Added commit-based continuous updates for installed Windows copies. Every push to `main` builds a precompiled, dependency-complete update ZIP plus a SHA-256 manifest under the moving `continuous-main` prerelease; the launcher compares the installed commit, downloads and validates the matching asset, preserves local data/secrets/runtime, applies through a detached helper, rolls back failed copies, and restarts itself. Semantic-version offline installers remain the fallback for bootstrap/runtime upgrades, with `1.1.2` as the transition release.
+- Standardized Scheduler navigation as a permanent Monday-through-Sunday calendar. Existing weekday folders are recognized as protected system folders, schedules appear by their actual configured weekday, every view sorts by posting time, and custom folders remain available separately.
+- Added transaction filters to Properties for all, rental, and sale campaigns, with live counts that combine with the existing search and active/inactive filters.
+- Restored zero-vulnerability audits after new advisories by pinning patched `browserslist` and Prisma's transitive `mysql2` releases.
 - Prepared the complete portable/offline installer release as version 1.1.1 so existing 1.1.0 installations can detect the Gemini, security, and reliability updates.
 - Added automatic Gemini model failover for transient capacity, quota, timeout, and network errors. The generator keeps `gemini-3.7-flash` as primary and falls back to the configurable stable `gemini-3.5-flash`, while permanent API/configuration errors still fail immediately and preserve the existing result.
 - Restored zero-vulnerability npm audits across all four workspaces by updating lockfiles and pinning patched `deepmerge-ts`, `fast-uri`, `nanoid`, and `brace-expansion` transitive releases; Prisma remains on 7.9.0 and its schema/client workflows are revalidated against the safe dependency tree.

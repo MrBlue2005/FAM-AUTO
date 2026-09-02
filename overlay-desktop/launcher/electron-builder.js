@@ -12,6 +12,7 @@ module.exports = {
   },
   files: [
     'launcher/main.js',
+    'launcher/update-client.js',
     'launcher/preload.js',
     'launcher/renderer/**/*',
     'build/icon.png',

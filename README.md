@@ -15,15 +15,19 @@ Cele trei descrieri generate in RX CREATIVE Tool pot fi trimise direct in formul
 
 ### Installer Windows (recomandat)
 
-Ruleaza `RX-AI-Studio-Setup-1.1.0.exe`. Setup-ul instaleaza aplicatia in profilul utilizatorului, descarca propriul runtime Node.js 22, instaleaza toate dependintele npm si Chromium pentru robot, initializeaza baza generatorului, cere parola de administrator si creeaza shortcutul plus pornirea automata. Nu este necesar ca Node.js sau Git sa fie deja instalate.
+Ruleaza `RX-AI-Studio-Offline-Setup-1.1.2.exe`. Setup-ul instaleaza aplicatia completa, runtime-ul privat Node.js, dependintele, Chromium, buildurile web, overlay-ul si launcherul. Nu este necesar ca Visual Studio, Node.js sau Git sa fie instalate pe PC-ul destinatie.
 
-Installerul nu contine si nu suprascrie date private: parole, fisiere `.env` existente, profiluri Facebook, media si date operationale. Este un installer online si are nevoie de internet pentru Node.js, pachetele npm si Chromium.
+Installerul nu contine si nu suprascrie date private: parole, fisiere `.env` existente, profiluri Facebook, media si date operationale. Pachetul offline nu are nevoie de descarcari npm, Playwright sau Visual Studio in timpul instalarii.
+
+Incepand cu bootstrap-ul `1.1.2`, butonul **Check for updates** urmareste direct ultimul commit precompilat din `main`. GitHub Actions publica automat un pachet verificat dupa fiecare push, iar launcherul il aplica cu backup si rollback fara a cere un installer nou. Un release semantic nou este necesar numai cand se schimba bootstrap-ul, runtime-ul Node/Chromium sau cerintele installerului.
 
 Pentru a construi setup-ul din sursa pe PC-ul de dezvoltare:
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e
 npm.cmd run installer:dist
+npm.cmd run installer:offline
+npm.cmd run update:build
 ```
 
 Executabilul rezultat este creat in `installer\dist`.

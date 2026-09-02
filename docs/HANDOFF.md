@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-01
+Last updated: 2026-09-02
 
 ## Repository state
 
@@ -31,6 +31,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Operational dashboard navigation and CTA buttons.
 - Dashboard summary and live API status.
 - Property and job creation with media drag-and-drop.
+- Properties provides combined search/status filtering plus dedicated All/Rental/Sale transaction filters with live counts.
 - Each group row has a `Deschide grupul` action that safely opens the configured Facebook group URL in a separate tab.
 - Property and job rows open the same shared day-by-day Facebook-style preview when their card area is clicked; the explicit Preview action remains available, while selection, details, and action controls keep their individual behavior. The drawer slides in from the right and locks the current page scroll while keeping its own contained scroll.
 - Existing property IDs are editable. A rename migrates the property JSON filename, owned media folder and references (including references reused by cloned properties or jobs), real-estate schedules, Queue selections/order/retry state, history, and saved real-estate run references; duplicate or invalid IDs are rejected and the existing robot-running mutation guard applies.
@@ -50,7 +51,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
 - Real-estate schedules keep their explicitly selected fixed post day. Job schedules derive an independent next post for every included job from the latest successful `prepared`/`posted` history plus the chronological order of upcoming schedule slots, so Tuesday/Thursday folders using the same campaign receive consecutive days (for example 11 then 12), blocked/error-only attempts do not consume a day, and each campaign wraps across its actual configured post days (including mixed 5-post and 20-post campaigns). Scheduler cards show every job's assigned next post day.
-- Persistent schedule folders: create folders, assign existing or new schedules, filter schedules by folder, and safely delete a folder without deleting its schedules.
+- Scheduler navigation provides a permanent Monday-through-Sunday calendar in chronological order. Existing weekday-named folders are treated as protected system folders, schedules are selected by their actual `daysOfWeek`, every visible list is sorted by posting time, and independent custom folders remain available.
 - Every saved schedule card shows its programmed weekdays prominently, using a readable summary plus full weekday badges.
 - Persistent campaign folders: create and filter folders from the Campanii page, assign either property or job campaigns from the campaign action menu, and safely remove folders without deleting campaigns. Campaign folders are included in backup/restore.
 - In Scheduler, the selected Facebook profile filters the campaign checklist. Explicitly assigned campaigns appear only for their assigned profile; legacy campaigns without a profile appear only for their category's default profile. Backend validation prevents incompatible profile/campaign combinations from being saved.
@@ -106,7 +107,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Desktop overlay launch now prefers the fast unpacked executable, confirms process creation, survives the Codex Electron-as-Node environment, and uses a process-only token restricted to overlay status plus the explicit global/per-profile Pause, Resume, and Stop endpoints.
 - The Windows Studio Launcher supports a `--startup` mode: a fullscreen `Welcome back, sir.` screen is displayed while Studio starts. It uses the RX PROPULSE motion language (slow nebula/starfield drift, logo pulse, and light sweep) and honors Windows reduced-motion preferences. Its centered `Enter Workspace` button activates once Studio is ready and opens the local dashboard. `npm.cmd run launcher:install` creates the Desktop shortcut and the `RX AI Studio Welcome` user-logon Scheduled Task with no configured delay. Windows does not guarantee an absolute ordering against every third-party startup app, but the task starts as soon as the user logon trigger is available.
 - `Enter Workspace` is scoped to fullscreen startup Welcome mode and remains hidden in the launcher's normal service-control window.
-- The normal Windows Studio Launcher checks the public `MrBlue2005/FAM-AUTO` GitHub Releases endpoint. When a newer semantic version has a matching `RX-AI-Studio-Offline-Setup-<version>.exe` asset, it shows `Update available`. Installation remains operator-triggered; the launcher downloads to the Windows temporary folder, requires GitHub's SHA-256 asset digest to match, and stops local Studio services only after validation, immediately before opening the installer.
+- The normal Windows Studio Launcher first checks the `continuous-main` prerelease manifest. It compares the installed source commit rather than only the semantic version, validates the manifest, GitHub asset digest, size, and SHA-256, then applies the precompiled/dependency-complete ZIP through a detached PowerShell helper. The helper protects `.env`, operational JSON, uploads, browser profiles, logs, SQLite data, and bundled runtime; it keeps rollback backups, restores overwritten files/state on failure, and restarts the launcher. Stable semantic-version installers remain the fallback for bootstrap or runtime upgrades.
 
 - Electron overlay connected to the local API.
 - Custom R.X. AI icon in the executable, window, and Windows taskbar.
@@ -120,6 +121,7 @@ Always verify these values with `git status` and `git log`; this document descri
 
 - `npm.cmd run installer:offline` builds a movable, self-contained Windows Setup and ZIP under `installer/dist/`. It includes the private Node runtime, lockfile-installed dependencies for every application, both Playwright Chromium versions, compiled web/Electron outputs, and a Microsoft-signed VC++ runtime. The install itself does not need Visual Studio, global Node.js, npm downloads, or Playwright downloads. Generated staging, packages, binaries, operational state, secrets, and browser profiles remain Git-ignored.
 - `.github/workflows/release-offline.yml` runs the same build on Windows for version tags (`v*`) and publishes the Setup, its `.sha256`, and the ZIP as GitHub Release assets. The root `package.json` version, release tag, and generated filename must agree (for example version `1.1.0` and tag `v1.1.0`). A manual workflow run produces a downloadable Actions artifact but does not create a release.
+- `.github/workflows/continuous-update.yml` runs on every push to `main`, verifies the apply/rollback helper, rebuilds all runtime dependencies and production outputs from lockfiles, and atomically advances the `continuous-main` manifest after its commit-specific ZIP is uploaded. `npm.cmd run update:build` reproduces the bundle locally; `npm.cmd run test:update` exercises successful application, local-data preservation, and rollback.
 - `npm.cmd run installer:dist` builds a Windows online installer with Inno Setup. The generated `RX-AI-Studio-Setup-1.1.0.exe` installs under the current user's LocalAppData, provisions a private Node.js 22 runtime, runs the full dependency/Playwright/Prisma/auth setup, and installs the launcher shortcuts. The payload is assembled only from Git-tracked or non-ignored files, so private runtime data is excluded.
 - `npm.cmd run setup:new-pc` installs root, dashboard, copywriter, and overlay dependencies from lockfiles; creates missing local env files; initializes Prisma/SQLite; installs Playwright Chromium; configures the Scrypt login; and runs baseline checks.
 - Operational groups, runtime configuration, schedules, property/job campaigns, uploads, logs, databases, and browser profiles are excluded from Git. Existing files remain local; new clones start safely with empty data and publishing disabled.

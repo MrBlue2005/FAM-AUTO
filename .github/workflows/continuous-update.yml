@@ -1,0 +1,84 @@
+name: Publish continuous application update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rx-ai-studio-continuous-main
+  cancel-in-progress: true
+
+jobs:
+  build-publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dashboard-v2/package-lock.json
+            property-copywriter/package-lock.json
+            overlay-desktop/package-lock.json
+
+      - name: Verify update apply and rollback helper
+        shell: powershell
+        run: npm.cmd run test:update
+
+      - name: Build verified continuous update
+        shell: powershell
+        run: npm.cmd run update:build
+
+      - name: Publish continuous-main assets
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'continuous-main'
+          $manifestPath = 'installer/dist/rx-update-manifest.json'
+          $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+          if ($manifest.commit -ne '${{ github.sha }}') {
+            throw "Manifestul a fost construit pentru $($manifest.commit), nu pentru ${{ github.sha }}."
+          }
+          $packagePath = Join-Path 'installer/dist' $manifest.package.name
+          if (-not (Test-Path -LiteralPath $packagePath)) { throw 'Pachetul declarat in manifest lipseste.' }
+
+          $releaseUri = 'https://api.github.com/repos/${{ github.repository }}/releases/tags/continuous-main'
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            Authorization = "Bearer $env:GH_TOKEN"
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $release = $null
+          try {
+            $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers
+          } catch {
+            if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
+          }
+          if (-not $release) {
+            gh release create $tag --target '${{ github.sha }}' --title 'RX AI Studio Continuous Main' --notes 'Canal automat pentru update-urile verificate construite din main.' --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Release-ul continuous-main nu a putut fi creat.' }
+          }
+
+          gh release upload $tag $packagePath --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Pachetul update-ului continuu nu a putut fi publicat.' }
+          gh release upload $tag $manifestPath --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Manifestul update-ului continuu nu a putut fi publicat.' }
+
+          $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers
+          foreach ($asset in $release.assets) {
+            if ($asset.name -like 'RX-AI-Studio-Continuous-Update-*.zip' -and $asset.name -ne $manifest.package.name) {
+              Invoke-RestMethod -Method Delete -Uri $asset.url -Headers $headers
+            }
+          }

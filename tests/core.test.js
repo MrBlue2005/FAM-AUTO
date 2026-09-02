@@ -21,6 +21,11 @@ const {
 } = require('../app/utils/historyManager');
 const DataManager = require('../app/core/DataManager');
 const ScheduleManager = require('../app/core/ScheduleManager');
+const {
+  continuousUpdateInfo,
+  stableReleaseUpdateInfo,
+  validateContinuousManifest,
+} = require('../overlay-desktop/launcher/update-client');
 const { summarizeBlockingIssues } = require('../app/core/RobotManager');
 const { buildDiagnostics, diagnoseEmptyQueue } = require('../app/core/Diagnostics');
 
@@ -342,6 +347,58 @@ test('schedule weekday folder names are recognized as standardized calendar days
   assert.equal(ScheduleManager.standardWeekdayValue('sâmbătă'), 6);
   assert.equal(ScheduleManager.standardWeekdayValue('DUMINICA'), 0);
   assert.equal(ScheduleManager.standardWeekdayValue('Programari internationale'), undefined);
+});
+
+test('continuous updater detects a newer commit without requiring a new semantic version', () => {
+  const manifest = validateContinuousManifest({
+    format: 'rx-ai-studio-continuous-update',
+    schemaVersion: 1,
+    commit: 'b'.repeat(40),
+    appVersion: '1.1.2',
+    minimumBootstrapVersion: '1.1.2',
+    builtAt: '2026-09-02T10:00:00.000Z',
+    summary: 'Calendar update',
+    package: {
+      name: `RX-AI-Studio-Continuous-Update-${'b'.repeat(12)}.zip`,
+      size: 1234,
+      sha256: 'c'.repeat(64),
+    },
+  });
+  const release = {
+    html_url: 'https://github.com/example/releases/continuous-main',
+    assets: [{
+      name: manifest.package.name,
+      size: manifest.package.size,
+      digest: `sha256:${manifest.package.sha256}`,
+      browser_download_url: `https://github.com/example/releases/download/continuous-main/${manifest.package.name}`,
+    }],
+  };
+  const update = continuousUpdateInfo({
+    release,
+    manifest,
+    currentVersion: '1.1.2',
+    currentCommit: 'a'.repeat(40),
+  });
+  assert.equal(update.available, true);
+  assert.equal(update.kind, 'continuous');
+  assert.equal(update.expectedSha256, manifest.package.sha256);
+  assert.equal(continuousUpdateInfo({ ...{ release, manifest, currentVersion: '1.1.2' }, currentCommit: manifest.commit }).available, false);
+  assert.equal(continuousUpdateInfo({ ...{ release, manifest, currentCommit: 'a'.repeat(40) }, currentVersion: '1.1.1' }).requiresInstaller, true);
+});
+
+test('stable installer updates remain available for bootstrap and runtime upgrades', () => {
+  const update = stableReleaseUpdateInfo({
+    tag_name: 'v1.2.0',
+    html_url: 'https://github.com/example/releases/v1.2.0',
+    assets: [{
+      name: 'RX-AI-Studio-Offline-Setup-1.2.0.exe',
+      size: 100,
+      digest: `sha256:${'d'.repeat(64)}`,
+      browser_download_url: 'https://github.com/example/releases/download/v1.2.0/setup.exe',
+    }],
+  }, '1.1.2');
+  assert.equal(update.available, true);
+  assert.equal(update.kind, 'installer');
 });
 
 test('job schedules rotate each campaign through its own configured post days', () => {

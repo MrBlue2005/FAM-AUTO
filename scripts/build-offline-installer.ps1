@@ -8,6 +8,8 @@ $ProgressPreference = 'SilentlyContinue'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $appVersion = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot 'package.json') | ConvertFrom-Json).version
 if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Versiune invalida in package.json: $appVersion" }
+$sourceCommit = (& git.exe -C $projectRoot rev-parse HEAD).Trim().ToLowerInvariant()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Commitul sursa nu a putut fi determinat.' }
 $installerRoot = Join-Path $projectRoot 'installer'
 $offlineRoot = Join-Path $installerRoot '.offline-staging'
 $stagingRoot = Join-Path $offlineRoot 'app'
@@ -130,6 +132,7 @@ $marker = [ordered]@{
   format = 'rx-ai-studio-offline-bundle'
   version = 1
   appVersion = $appVersion
+  sourceCommit = $sourceCommit
   createdAt = (Get-Date).ToUniversalTime().ToString('o')
   nodeVersion = (& $nodeExecutable --version).Trim()
 }

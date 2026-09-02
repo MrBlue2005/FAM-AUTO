@@ -104,16 +104,20 @@ async function checkForUpdate() {
   if (updateCheckInProgress || updateInstallInProgress) return;
   updateCheckInProgress = true;
   checkUpdateButton.disabled = true;
-  updateStatus.textContent = 'Verific GitHub Releases...';
+  updateStatus.textContent = 'Verific ultimul update din repository...';
   try {
     const update = await window.rxStudioLauncher.checkUpdate();
     installUpdateButton.hidden = !update.available;
     if (update.available) {
-      updateStatus.textContent = `Versiunea ${update.latestVersion} este disponibila. Ai instalat ${update.currentVersion}.`;
+      updateStatus.textContent = update.kind === 'continuous'
+        ? `Update disponibil din main (${update.latestCommit.slice(0, 7)}): ${update.summary || 'modificari noi'}.`
+        : `Versiunea ${update.latestVersion} este disponibila. Ai instalat ${update.currentVersion}.`;
+    } else if (update.requiresInstaller) {
+      updateStatus.textContent = `Updaterul necesita bootstrap ${update.latestVersion} sau mai nou. Instaleaza ultimul release stabil.`;
     } else if (update.noRelease) {
       updateStatus.textContent = `Versiunea ${update.currentVersion}. Nu exista inca un release publicat.`;
     } else {
-      updateStatus.textContent = `Versiunea ${update.currentVersion} este la zi.`;
+      updateStatus.textContent = `Versiunea ${update.currentVersion} este la zi cu repository-ul.`;
     }
   } catch (error) {
     updateStatus.textContent = error.message || 'Nu am putut verifica actualizarile.';
@@ -125,17 +129,19 @@ async function checkForUpdate() {
 
 async function installUpdate() {
   if (updateInstallInProgress) return;
-  const confirmed = window.confirm('Descarc si instalez update-ul? Studio va fi oprit automat numai dupa verificarea completa a pachetului.');
+  const confirmed = window.confirm('Descarc si aplic update-ul din repository? Studio va fi oprit numai dupa verificarea completa, iar datele locale vor fi pastrate.');
   if (!confirmed) return;
   updateInstallInProgress = true;
   installUpdateButton.disabled = true;
   checkUpdateButton.disabled = true;
   updateStatus.textContent = 'Descarc si verific update-ul. Nu inchide launcherul...';
   message.className = 'message working';
-  message.textContent = 'Update in curs. Studio va fi oprit inainte de pornirea installerului.';
+  message.textContent = 'Update in curs. Studio va fi oprit doar inainte de aplicarea pachetului verificat.';
   try {
-    await window.rxStudioLauncher.installUpdate();
-    updateStatus.textContent = 'Installerul a pornit. Urmeaza pasii afisati.';
+    const result = await window.rxStudioLauncher.installUpdate();
+    updateStatus.textContent = result.kind === 'continuous'
+      ? 'Update verificat. Aplic modificarile si repornesc launcherul.'
+      : 'Installerul noii versiuni a pornit.';
   } catch (error) {
     updateStatus.textContent = error.message || 'Update-ul nu a putut fi instalat.';
     message.className = 'message error';

@@ -1,6 +1,6 @@
 {
   "name": "facebook-automation",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "",
   "main": "index.js",
   "engines": {
@@ -10,6 +10,7 @@
     "build": "npm --prefix dashboard-v2 run build",
     "start": "node --env-file-if-exists=.env server/server.js",
     "test": "node --test tests/core.test.js tests/server.test.js",
+    "test:update": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-continuous-update.ps1",
     "test:e2e": "node scripts/run-e2e.js",
     "check": "npm test && npm --prefix dashboard-v2 run lint && npm --prefix dashboard-v2 run build && npm run test:e2e",
     "check:production": "node --env-file-if-exists=.env scripts/production-check.js",
@@ -26,6 +27,7 @@
     "launcher:install": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-studio-launcher.ps1",
     "installer:dist": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "installer:offline": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-offline-installer.ps1",
+    "update:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-continuous-update.ps1",
     "studio:stop": "node scripts/stop-studio.js"
   },
   "keywords": [],

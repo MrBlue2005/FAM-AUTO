@@ -1,6 +1,6 @@
 #define MyAppName "RX AI Studio"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.1"
+  #define MyAppVersion "1.1.2"
 #endif
 #define MyAppPublisher "R.X. AI Studio"
 
