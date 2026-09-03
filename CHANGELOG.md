@@ -10,6 +10,9 @@
 
 ## Unreleased
 
+- Added Facebook-profile report navigation and exact server-side run filtering. Reports now expose every configured or historical profile as a selectable card with run, posted, error, and posting-success statistics.
+- Added per-profile Excel exports for the last 7, 30, 60, or 90 days and the complete history. Workbooks identify the Facebook profile in their metadata, titles, subtitles, and detail rows, while posting success is consistently calculated as `posted / (posted + errors)` in both UI and Excel summaries.
+- Updated the transitive `qs`, `fast-uri`, and `@xmldom/xmldom` dependencies after newly published denial-of-service, URL-validation, and XML-serialization advisories, restoring zero-vulnerability audits across all workspaces.
 - Fixed false continuous-update prompts when the launcher is run directly from a Git checkout. Development copies now compare the repository HEAD, hide automatic installation when the Electron executable is outside the Studio installation, and direct genuinely outdated source checkouts to Git instead of downloading an inapplicable package.
 - Added commit-based continuous updates for installed Windows copies. Every push to `main` builds a precompiled, dependency-complete update ZIP plus a SHA-256 manifest under the moving `continuous-main` prerelease; the launcher compares the installed commit, downloads and validates the matching asset, preserves local data/secrets/runtime, applies through a detached helper, rolls back failed copies, and restarts itself. Semantic-version offline installers remain the fallback for bootstrap/runtime upgrades, with `1.1.3` as the corrected transition release.
 - Standardized Scheduler navigation as a permanent Monday-through-Sunday calendar. Existing weekday folders are recognized as protected system folders, schedules appear by their actual configured weekday, every view sorts by posting time, and custom folders remain available separately.

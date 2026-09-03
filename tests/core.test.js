@@ -14,7 +14,7 @@ const {
   buildQueuePlan,
   getTaskId,
 } = require('../app/core/CampaignTools');
-const { buildCampaignWorkbook } = require('../app/utils/excelReport');
+const { buildCampaignWorkbook, filterHistory } = require('../app/utils/excelReport');
 const {
   classifyGroupAvailabilityText,
 } = require('../app/facebook/groupAvailability');
@@ -505,16 +505,34 @@ test('deleting a campaign reference updates mixed schedules and removes empty sc
 
 test('Excel report contains summary, aggregate, and detailed result sheets', async () => {
   const history = [
-    { propertyId: 'P1', propertyName: 'Campanie test', groupId: 'G1', groupName: 'Grup test', day: 1, status: 'posted', views: 120, date: '2026-07-12T10:00:00.000Z' },
-    { propertyId: 'P1', propertyName: 'Campanie test', groupId: 'G2', groupName: 'Grup cu eroare', day: 1, status: 'error', reason: 'Composer indisponibil', date: '2026-07-12T10:05:00.000Z' },
+    { facebookProfileId: 'agent-a', facebookProfileLabel: 'Agent A', propertyId: 'P1', propertyName: 'Campanie test', groupId: 'G1', groupName: 'Grup test', day: 1, status: 'posted', views: 120, date: '2026-07-12T10:00:00.000Z' },
+    { facebookProfileId: 'agent-a', facebookProfileLabel: 'Agent A', propertyId: 'P1', propertyName: 'Campanie test', groupId: 'G2', groupName: 'Grup cu eroare', day: 1, status: 'error', reason: 'Composer indisponibil', date: '2026-07-12T10:05:00.000Z' },
+    { facebookProfileId: 'agent-b', facebookProfileLabel: 'Agent B', propertyId: 'P2', propertyName: 'Alta campanie', groupId: 'G3', groupName: 'Alt grup', day: 1, status: 'posted', date: '2026-07-12T10:10:00.000Z' },
   ];
-  const buffer = await buildCampaignWorkbook({ history, range: 'all' });
+  const buffer = await buildCampaignWorkbook({ history, range: 'all', profileId: 'agent-a', profileLabel: 'Agent A' });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 
   assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Detalii', 'Campanii', 'Grupuri', 'Sumar']);
-  assert.equal(workbook.getWorksheet('Detalii').getCell('G5').value, 'posted');
-  assert.equal(workbook.getWorksheet('Campanii').getCell('H5').value.formula, 'IF(C5=0,0,D5/C5)');
-  assert.equal(workbook.getWorksheet('Sumar').getCell('G9').value.formula, 'IF(B5=0,0,D5/B5)');
+  assert.equal(workbook.getWorksheet('Detalii').getCell('B5').value, 'Agent A');
+  assert.equal(workbook.getWorksheet('Detalii').getCell('H5').value, 'posted');
+  assert.equal(workbook.getWorksheet('Detalii').getCell('C7').value, null);
+  assert.equal(workbook.getWorksheet('Campanii').getCell('H5').value.formula, 'IF((D5+G5)=0,0,D5/(D5+G5))');
+  assert.equal(workbook.getWorksheet('Sumar').getCell('G9').value.formula, 'IF((D5+D9)=0,0,D5/(D5+D9))');
+  assert.match(workbook.subject, /Profil Facebook: Agent A \(agent-a\)/);
   assert.ok(buffer.byteLength > 5000);
+});
+
+test('Excel report periods support 60 and 90 days together with exact Facebook profiles', () => {
+  const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const history = [
+    { facebookProfileId: 'agent-a', date: ago(10) },
+    { facebookProfileId: 'agent-a', date: ago(45) },
+    { facebookProfileId: 'agent-a', date: ago(75) },
+    { facebookProfileId: 'agent-a', date: ago(100) },
+    { facebookProfileId: 'agent-b', date: ago(5) },
+  ];
+  assert.equal(filterHistory(history, '60', 'agent-a').length, 2);
+  assert.equal(filterHistory(history, '90', 'agent-a').length, 3);
+  assert.equal(filterHistory(history, '30', 'agent-b').length, 1);
 });

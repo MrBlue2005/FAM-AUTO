@@ -185,9 +185,13 @@ export const api = {
   getGroupedErrors: () => request('/logs/errors'),
   getLatestReport: () => request('/reports/latest'),
   exportLatestReportUrl: `${API_URL}/reports/latest/export`,
-  downloadExcelReport: (range = 'all') => downloadFile(`/reports/latest/excel?range=${encodeURIComponent(range)}`, `rx-campaign-report-${new Date().toISOString().slice(0, 10)}.xlsx`),
+  getReportProfiles: () => request('/reports/profiles'),
+  downloadExcelReport: ({ range = 'all', profileId = 'all' } = {}) => downloadFile(
+    `/reports/latest/excel?range=${encodeURIComponent(range)}&profileId=${encodeURIComponent(profileId)}`,
+    `rx-campaign-report-${new Date().toISOString().slice(0, 10)}.xlsx`
+  ),
 
-  getRuns: ({ status = 'all', search = '' } = {}) => request(`/runs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}`),
+  getRuns: ({ status = 'all', search = '', profileId = 'all' } = {}) => request(`/runs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}&profileId=${encodeURIComponent(profileId)}`),
   getRun: (runId) => request(`/runs/${encodeURIComponent(runId)}`),
   downloadRunExcel: (runId) => downloadFile(`/runs/${encodeURIComponent(runId)}/excel`, `rx-run-${runId}.xlsx`),
   retryRunErrors: (runId) => request(`/runs/${encodeURIComponent(runId)}/retry-errors`, { method: 'POST', body: '{}' }),

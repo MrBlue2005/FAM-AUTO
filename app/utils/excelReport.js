@@ -22,12 +22,23 @@ function numberFromEntry(entry, keys) {
   return 0;
 }
 
-function filterHistory(history, range) {
-  if (!range || range === 'all') return history.slice();
-  const days = Number(range);
-  if (![1, 7, 30].includes(days)) return history.slice();
+const VALID_REPORT_RANGES = new Set(['all', '1', '7', '30', '60', '90']);
+
+function normalizeReportRange(range) {
+  const value = String(range || 'all');
+  return VALID_REPORT_RANGES.has(value) ? value : 'all';
+}
+
+function filterHistory(history, range, profileId = 'all') {
+  const normalizedRange = normalizeReportRange(range);
+  let filtered = history.slice();
+  if (profileId && profileId !== 'all') {
+    filtered = filtered.filter((entry) => String(entry.facebookProfileId || '') === String(profileId));
+  }
+  if (normalizedRange === 'all') return filtered;
+  const days = Number(normalizedRange);
   const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
-  return history.filter((entry) => new Date(entry.date).getTime() >= threshold);
+  return filtered.filter((entry) => new Date(entry.date).getTime() >= threshold);
 }
 
 function groupRows(history, idKey, nameKey) {
@@ -127,7 +138,7 @@ function addAggregateSheet(workbook, name, title, subtitle, rows, idLabel) {
   rows.forEach((item, index) => {
     const rowNumber = index + 5;
     sheet.getRow(rowNumber).values = [item.id, item.name, item.total, item.posted, item.prepared, item.skipped, item.errors, null, item.views, item.firstDate, item.lastDate];
-    sheet.getCell(`H${rowNumber}`).value = { formula: `IF(C${rowNumber}=0,0,D${rowNumber}/C${rowNumber})` };
+    sheet.getCell(`H${rowNumber}`).value = { formula: `IF((D${rowNumber}+G${rowNumber})=0,0,D${rowNumber}/(D${rowNumber}+G${rowNumber}))` };
   });
   const lastRow = Math.max(5, rows.length + 4);
   styleBody(sheet, 5, rows.length + 4, columns);
@@ -139,31 +150,39 @@ function addAggregateSheet(workbook, name, title, subtitle, rows, idLabel) {
   return sheet;
 }
 
-async function buildCampaignWorkbook({ history, range = 'all' }) {
-  const filtered = filterHistory(history, range);
+async function buildCampaignWorkbook({ history, range = 'all', profileId = 'all', profileLabel = 'Toate profilurile' }) {
+  const normalizedRange = normalizeReportRange(range);
+  const filtered = filterHistory(history, normalizedRange, profileId);
+  const rangeLabel = normalizedRange === 'all' ? 'tot istoricul' : `ultimele ${normalizedRange} zile`;
+  const resolvedProfileLabel = String(profileLabel || profileId || 'Profil necunoscut');
+  const profileSubtitle = `Profil Facebook: ${resolvedProfileLabel}${profileId && profileId !== 'all' ? ` (${profileId})` : ''}`;
+  const reportSubtitle = `${profileSubtitle} | Perioada: ${rangeLabel}`;
   const campaignRows = groupRows(filtered, 'propertyId', 'propertyName');
   const groupSummaryRows = groupRows(filtered, 'groupId', 'groupName');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'R.X. AI Studio';
+  workbook.title = `Raport Facebook - ${resolvedProfileLabel}`;
+  workbook.subject = `${profileSubtitle}; ${rangeLabel}; rata succes = postate / (postate + erori)`;
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
 
   const detail = workbook.addWorksheet('Detalii');
   const detailColumns = [
-    { header: 'Data', key: 'date', width: 20 }, { header: 'Campanie ID', key: 'propertyId', width: 22 },
-    { header: 'Campanie', key: 'propertyName', width: 34 }, { header: 'Grup ID', key: 'groupId', width: 18 },
-    { header: 'Grup', key: 'groupName', width: 42 }, { header: 'Zi', key: 'day', width: 8 },
-    { header: 'Status', key: 'status', width: 13 }, { header: 'Vizualizari', key: 'views', width: 14 },
-    { header: 'Motiv / eroare', key: 'reason', width: 48 },
+    { header: 'Data', key: 'date', width: 20 }, { header: 'Profil Facebook', key: 'profile', width: 26 },
+    { header: 'Campanie ID', key: 'propertyId', width: 22 }, { header: 'Campanie', key: 'propertyName', width: 34 },
+    { header: 'Grup ID', key: 'groupId', width: 18 }, { header: 'Grup', key: 'groupName', width: 42 },
+    { header: 'Zi', key: 'day', width: 8 }, { header: 'Status', key: 'status', width: 13 },
+    { header: 'Vizualizari', key: 'views', width: 14 }, { header: 'Motiv / eroare', key: 'reason', width: 48 },
   ];
-  styleTitle(detail, 'R.X. AI - Detalii rezultate', `Filtru: ${range === 'all' ? 'tot istoricul' : `ultimele ${range} zile`} | Generat: ${new Date().toLocaleString('ro-RO')}`, 'I');
+  styleTitle(detail, 'R.X. AI - Detalii rezultate', `${reportSubtitle} | Generat: ${new Date().toLocaleString('ro-RO')}`, 'J');
   detail.getRow(4).values = detailColumns.map((column) => column.header);
   styleTableHeader(detail.getRow(4));
   filtered.forEach((entry, index) => {
     const parsedDate = entry.date ? new Date(entry.date) : null;
     detail.getRow(index + 5).values = [
       parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null,
+      entry.facebookProfileLabel || entry.facebookProfileId || resolvedProfileLabel,
       entry.propertyId || '', entry.propertyName || '', entry.groupId || '', entry.groupName || '',
       Number(entry.day) || 0, entry.status || '', numberFromEntry(entry, ['views', 'viewCount', 'impressions', 'reach', 'metrics.views', 'metrics.impressions']),
       entry.reason || entry.error || entry.message || '',
@@ -172,24 +191,24 @@ async function buildCampaignWorkbook({ history, range = 'all' }) {
   const detailLastRow = Math.max(5, filtered.length + 4);
   styleBody(detail, 5, filtered.length + 4, detailColumns);
   detail.getColumn('A').numFmt = 'yyyy-mm-dd hh:mm';
-  detail.getColumn('H').numFmt = '#,##0';
-  detail.addConditionalFormatting({ ref: `G5:G${detailLastRow}`, rules: [
-    { type: 'containsText', operator: 'containsText', text: 'posted', formulae: ['NOT(ISERROR(SEARCH("posted",G5)))'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'DCFCE7' } }, font: { color: { argb: COLORS.green } } } },
-    { type: 'containsText', operator: 'containsText', text: 'error', formulae: ['NOT(ISERROR(SEARCH("error",G5)))'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FEE2E2' } }, font: { color: { argb: COLORS.red }, bold: true } } },
+  detail.getColumn('I').numFmt = '#,##0';
+  detail.addConditionalFormatting({ ref: `H5:H${detailLastRow}`, rules: [
+    { type: 'containsText', operator: 'containsText', text: 'posted', formulae: ['NOT(ISERROR(SEARCH("posted",H5)))'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'DCFCE7' } }, font: { color: { argb: COLORS.green } } } },
+    { type: 'containsText', operator: 'containsText', text: 'error', formulae: ['NOT(ISERROR(SEARCH("error",H5)))'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FEE2E2' } }, font: { color: { argb: COLORS.red }, bold: true } } },
   ] });
 
-  addAggregateSheet(workbook, 'Campanii', 'R.X. AI - Rezultate pe campanii', 'Agregare dupa proprietate sau job', campaignRows, 'Campanie ID');
-  addAggregateSheet(workbook, 'Grupuri', 'R.X. AI - Rezultate pe grupuri', 'Performanta si erori pentru fiecare grup Facebook', groupSummaryRows, 'Grup ID');
+  addAggregateSheet(workbook, 'Campanii', 'R.X. AI - Rezultate pe campanii', `${reportSubtitle} | Agregare dupa proprietate sau job`, campaignRows, 'Campanie ID');
+  addAggregateSheet(workbook, 'Grupuri', 'R.X. AI - Rezultate pe grupuri', `${reportSubtitle} | Performanta pe grup Facebook`, groupSummaryRows, 'Grup ID');
 
   const summary = workbook.addWorksheet('Sumar', { properties: { tabColor: { argb: COLORS.cyan } } });
-  styleTitle(summary, 'R.X. AI - Raport campanii', `Filtru: ${range === 'all' ? 'tot istoricul' : `ultimele ${range} zile`} | Generat: ${new Date().toLocaleString('ro-RO')}`, 'H');
+  styleTitle(summary, 'R.X. AI - Raport campanii', `${reportSubtitle} | Generat: ${new Date().toLocaleString('ro-RO')}`, 'H');
   const cards = [
-    ['Total actiuni', `COUNTA('Detalii'!$G$5:$G$${detailLastRow})`, COLORS.blue],
-    ['Postate', `COUNTIF('Detalii'!$G$5:$G$${detailLastRow},"posted")`, COLORS.green],
-    ['Pregatite', `COUNTIF('Detalii'!$G$5:$G$${detailLastRow},"prepared")`, COLORS.cyan],
-    ['Sarite', `COUNTIF('Detalii'!$G$5:$G$${detailLastRow},"skipped")`, COLORS.amber],
-    ['Erori', `COUNTIF('Detalii'!$G$5:$G$${detailLastRow},"error")`, COLORS.red],
-    ['Rata succes', 'IF(B5=0,0,D5/B5)', COLORS.green],
+    ['Total actiuni', `COUNTA('Detalii'!$H$5:$H$${detailLastRow})`, COLORS.blue],
+    ['Postate', `COUNTIF('Detalii'!$H$5:$H$${detailLastRow},"posted")`, COLORS.green],
+    ['Pregatite', `COUNTIF('Detalii'!$H$5:$H$${detailLastRow},"prepared")`, COLORS.cyan],
+    ['Sarite', `COUNTIF('Detalii'!$H$5:$H$${detailLastRow},"skipped")`, COLORS.amber],
+    ['Erori', `COUNTIF('Detalii'!$H$5:$H$${detailLastRow},"error")`, COLORS.red],
+    ['Rata succes postari', 'IF((D5+D9)=0,0,D5/(D5+D9))', COLORS.green],
   ];
   cards.forEach(([label, formula, color], index) => {
     const startColumn = index % 3 === 0 ? 1 : index % 3 === 1 ? 4 : 7;
@@ -223,4 +242,4 @@ async function buildCampaignWorkbook({ history, range = 'all' }) {
   return workbook.xlsx.writeBuffer();
 }
 
-module.exports = { buildCampaignWorkbook, filterHistory, groupRows };
+module.exports = { buildCampaignWorkbook, filterHistory, groupRows, normalizeReportRange };

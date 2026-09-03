@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { spawn } = require('child_process');
 const { getUploadsRoot, normalizeMediaReference, resolveMediaReference } = require('../app/utils/mediaPath');
-const { buildCampaignWorkbook } = require('../app/utils/excelReport');
+const { buildCampaignWorkbook, normalizeReportRange } = require('../app/utils/excelReport');
 const { ensureStoragePaths, storageStatus } = require('../app/config/storagePaths');
 
 const DataManager = require('../app/core/DataManager');
@@ -838,56 +838,127 @@ app.get('/api/reports/latest/export', (req, res) => {
 
 app.get('/api/reports/latest/excel', async (req, res) => {
   try {
-    const range = ['all', '1', '7', '30'].includes(String(req.query.range))
-      ? String(req.query.range)
-      : 'all';
-    const buffer = await buildCampaignWorkbook({ history: DataManager.getHistory(), range });
+    const range = normalizeReportRange(req.query.range);
+    const profileId = String(req.query.profileId || 'all');
+    const context = reportDataContext();
+    if (profileId !== 'all' && !context.profileLabels.has(profileId)) {
+      return res.status(400).json({ error: 'Profilul Facebook selectat nu exista in configuratie sau in istoricul rapoartelor.' });
+    }
+    const profileLabel = profileId === 'all'
+      ? 'Toate profilurile'
+      : context.profileLabels.get(profileId);
+    const buffer = await buildCampaignWorkbook({ history: context.history, range, profileId, profileLabel });
     const stamp = new Date().toISOString().slice(0, 10);
+    const safeProfile = profileId === 'all' ? 'toate-profilurile' : profileId.replace(/[^a-z0-9_-]+/gi, '-');
+    const safeRange = range === 'all' ? 'tot-istoricul' : `${range}-zile`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="rx-campaign-report-${stamp}.xlsx"`);
-    res.send(Buffer.from(buffer));
+    res.setHeader('Content-Disposition', `attachment; filename="rx-report-${safeProfile}-${safeRange}-${stamp}.xlsx"`);
+    return res.send(Buffer.from(buffer));
   } catch (error) {
-    res.status(500).json({ error: `Raportul Excel nu a putut fi generat: ${error.message}` });
+    return res.status(500).json({ error: `Raportul Excel nu a putut fi generat: ${error.message}` });
   }
 });
 
 /* CAMPAIGN RUNS AND SAVED REPORTS */
 
-function campaignRunPayload(run) {
+function reportDataContext() {
+  const config = DataManager.getRuntimeConfig();
+  const runs = DataManager.getCampaignRuns();
+  const configuredProfiles = config.facebookProfiles || [];
+  const defaultProfileId = config.facebookProfileId || configuredProfiles[0]?.id || 'main';
+  const profileLabels = new Map(configuredProfiles.map((profile) => [String(profile.id), profile.label || profile.id]));
+  const runProfiles = new Map(runs.map((run) => [run.id, String(run.facebookProfileId || defaultProfileId)]));
+  const history = DataManager.getHistory().map((entry) => {
+    const facebookProfileId = String(entry.facebookProfileId || runProfiles.get(entry.runId) || defaultProfileId);
+    const facebookProfileLabel = entry.facebookProfileLabel || profileLabels.get(facebookProfileId) || facebookProfileId;
+    if (!profileLabels.has(facebookProfileId)) profileLabels.set(facebookProfileId, facebookProfileLabel);
+    return { ...entry, facebookProfileId, facebookProfileLabel };
+  });
+  runs.forEach((run) => {
+    const profileId = String(run.facebookProfileId || defaultProfileId);
+    if (!profileLabels.has(profileId)) profileLabels.set(profileId, profileId);
+  });
+  return { config, runs, history, configuredProfiles, defaultProfileId, profileLabels };
+}
+
+function reportSuccessRate(posted, errors) {
+  const attempts = Number(posted || 0) + Number(errors || 0);
+  return attempts ? Number(((Number(posted || 0) / attempts) * 100).toFixed(1)) : 0;
+}
+
+function campaignRunPayload(run, context = reportDataContext()) {
   const history = DataManager.getCampaignRunHistory(run.id);
+  const facebookProfileId = String(run.facebookProfileId || context.defaultProfileId);
+  const posted = history.filter((entry) => entry.status === 'posted').length;
+  const errors = history.filter((entry) => entry.status === 'error').length;
   return {
     ...run,
+    facebookProfileId,
+    facebookProfileLabel: context.profileLabels.get(facebookProfileId) || facebookProfileId,
     totals: {
       total: history.length,
-      posted: history.filter((entry) => entry.status === 'posted').length,
+      posted,
       prepared: history.filter((entry) => entry.status === 'prepared').length,
       skipped: history.filter((entry) => entry.status === 'skipped').length,
-      errors: history.filter((entry) => entry.status === 'error').length,
+      errors,
+      successRate: reportSuccessRate(posted, errors),
     },
   };
 }
 
+app.get('/api/reports/profiles', (req, res) => {
+  const context = reportDataContext();
+  const summaries = new Map(Array.from(context.profileLabels, ([id, label]) => [id, {
+    id, label, runCount: 0, posted: 0, errors: 0, successRate: 0,
+  }]));
+  context.runs.forEach((run) => {
+    const profileId = String(run.facebookProfileId || context.defaultProfileId);
+    const summary = summaries.get(profileId);
+    if (summary) summary.runCount += 1;
+  });
+  context.history.forEach((entry) => {
+    const summary = summaries.get(entry.facebookProfileId);
+    if (!summary) return;
+    if (entry.status === 'posted') summary.posted += 1;
+    if (entry.status === 'error') summary.errors += 1;
+  });
+  summaries.forEach((summary) => {
+    summary.successRate = reportSuccessRate(summary.posted, summary.errors);
+  });
+  res.json(Array.from(summaries.values()));
+});
+
 app.get('/api/runs', (req, res) => {
   const status = String(req.query.status || 'all');
   const search = String(req.query.search || '').trim().toLowerCase();
-  const runs = DataManager.getCampaignRuns()
+  const profileId = String(req.query.profileId || 'all');
+  const context = reportDataContext();
+  const runs = context.runs
     .filter((run) => status === 'all' || run.status === status)
-    .filter((run) => !search || `${run.id} ${(run.campaignIds || []).join(' ')} ${run.facebookProfileId || ''}`.toLowerCase().includes(search))
-    .map(campaignRunPayload);
+    .filter((run) => profileId === 'all' || String(run.facebookProfileId || context.defaultProfileId) === profileId)
+    .map((run) => campaignRunPayload(run, context))
+    .filter((run) => !search || `${run.id} ${(run.campaignIds || []).join(' ')} ${run.facebookProfileId} ${run.facebookProfileLabel}`.toLowerCase().includes(search));
   res.json(runs);
 });
 
 app.get('/api/runs/:runId', (req, res) => {
   const run = DataManager.getCampaignRun(req.params.runId);
   if (!run) return res.status(404).json({ error: 'Rularea nu exista.' });
-  return res.json({ ...campaignRunPayload(run), history: DataManager.getCampaignRunHistory(run.id) });
+  const context = reportDataContext();
+  const payload = campaignRunPayload(run, context);
+  const history = context.history.filter((entry) => entry.runId === run.id);
+  return res.json({ ...payload, history });
 });
 
 app.get('/api/runs/:runId/excel', async (req, res) => {
   try {
     const run = DataManager.getCampaignRun(req.params.runId);
     if (!run) return res.status(404).json({ error: 'Rularea nu exista.' });
-    const buffer = await buildCampaignWorkbook({ history: DataManager.getCampaignRunHistory(run.id), range: 'all' });
+    const context = reportDataContext();
+    const facebookProfileId = String(run.facebookProfileId || context.defaultProfileId);
+    const facebookProfileLabel = context.profileLabels.get(facebookProfileId) || facebookProfileId;
+    const history = context.history.filter((entry) => entry.runId === run.id);
+    const buffer = await buildCampaignWorkbook({ history, range: 'all', profileId: facebookProfileId, profileLabel: facebookProfileLabel });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="rx-run-${run.id}.xlsx"`);
     return res.send(Buffer.from(buffer));

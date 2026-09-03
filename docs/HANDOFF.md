@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Repository state
 
@@ -47,7 +47,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Campaign preview, validations, and mandatory preflight checks.
 - Diagnostics rebuilds the isolated execution configuration of every blocked schedule, exposes its exact blocking preflight issues under the schedule name, and deduplicates repeated per-group failures in the Live Feed summary while retaining the affected-task count.
 - Live Feed, reports, CSV exports, backup/restore, and audit log.
-- Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets.
+- Filtered Excel campaign reports with formula-driven summary, campaign, group, and detailed result sheets. Reports can be exported for one Facebook profile over the last 7, 30, 60, or 90 days or all history; every workbook identifies its profile owner and calculates posting success as posted divided by posted plus errors.
 - Persistent campaign runs with unique IDs, configuration snapshots, lifecycle status, and per-run totals.
 - Persistent weekly campaign scheduling by weekday and local time, with campaign/profile selection, post day, group range, late tolerance, pause/resume, and manual run controls.
 - Real-estate schedules keep their explicitly selected fixed post day. Job schedules derive an independent next post for every included job from the latest successful `prepared`/`posted` history plus the chronological order of upcoming schedule slots, so Tuesday/Thursday folders using the same campaign receive consecutive days (for example 11 then 12), blocked/error-only attempts do not consume a day, and each campaign wraps across its actual configured post days (including mixed 5-post and 20-post campaigns). Scheduler cards show every job's assigned next post day.
@@ -64,7 +64,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Every active run also has individual Pause/Resume and Stop controls. A per-profile pause is checked at the next safe point and does not affect the other workers; individual Stop terminates only that profile's worker.
 - Schedules exclude groups with a successful `posted` history entry from the same server-local calendar day by default and recheck before every task.
 - The scheduler profile selector loads configured Facebook profiles from `GET /api/facebook-profiles` and filters them by campaign category.
-- Reports dashboard page with filters, detailed events, per-run Excel export, controlled retry, and archiving.
+- Reports dashboard page with filters, detailed events, per-run Excel export, controlled retry, and archiving. Selectable profile cards filter runs and posted campaigns exactly by Facebook profile, include configured and historical profiles, and show per-profile post/error/success totals.
 - Reports use explicit white/high-contrast text and controls throughout the dark interface.
 - Adding a Facebook profile now persists its runtime configuration before Chromium setup starts; setup/finalization failures are shown in the dashboard and duplicate setup clicks are blocked while a request is active.
 - Groups support a separate, custom list category (for example `Romania`, `Internationale`, or `Diaspora`) in addition to the Imobiliare/Joburi campaign category. Queue Manager and each scheduled run save/select one list category so Romanian and international groups are not mixed; this selection never changes the Facebook profile or campaign type. Existing groups without this field are treated as `Romania`, which is also the safe default.

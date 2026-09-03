@@ -332,6 +332,49 @@ assert.equal(unauthorizedMedia.status, 401);
       headers: { cookie: setCookie.split(';')[0] },
     });
     assert.equal(authorizedMedia.status, 404);
+
+    const reportDate = new Date().toISOString();
+    fs.mkdirSync(path.join(storageRoot, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(storageRoot, 'logs', 'runs.json'), JSON.stringify([
+      { id: 'RUN_REPORT_MAIN', status: 'completed', startedAt: reportDate, finishedAt: reportDate, facebookProfileId: 'main', campaignIds: ['PROPERTY_REPORT'] },
+      { id: 'RUN_REPORT_JOBS', status: 'completed', startedAt: reportDate, finishedAt: reportDate, facebookProfileId: 'jobs', campaignIds: ['JOB_REPORT'] },
+    ]));
+    fs.writeFileSync(path.join(storageRoot, 'logs', 'history.json'), JSON.stringify([
+      { runId: 'RUN_REPORT_MAIN', facebookProfileId: 'main', propertyId: 'PROPERTY_REPORT', propertyName: 'Property report', groupId: 'G1', groupName: 'Group 1', status: 'posted', date: reportDate },
+      { runId: 'RUN_REPORT_JOBS', propertyId: 'JOB_REPORT', propertyName: 'Job report', groupId: 'G2', groupName: 'Group 2', status: 'posted', date: reportDate },
+      { runId: 'RUN_REPORT_JOBS', propertyId: 'JOB_REPORT', propertyName: 'Job report', groupId: 'G3', groupName: 'Group 3', status: 'error', date: reportDate },
+    ]));
+
+    const reportProfiles = await fetch(`http://127.0.0.1:${port}/api/reports/profiles`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(reportProfiles.status, 200);
+    const reportProfileRows = await reportProfiles.json();
+    const jobsReportProfile = reportProfileRows.find((profile) => profile.id === 'jobs');
+    assert.equal(jobsReportProfile.runCount, 1);
+    assert.equal(jobsReportProfile.posted, 1);
+    assert.equal(jobsReportProfile.errors, 1);
+    assert.equal(jobsReportProfile.successRate, 50);
+
+    const jobsRuns = await fetch(`http://127.0.0.1:${port}/api/runs?profileId=jobs`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(jobsRuns.status, 200);
+    const jobsRunRows = await jobsRuns.json();
+    assert.deepEqual(jobsRunRows.map((run) => run.id), ['RUN_REPORT_JOBS']);
+    assert.equal(jobsRunRows[0].facebookProfileLabel, 'Profil joburi');
+    assert.equal(jobsRunRows[0].totals.successRate, 50);
+
+    const jobsExcel = await fetch(`http://127.0.0.1:${port}/api/reports/latest/excel?profileId=jobs&range=60`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(jobsExcel.status, 200);
+    assert.match(jobsExcel.headers.get('content-disposition'), /rx-report-jobs-60-zile-/);
+    const jobsWorkbook = new (require('exceljs').Workbook)();
+    await jobsWorkbook.xlsx.load(Buffer.from(await jobsExcel.arrayBuffer()));
+    assert.match(jobsWorkbook.subject, /Profil Facebook: Profil joburi \(jobs\)/);
+    assert.equal(jobsWorkbook.getWorksheet('Detalii').getCell('B5').value, 'Profil joburi');
+    assert.equal(jobsWorkbook.getWorksheet('Detalii').getCell('C5').value, 'JOB_REPORT');
   } finally {
     if (child.exitCode === null) child.kill('SIGTERM');
     const exit = await new Promise((resolve) => {

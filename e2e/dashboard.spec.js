@@ -317,6 +317,16 @@ test('reports use readable white text throughout the dark interface', async ({ p
   await page.getByRole('button', { name: 'Rapoarte' }).click();
   await expect(page.getByRole('heading', { name: 'Rapoarte rulări' })).toBeVisible();
 
+  const jobsProfile = page.getByRole('button', { name: /Smoke jobs profile/ });
+  await expect(page.getByRole('button', { name: /Smoke profile/ })).toBeVisible();
+  await expect(jobsProfile).toBeVisible();
+  await jobsProfile.click();
+  await expect(jobsProfile).toHaveClass(/selected/);
+  await expect(page.getByRole('heading', { name: /Export Excel.*Smoke jobs profile/ })).toBeVisible();
+  await page.getByLabel('Perioada raportului').selectOption('90');
+  await expect(page.getByLabel('Perioada raportului')).toHaveValue('90');
+  await expect(page.getByRole('button', { name: 'Exporta raportul profilului' })).toBeVisible();
+
   const colors = await page.locator('.reports-page').evaluate((root) => {
     const color = (selector) => getComputedStyle(root.querySelector(selector)).color;
     return {

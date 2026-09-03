@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, Download, ExternalLink, RefreshCw, RotateCcw, TriangleAlert, X } from 'lucide-react';
+import { Archive, Download, ExternalLink, RefreshCw, RotateCcw, TriangleAlert, UserRound, X } from 'lucide-react';
 import { api } from '../services/api';
 
 const statusLabels = {
@@ -119,6 +119,9 @@ export default function Reports({ onChangePage }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState('all');
   const [search, setSearch] = useState('');
+  const [profiles, setProfiles] = useState([]);
+  const [profileId, setProfileId] = useState('all');
+  const [exportRange, setExportRange] = useState('7');
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
@@ -131,26 +134,34 @@ export default function Reports({ onChangePage }) {
   const loadRuns = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getRuns({ status, search });
+      const [data, profileData] = await Promise.all([
+        api.getRuns({ status, search, profileId }),
+        api.getReportProfiles(),
+      ]);
       setRuns(data);
+      setProfiles(profileData);
       if (selected) {
         const refreshed = data.find((run) => run.id === selected.id);
-        if (refreshed) setSelected(await api.getRun(refreshed.id));
+        setSelected(refreshed ? await api.getRun(refreshed.id) : null);
       }
     } finally {
       setLoading(false);
     }
-  }, [search, selected, status]);
+  }, [profileId, search, selected, status]);
 
   useEffect(() => {
     let ignore = false;
     const timer = window.setTimeout(() => {
-      api.getRuns({ status, search }).then((data) => {
+      Promise.all([
+        api.getRuns({ status, search, profileId }),
+        api.getReportProfiles(),
+      ]).then(([data, profileData]) => {
         if (!ignore) setRuns(data);
+        if (!ignore) setProfiles(profileData);
       }).finally(() => { if (!ignore) setLoading(false); });
     }, 180);
     return () => { ignore = true; window.clearTimeout(timer); };
-  }, [status, search]);
+  }, [profileId, status, search]);
 
   const visibleRuns = useMemo(() => runs.filter((run) => showArchived || !run.archived), [runs, showArchived]);
   const errorGroups = useMemo(
@@ -169,6 +180,10 @@ export default function Reports({ onChangePage }) {
   const totalGroupErrors = useMemo(
     () => errorGroups.reduce((total, item) => total + item.count, 0),
     [errorGroups]
+  );
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.id === profileId) || null,
+    [profileId, profiles]
   );
 
   async function loadErrorGroups() {
@@ -207,6 +222,21 @@ export default function Reports({ onChangePage }) {
     } catch (error) {
       window.dispatchEvent(new CustomEvent('rx:toast', { detail: { message: error.message, type: 'error' } }));
     } finally { setWorking(''); }
+  }
+
+  async function exportProfileReport() {
+    setWorking('export:profile');
+    try {
+      await api.downloadExcelReport({ range: exportRange, profileId });
+      const owner = selectedProfile?.label || 'toate profilurile';
+      window.dispatchEvent(new CustomEvent('rx:toast', {
+        detail: { message: `Raportul Excel pentru ${owner} a fost exportat.`, type: 'success' },
+      }));
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('rx:toast', { detail: { message: error.message, type: 'error' } }));
+    } finally {
+      setWorking('');
+    }
   }
 
   async function retryErrors(runId) {
@@ -328,6 +358,42 @@ export default function Reports({ onChangePage }) {
         </section>
       )}
 
+      <section className='editor-panel reports-profile-panel'>
+        <div className='panel-title-row'>
+          <div>
+            <h2>Profil Facebook</h2>
+            <p>Apasa pe un profil pentru a vedea toate rularile si campaniile postate de el.</p>
+          </div>
+        </div>
+        <div className='report-profile-list'>
+          <button
+            className={`report-profile-card ${profileId === 'all' ? 'selected' : ''}`}
+            type='button'
+            onClick={() => { setProfileId('all'); setSelected(null); }}
+          >
+            <UserRound size={18} />
+            <span>
+              <strong>Toate profilurile</strong>
+              <small>{profiles.reduce((total, profile) => total + profile.runCount, 0)} rulari</small>
+            </span>
+          </button>
+          {profiles.map((profile) => (
+            <button
+              className={`report-profile-card ${profileId === profile.id ? 'selected' : ''}`}
+              type='button'
+              key={profile.id}
+              onClick={() => { setProfileId(profile.id); setSelected(null); }}
+            >
+              <UserRound size={18} />
+              <span>
+                <strong>{profile.label}</strong>
+                <small>{profile.runCount} rulari · {profile.posted} postate · {profile.successRate}% succes</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="editor-panel reports-filters">
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cauta ID, campanie sau profil..." />
         <select value={status} onChange={(event) => setStatus(event.target.value)}>
@@ -343,6 +409,26 @@ export default function Reports({ onChangePage }) {
         </label>
       </section>
 
+      <section className='editor-panel report-export-panel'>
+        <div>
+          <h2>Export Excel {selectedProfile ? `· ${selectedProfile.label}` : '· toate profilurile'}</h2>
+          <p>Documentul include profilul, perioada, campaniile, rezultatele individuale si rata de succes a postarilor.</p>
+        </div>
+        <label>
+          Perioada raportului
+          <select value={exportRange} onChange={(event) => setExportRange(event.target.value)}>
+            <option value='7'>Ultimele 7 zile</option>
+            <option value='30'>Ultimele 30 de zile</option>
+            <option value='60'>Ultimele 60 de zile</option>
+            <option value='90'>Ultimele 90 de zile</option>
+            <option value='all'>Tot istoricul</option>
+          </select>
+        </label>
+        <button className='primary-button' type='button' onClick={exportProfileReport} disabled={working === 'export:profile'}>
+          <Download size={16} /> {working === 'export:profile' ? 'Se genereaza...' : 'Exporta raportul profilului'}
+        </button>
+      </section>
+
       <section className="reports-layout">
         <div className="editor-panel reports-list">
           <div className="panel-title-row"><h2>Rulări salvate</h2><span>{visibleRuns.length}</span></div>
@@ -350,12 +436,13 @@ export default function Reports({ onChangePage }) {
             <button className={`report-run-card ${selected?.id === run.id ? 'selected' : ''}`} type="button" key={run.id} onClick={() => openRun(run.id)}>
               <div>
                 <strong>{run.campaignIds?.join(', ') || 'Fara campanie'}</strong>
-                <span>{run.id}</span>
+                <span>{run.facebookProfileLabel || run.facebookProfileId} · {run.id}</span>
               </div>
               <span className={`status-pill ${statusTone(run.status)}`}>{statusLabels[run.status] || run.status}</span>
               <div className="report-run-stats">
                 <span>{run.totals?.posted || 0} postate</span>
                 <span>{run.totals?.errors || 0} erori</span>
+                <span>{run.totals?.successRate || 0}% succes</span>
                 <span>{formatDate(run.startedAt)}</span>
               </div>
             </button>
@@ -368,7 +455,7 @@ export default function Reports({ onChangePage }) {
           {selected && (
             <>
               <div className="panel-title-row">
-                <div><h2>{selected.id}</h2><p>{formatDate(selected.startedAt)} · {duration(selected)} · {selected.mode === 'live' ? 'LIVE' : 'TEST'}</p></div>
+                <div><h2>{selected.id}</h2><p>{selected.facebookProfileLabel || selected.facebookProfileId} · {formatDate(selected.startedAt)} · {duration(selected)} · {selected.mode === 'live' ? 'LIVE' : 'TEST'}</p></div>
                 <span className={`status-pill ${statusTone(selected.status)}`}>{statusLabels[selected.status] || selected.status}</span>
               </div>
               <div className="summary-grid reports-summary">
@@ -377,6 +464,7 @@ export default function Reports({ onChangePage }) {
                 <div>Pregatite <strong>{selected.totals?.prepared || 0}</strong></div>
                 <div>Sarite <strong>{selected.totals?.skipped || 0}</strong></div>
                 <div>Erori <strong>{selected.totals?.errors || 0}</strong></div>
+                <div>Rata succes <strong>{selected.totals?.successRate || 0}%</strong></div>
               </div>
               <div className="button-row reports-actions">
                 <button className="primary-button" type="button" onClick={() => exportRun(selected.id)} disabled={working === `export:${selected.id}`}><Download size={16} /> Export Excel</button>
