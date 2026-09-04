@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Repository state
 
@@ -27,6 +27,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - `npm run auth:setup` enables local authentication and writes only the password hash to the Git-ignored `.env`.
 - Integrated studio launcher at `/` with separate entries for the dashboard/robot and description generator.
 - Dashboard routes remain under `/dashboard` and the sidebar scrolls independently on short screens.
+- In windowed layouts below 1180px, the compact sidebar has an explicit expand/collapse control that restores every tab name and remembers the operator's choice locally.
 - `npm run studio` starts the API, dashboard/launcher, and property-copywriter together.
 - Operational dashboard navigation and CTA buttons.
 - Dashboard summary and live API status.

@@ -380,6 +380,19 @@ test('sidebar scrolls to Propulse Control and Settings on short screens', async 
   const settingsBox = await page.getByRole('button', { name: 'Settings' }).boundingBox();
   expect(settingsBox).not.toBeNull();
   expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(560);
+
+  await page.setViewportSize({ width: 1000, height: 720 });
+  const sidebar = page.locator('.sidebar-v2');
+  const toggle = page.getByRole('button', { name: 'Extinde numele taburilor' });
+  await expect(toggle).toBeVisible();
+  await expect(sidebar).toHaveCSS('width', '88px');
+
+  await toggle.click();
+  await expect(sidebar).toHaveClass(/sidebar-expanded/);
+  await expect(sidebar).toHaveCSS('width', '280px');
+  await expect(page.getByRole('button', { name: 'Proprietati' }).first().locator('strong')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Restrange numele taburilor' })).toBeVisible();
+  await expect(page.evaluate(() => localStorage.getItem('rx-windowed-sidebar-expanded'))).resolves.toBe('true');
 });
 test('overlay button confirms a fast desktop launch without opening duplicates', async ({ page }) => {
   let launchRequests = 0;

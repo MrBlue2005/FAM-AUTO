@@ -1,5 +1,7 @@
 # Changelog
 
+- Added a persistent windowed-mode sidebar toggle that expands the compact navigation and restores every tab name on narrower workspace windows.
+
 ## 2026-08-07
 
 - Added custom group list categories and Queue/Scheduler filtering so Romanian, international, and other user-defined group sets can be managed and run separately, without changing the Facebook profile or campaign type.

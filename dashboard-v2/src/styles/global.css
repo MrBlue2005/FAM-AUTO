@@ -404,6 +404,35 @@ textarea {
   font-size: 27px;
   letter-spacing: .7px;
 }
+
+.sidebar-expand-toggle {
+  display: none;
+  min-height: 38px;
+  border: 1px solid rgba(248,113,113,.28);
+  border-radius: 12px;
+  background: rgba(239,68,68,.10);
+  color: #fecaca;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  cursor: pointer;
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
+}
+
+.sidebar-expand-toggle:hover,
+.sidebar-expand-toggle:focus-visible {
+  background: rgba(239,68,68,.20);
+  border-color: rgba(248,113,113,.55);
+  color: #fff;
+  outline: none;
+}
+
+.sidebar-expand-toggle span {
+  display: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .sidebar-nav {
   display: grid;
   grid-auto-rows: max-content;
@@ -4471,7 +4500,14 @@ textarea {
 
   .studio-brand {
     justify-content: center;
-    margin-bottom: 24px;
+    margin-bottom: 14px;
+  }
+
+  .sidebar-expand-toggle {
+    display: flex;
+    width: 46px;
+    flex: 0 0 auto;
+    margin: 0 auto 16px;
   }
 
   .studio-brand-copy,
@@ -4493,6 +4529,34 @@ textarea {
   .sidebar-footer {
     align-items: center;
     text-align: center;
+  }
+
+  .sidebar-v2.sidebar-expanded {
+    width: 280px;
+    padding: 18px;
+  }
+
+  .sidebar-v2.sidebar-expanded .studio-brand {
+    justify-content: flex-start;
+  }
+
+  .sidebar-v2.sidebar-expanded .studio-brand-copy,
+  .sidebar-v2.sidebar-expanded .sidebar-item strong,
+  .sidebar-v2.sidebar-expanded .sidebar-footer span {
+    display: block;
+  }
+
+  .sidebar-v2.sidebar-expanded .sidebar-item {
+    justify-content: flex-start;
+    padding: 11px 14px;
+  }
+
+  .sidebar-v2.sidebar-expanded .sidebar-expand-toggle {
+    width: 100%;
+  }
+
+  .sidebar-v2.sidebar-expanded .sidebar-expand-toggle span {
+    display: inline;
   }
 
   .topbar {
@@ -4571,6 +4635,11 @@ textarea {
   .sidebar-v2 {
     width: 68px;
     padding: 12px 8px;
+  }
+
+  .sidebar-v2.sidebar-expanded {
+    width: min(280px, 82vw);
+    padding: 12px;
   }
 
   .brand-mark {

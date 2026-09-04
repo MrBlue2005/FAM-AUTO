@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   BarChart3,
   Bot,
@@ -10,6 +11,8 @@ import {
   LayoutDashboard,
   LogOut,
   Megaphone,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radio,
   Settings,
   Stethoscope,
@@ -39,6 +42,26 @@ const secondaryItems = [
 ];
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      return window.localStorage.getItem('rx-windowed-sidebar-expanded') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleExpanded() {
+    setExpanded((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem('rx-windowed-sidebar-expanded', String(next));
+      } catch {
+        // The sidebar still works when browser storage is unavailable.
+      }
+      return next;
+    });
+  }
+
   function renderItem(item) {
     const Icon = item.Icon;
 
@@ -47,6 +70,7 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
         key={item.id}
         className={`sidebar-item ${activePage === item.id ? 'active' : ''}`}
         onClick={() => onChangePage(item.id)}
+        title={item.label}
       >
         <span className="sidebar-icon">
           <Icon size={17} strokeWidth={2.35} />
@@ -57,7 +81,7 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
   }
 
   return (
-    <aside className="sidebar-v2">
+    <aside className={`sidebar-v2 ${expanded ? 'sidebar-expanded' : ''}`}>
       <div className="studio-brand">
         <div className="brand-mark" aria-label="R.X. AI Studio">
           <span className="brand-letter brand-r">R</span>
@@ -71,6 +95,20 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
           <h1 className="propulse-sidebar-name">{PROPULSE_NAME}</h1>
         </div>
       </div>
+
+      <button
+        type="button"
+        className="sidebar-expand-toggle"
+        onClick={toggleExpanded}
+        aria-expanded={expanded}
+        aria-label={expanded ? 'Restrange numele taburilor' : 'Extinde numele taburilor'}
+        title={expanded ? 'Restrange numele taburilor' : 'Extinde numele taburilor'}
+      >
+        {expanded
+          ? <PanelLeftClose size={18} strokeWidth={2.3} />
+          : <PanelLeftOpen size={18} strokeWidth={2.3} />}
+        <span>{expanded ? 'Restrange meniul' : 'Extinde meniul'}</span>
+      </button>
 
       <nav className="sidebar-nav">
         <button className="sidebar-item" onClick={() => window.location.assign('/')}>
