@@ -11,8 +11,11 @@ function migrationText() { return fs.readdirSync(path.join(root, 'supabase', 'mi
 test('Supabase migrations define the Protocol v1 schema, RLS, atomic claim, lease safety, and durable idempotency', () => {
   const sql = migrationText();
   for (const table of ['agents', 'agent_credentials', 'agent_enrollment_tokens', 'profiles', 'tasks', 'task_events', 'idempotency_requests']) assert.match(sql, new RegExp(`create table if not exists public\\.${table}`));
-  assert.match(sql, /tasks_one_active_profile_idx/); assert.match(sql, /for update skip locked/i); assert.match(sql, /pg_advisory_xact_lock/);
+  assert.match(sql, /tasks_one_active_profile_idx/); assert.match(sql, /for update skip locked/i); assert.match(sql, /pg_advisory_xact_lock/); assert.match(sql, /not exists \(select 1 from tasks active/);
   assert.match(sql, /rx_cp_reconcile_expired_leases/); assert.match(sql, /OUTCOME_UNKNOWN/); assert.match(sql, /IDEMPOTENCY_KEY_CONFLICT/); assert.match(sql, /rx_cp_idempotent_rotate_credential/);
+  assert.match(sql, /rx_cp_transition_task[\s\S]*perform rx_cp_reconcile_expired_leases/);
+  assert.match(sql, /extensions\.digest/); assert.match(sql, /extensions\.crypt/);
+  assert.match(sql, /update agent_credentials c set last_used_at/);
   assert.match(sql, /enable row level security/g); assert.match(sql, /revoke all on all tables in schema public from anon, authenticated/);
 });
 

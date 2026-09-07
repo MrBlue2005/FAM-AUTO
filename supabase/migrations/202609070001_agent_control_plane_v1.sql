@@ -73,9 +73,9 @@ end $$;
 create or replace function public.rx_cp_authenticate_agent(p_agent_id text, p_secret text)
 returns table(agent_id text, credential_id uuid) language plpgsql security definer set search_path = public as $$
 declare matched agent_credentials; begin
-  select * into matched from agent_credentials c where c.agent_id=p_agent_id and c.revoked_at is null and (c.retire_at is null or c.retire_at > now()) and crypt(p_secret, c.secret_hash)=c.secret_hash limit 1;
+  select * into matched from agent_credentials c where c.agent_id=p_agent_id and c.revoked_at is null and (c.retire_at is null or c.retire_at > now()) and extensions.crypt(p_secret, c.secret_hash)=c.secret_hash limit 1;
   if not found then raise exception 'UNAUTHORIZED_AGENT' using errcode='28000'; end if;
-  update agent_credentials set last_used_at=now() where credential_id=matched.credential_id;
+  update agent_credentials c set last_used_at=now() where c.credential_id=matched.credential_id;
   return query select matched.agent_id, matched.credential_id;
 end $$;
 
@@ -83,11 +83,11 @@ create or replace function public.rx_cp_enroll_agent(p_agent_id text, p_secret t
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare enrollment agent_enrollment_tokens; begin
   if p_protocol_version <> 1 then raise exception 'UNSUPPORTED_PROTOCOL'; end if;
-  select * into enrollment from agent_enrollment_tokens where token_hash=digest(p_token,'sha256') and consumed_at is null and expires_at > now() for update;
+  select * into enrollment from agent_enrollment_tokens where token_hash=extensions.digest(p_token,'sha256') and consumed_at is null and expires_at > now() for update;
   if not found then raise exception 'ENROLLMENT_DENIED' using errcode='28000'; end if;
   insert into agents(agent_id,display_name,protocol_version) values(p_agent_id,p_display_name,1) on conflict(agent_id) do nothing;
   if exists(select 1 from agent_credentials where agent_id=p_agent_id and revoked_at is null) then raise exception 'AGENT_ALREADY_ENROLLED'; end if;
-  insert into agent_credentials(agent_id,secret_hash) values(p_agent_id,crypt(p_secret,gen_salt('bf',12)));
+  insert into agent_credentials(agent_id,secret_hash) values(p_agent_id,extensions.crypt(p_secret,extensions.gen_salt('bf',12)));
   update agent_enrollment_tokens set consumed_at=now(), consumed_by_agent_id=p_agent_id where enrollment_id=enrollment.enrollment_id;
   perform rx_cp_event('AGENT_ENROLLED',p_agent_id,null,jsonb_build_object('enrollment_id',enrollment.enrollment_id));
   return jsonb_build_object('protocol_version',1,'agent_id',p_agent_id,'enrolled',true);
@@ -116,6 +116,7 @@ declare picked tasks; lease uuid := gen_random_uuid(); begin
   loop
     select t.* into picked from tasks t join profiles p on p.profile_id=t.profile_id
       where t.agent_id=p_agent_id and p.agent_id=p_agent_id and t.status='QUEUED' and t.cancellation_requested_at is null and t.scheduled_at<=now()
+        and not exists (select 1 from tasks active where active.profile_id=t.profile_id and active.status in ('CLAIMED','RUNNING'))
       order by t.created_at for update skip locked limit 1;
     if not found then return jsonb_build_object('protocol_version',1,'task',null); end if;
     perform pg_advisory_xact_lock(hashtextextended(picked.profile_id,0));
@@ -131,6 +132,7 @@ end $$;
 create or replace function public.rx_cp_transition_task(p_agent_id text,p_task_id text,p_lease_id uuid,p_next text,p_result jsonb default null,p_error jsonb default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare item tasks; begin
+  perform rx_cp_reconcile_expired_leases();
   select * into item from tasks where task_id=p_task_id and agent_id=p_agent_id for update;
   if not found then raise exception 'TASK_NOT_FOUND'; end if;
   if item.lease_id is distinct from p_lease_id or item.leased_by_agent_id<>p_agent_id then raise exception 'STALE_LEASE'; end if;
@@ -163,7 +165,7 @@ create or replace function public.rx_cp_rotate_credential(p_agent_id text,p_new_
 declare new_id uuid; begin
   if length(coalesce(p_new_secret,'')) < 32 then raise exception 'INVALID_CREDENTIAL'; end if;
   update agent_credentials set retire_at=now()+make_interval(secs=>greatest(60,p_overlap_seconds)) where agent_id=p_agent_id and revoked_at is null and retire_at is null;
-  insert into agent_credentials(agent_id,secret_hash) values(p_agent_id,crypt(p_new_secret,gen_salt('bf',12))) returning credential_id into new_id;
+  insert into agent_credentials(agent_id,secret_hash) values(p_agent_id,extensions.crypt(p_new_secret,extensions.gen_salt('bf',12))) returning credential_id into new_id;
   perform rx_cp_event('AGENT_CREDENTIAL_ROTATED',p_agent_id,null,jsonb_build_object('credential_id',new_id)); return jsonb_build_object('credential_id',new_id,'overlap_seconds',greatest(60,p_overlap_seconds)); end $$;
 
 alter table public.agents enable row level security; alter table public.agent_credentials enable row level security; alter table public.agent_enrollment_tokens enable row level security; alter table public.profiles enable row level security; alter table public.tasks enable row level security; alter table public.task_events enable row level security; alter table public.idempotency_requests enable row level security;

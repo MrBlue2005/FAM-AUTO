@@ -3,7 +3,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const VERSION = 1;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'X-RX-Agent-Protocol': '1' } });
 const error = (code: string, message: string, status = 400) => json({ protocol_version: VERSION, error: { code, message } }, status);
-const hash = async (value: unknown) => `\\x${Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)))).map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+const hash = async (value: unknown) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+  return `\\x${Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+};
 const uuid = () => crypto.randomUUID();
 const safeOperator = (request: Request) => {
   const expected = Deno.env.get('RX_OPERATOR_API_TOKEN'); const received = request.headers.get('x-rx-operator-token') || '';

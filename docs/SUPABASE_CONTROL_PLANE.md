@@ -51,3 +51,11 @@ RLS is enabled on every control-plane table and `anon`/`authenticated` roles rec
 ## Deployment and rollback
 
 Apply migrations in order, deploy the Edge Function, set secrets in the Supabase project, then enroll agents explicitly. Roll back by leaving agents in `LOCAL` mode and disabling the Edge Function route; do not delete profiles, credentials, or task history. Schema migrations are additive; data reversal should be an operator-reviewed migration, never an automated client action.
+
+## Live local validation (2026-09-07)
+
+Validated with Docker Desktop Engine 29.7.2, PostgreSQL 17.6, Supabase CLI 2.117.0, and local-only development credentials. `supabase db reset` reconstructed all three versioned migrations repeatedly without manual SQL. The locally served Edge Function completed operator token issuance, one-time agent enrollment, authenticated heartbeat, safe profile persistence, atomic claim, lease issuance, `RUNNING` and `COMPLETED` updates, and audit-event creation for non-publishing `DRY_RUN` tasks.
+
+Actual concurrent HTTP claims left only one active lease for two tasks sharing one profile. Live validation also found and fixed: the Edge Function hash syntax error; unqualified `pgcrypto` calls under Supabase's `extensions` schema; two PL/pgSQL column/variable ambiguities; claim-loop non-progress for an already-active profile; and missing lease-expiry reconciliation before state transitions. No Facebook, Chromium profile, production credential, or operational data was used.
+
+RLS remains enabled and direct anonymous/public access is denied by migration policy. Hosted-project readiness still requires the remaining local checks documented above to be repeated against the deployment configuration, including operator-resolution, credential-revocation, and reconnect scenarios.
