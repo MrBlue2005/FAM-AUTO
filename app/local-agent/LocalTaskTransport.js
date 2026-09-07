@@ -83,6 +83,11 @@ class LocalTaskTransport extends AgentTransport {
   reportRunning(taskId) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.RUNNING, started_at: new Date().toISOString(), error: null })); }
   reportCompletion(taskId, result = null) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.COMPLETED, completed_at: new Date().toISOString(), result, error: null })); }
   reportFailure(taskId, error) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.FAILED, completed_at: new Date().toISOString(), error: { code: error?.code || 'EXECUTION_FAILED', message: error?.message || String(error) } })); }
+  reportOutcomeUnknown(taskId, error) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.OUTCOME_UNKNOWN, completed_at: new Date().toISOString(), error: { code: error?.code || 'EXECUTION_OUTCOME_UNKNOWN', message: error?.message || String(error) } })); }
+  reportCancelled(taskId, reason = { code: 'CANCELLED' }) { return this.cancelTask(taskId, reason); }
+  renewLease(taskId) { return this.updateTask(taskId, (task) => ({ ...task, lease_renewed_at: new Date().toISOString() })); }
+  reportProgress(taskId, progress) { return this.updateTask(taskId, (task) => ({ ...task, progress })); }
+  getCancellationState(taskId) { const task = this.read().tasks.find((item) => item.task_id === taskId); return { cancellation_requested: Boolean(task?.cancellation_requested_at) }; }
   cancelTask(taskId, reason) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.CANCELLED, completed_at: new Date().toISOString(), error: reason })); }
   deferTask(taskId, reason) { return this.updateTask(taskId, (task) => ({ ...task, status: TASK_STATUS.QUEUED, error: reason })); }
 

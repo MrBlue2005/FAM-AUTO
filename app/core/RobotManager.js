@@ -11,6 +11,7 @@ const { createTaskSnapshots } = require('../local-agent/TaskContract');
 // A persistent Chromium profile may be used by one worker only. Different
 // profiles receive independent Node/Playwright workers and config snapshots.
 const activeRobots = new Map();
+const externalProfileDispatches = new Set();
 const agentRegistry = new LocalAgentRegistry();
 
 function findActiveWorker(profileId) {
@@ -279,4 +280,15 @@ function safeAgentMetadata() {
   return agentRegistry.getSafeMetadata(config.facebookProfiles || [], [...activeRobots.keys()]);
 }
 
-module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume, safeAgentMetadata, summarizeBlockingIssues };
+async function runExternalProfileTask(profileId, handler) {
+  if (activeRobots.has(profileId) || externalProfileDispatches.has(profileId)) {
+    const error = new Error(`Profilul ${profileId} ruleaza deja.`);
+    error.code = 'PROFILE_BUSY';
+    throw error;
+  }
+  externalProfileDispatches.add(profileId);
+  try { return await handler(); }
+  finally { externalProfileDispatches.delete(profileId); }
+}
+
+module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume, safeAgentMetadata, runExternalProfileTask, summarizeBlockingIssues };

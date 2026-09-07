@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-07
+Last updated: 2026-09-07 (Phase 2)
 
 ## Repository state
 
@@ -82,6 +82,7 @@ Always verify these values with `git status` and `git log`; this document descri
 - Same-profile execution is defended twice: `RobotManager` rejects a second run by immutable physical-profile identity, and the worker holds an inter-process filesystem lock for its complete Playwright session. Duplicate executor requests report `PROFILE_BUSY`; dead-owner locks can be recovered without eagerly stealing a fresh lock.
 - Task lifecycle state is stored locally as `QUEUED`, `CLAIMED`, `RUNNING`, and a terminal status. Execution reads snapshotted campaign text, media references, target group, day, identity, and safe configuration, so later edits do not alter already-created task content.
 - The authenticated `GET /api/local-agent` endpoint exposes only future-cloud-safe agent/profile IDs, display names, and states. It excludes Chromium paths and all browser/Facebook session material. See `docs/CLOUD_AGENT_ARCHITECTURE.md`.
+- Phase 2 adds the versioned outbound Agent Protocol v1, `HttpAgentTransport`, persistent local agent credentials, lease/idempotency/cancellation semantics, and a localhost-only reference cloud backend. The default remains local transport; HTTP requires explicit `RX_AGENT_TRANSPORT_MODE=HTTP`. See `docs/AGENT_PROTOCOL_V1.md`.
 - Local JSON-backed properties, jobs, groups, runtime configuration, and history.
 - Parallel workers lock history and group-discovery updates per file, preventing read-modify-write data loss while two profiles post at the same time.
 - Local JSON-backed weekly schedules, evaluated while the API process is running using the server's local timezone.
@@ -163,7 +164,7 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. For Phase 2, specify and threat-model the outbound HTTPS `AgentTransport` protocol, including leases, idempotency, heartbeat expiry, cancellation, version negotiation, and signed temporary media access before selecting or integrating cloud storage/database services.
+1. For Phase 3, implement the Protocol v1 semantics against a managed HTTPS/Postgres control plane with enrollment/secret rotation, signed temporary media access, durable scheduling, and operational handling of `OUTCOME_UNKNOWN`.
 2. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
 3. Run the integrated studio E2E suite and verify launcher navigation on this PC.
 4. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.

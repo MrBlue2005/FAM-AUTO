@@ -83,12 +83,18 @@ Different immutable profile IDs keep the existing cross-profile concurrency beha
 - Installer and continuous updater behavior is unchanged. The existing updater already preserves JSON under `app/data/`, while Git ignores the registry, task transport files, locks, logs, profiles, uploads, and secrets.
 - Real publishing is not enabled by this phase.
 
+## Phase 2 protocol implementation
+
+Phase 2 adds a versioned outbound HTTP transport plus a separate reference Cloud Control Plane. The reference backend authenticates agents with a locally generated secret, stores only a salted scrypt verifier, owns profile-to-agent assignment, applies atomic pull claims, leases, cancellation state, idempotency keys, heartbeat expiry, and safe audit events. It is not started by Studio and binds localhost only when explicitly launched.
+
+`CloudAgentService` is opt-in through `RX_AGENT_TRANSPORT_MODE=HTTP`. It sends heartbeats, claims remote tasks, invokes the existing `RobotManager` dispatcher boundary and profile lock, then reports lifecycle state. The default remains the Phase 1 JSON-backed `LOCAL` transport. `docs/AGENT_PROTOCOL_V1.md` is the normative endpoint/state-machine contract.
+
 ## Final target architecture
 
 In a later phase, a cloud HTTP implementation of `AgentTransport` can replace or accompany `LocalTaskTransport`. The hosted control plane will own authentication, property/campaign metadata, object-storage references, task scheduling, safe agent/profile metadata, and execution history. The Windows Local Agent will initiate outbound authenticated connections, claim tasks for its profiles, download temporary media, enforce local locks, and invoke the unchanged Facebook robot.
 
 The mapping from immutable `profile_id` to Chromium user-data directory, all Facebook session material, local execution locks, and browser diagnostics remain local permanently.
 
-## Phase 2 recommendation
+## Phase 3 recommendation
 
-Define and threat-model an authenticated outbound HTTPS transport before choosing database tables. Add task leases/idempotency, heartbeat expiry, retry policy, cancellation semantics, signed media download URLs, and versioned DTO validation. Build a mock HTTP contract test against the current `AgentTransport` boundary before integrating Supabase or moving the dashboard.
+Implement the same documented protocol against a managed HTTPS/Postgres control plane, with an enrollment authority, encrypted secret lifecycle/rotation, database transactions and row-level controls, durable scheduler, signed object-storage media URLs, monitoring, and operator workflows for `OUTCOME_UNKNOWN`. Do not migrate the dashboard or Chromium/session data as part of that work.

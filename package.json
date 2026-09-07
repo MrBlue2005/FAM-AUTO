@@ -9,7 +9,7 @@
   "scripts": {
     "build": "npm --prefix dashboard-v2 run build",
     "start": "node --env-file-if-exists=.env server/server.js",
-    "test": "node --test tests/core.test.js tests/local-agent.test.js tests/server.test.js",
+    "test": "node --test tests/core.test.js tests/local-agent.test.js tests/cloud-protocol.test.js tests/server.test.js",
     "test:update": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-continuous-update.ps1",
     "test:e2e": "node scripts/run-e2e.js",
     "check": "npm test && npm --prefix dashboard-v2 run lint && npm --prefix dashboard-v2 run build && npm run test:e2e",
@@ -17,6 +17,8 @@
     "auth:hash": "node scripts/generate-password-hash.js",
     "auth:setup": "node scripts/setup-auth.js",
     "server": "node --env-file-if-exists=.env server/server.js",
+    "reference-cloud": "node --env-file-if-exists=.env server/reference-cloud-server.js",
+    "agent:http": "node --env-file-if-exists=.env scripts/run-http-agent.js",
     "overlay:dev": "npm --prefix overlay-desktop run dev",
     "overlay:pack": "npm --prefix overlay-desktop run pack",
     "overlay:dist": "npm --prefix overlay-desktop run dist",

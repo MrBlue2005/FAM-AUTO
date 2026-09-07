@@ -32,6 +32,7 @@ logs/
 app/data/groups.json
 app/data/runtimeConfig.json
 app/data/localAgentRegistry.json
+app/data/localAgentCredentials.json
 app/data/local-agent-locks/
 app/data/schedules.json
 app/data/campaignFolders.json

@@ -7,6 +7,7 @@ const TASK_STATUS = Object.freeze({
   COMPLETED: 'COMPLETED',
   FAILED: 'FAILED',
   CANCELLED: 'CANCELLED',
+  OUTCOME_UNKNOWN: 'OUTCOME_UNKNOWN',
 });
 
 function clone(value) {
