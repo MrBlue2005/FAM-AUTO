@@ -4,13 +4,15 @@ const RobotManager = require('../core/RobotManager');
 class CloudAgentService {
   constructor(options) {
     this.transport = options.transport; this.registry = options.registry; this.runtimeProfiles = options.runtimeProfiles || (() => []);
-    this.executeTask = options.executeTask; this.executor = options.executor || new LocalAgentExecutor(); this.events = options.events || (() => {});
+    this.executeTask = options.executeTask; this.executor = options.executor || new LocalAgentExecutor(); this.events = options.events || (() => {}); this.connectionManager = options.connectionManager;
     this.intervalMs = Math.max(15000, options.intervalMs || 30000); this.leaseRenewIntervalMs = Math.max(5000, options.leaseRenewIntervalMs || 30000); this.timer = null;
   }
   metadata() { return this.registry.getSafeMetadata(this.runtimeProfiles()); }
   async runOnce() {
     const metadata = this.metadata();
-    await this.transport.heartbeat({ ...metadata, agent_status: metadata.agent_status || metadata.status || 'ONLINE', agent_version: require('../../package.json').version, active_task_ids: [] });
+    const heartbeatMetadata = { ...metadata, agent_status: metadata.agent_status || metadata.status || 'ONLINE', agent_version: require('../../package.json').version, active_task_ids: [] };
+    if (this.connectionManager) { const heartbeat = await this.connectionManager.heartbeat(); if (heartbeat?.ok === false || heartbeat?.skipped) return { task: null, heartbeat }; }
+    else await this.transport.heartbeat(heartbeatMetadata);
     const claimed = await this.transport.claimNextTask(); const task = claimed.task;
     if (!task) return { task: null };
     this.events('TASK_CLAIMED', { task_id: task.task_id });

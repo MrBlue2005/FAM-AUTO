@@ -3,6 +3,7 @@ const { LocalAgentRegistry } = require('../app/local-agent/LocalAgentRegistry');
 const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredentials');
 const { HttpAgentTransport } = require('../app/local-agent/HttpAgentTransport');
 const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
+const { AgentConnectionManager } = require('../app/local-agent/AgentConnectionManager');
 const { createCloudFacebookTaskExecutor } = require('../app/local-agent/CloudFacebookTaskExecutor');
 
 if (String(process.env.RX_AGENT_TRANSPORT_MODE || 'LOCAL').toUpperCase() !== 'HTTP') throw new Error('Set RX_AGENT_TRANSPORT_MODE=HTTP to start the outbound cloud agent.');
@@ -17,5 +18,6 @@ const executeTask = dryRun
     return { dry_run: true, publishEnabled: false };
   }
   : createCloudFacebookTaskExecutor(registry, runtimeProfiles);
-const service = new CloudAgentService({ transport, registry, runtimeProfiles, executeTask, intervalMs: Number(process.env.RX_AGENT_HEARTBEAT_INTERVAL_MS || 30000), leaseRenewIntervalMs: Number(process.env.RX_AGENT_LEASE_RENEW_INTERVAL_MS || 30000), events: (type, data) => console.log(`RX_AGENT_EVENT:${JSON.stringify({ type, ...data })}`) });
+const events = (type, data) => console.log(`RX_AGENT_EVENT:${JSON.stringify({ type, ...data })}`);
+const service = new CloudAgentService({ transport, registry, runtimeProfiles, executeTask, intervalMs: Number(process.env.RX_AGENT_HEARTBEAT_INTERVAL_MS || 30000), leaseRenewIntervalMs: Number(process.env.RX_AGENT_LEASE_RENEW_INTERVAL_MS || 30000), connectionManager: new AgentConnectionManager({ transport, metadata: () => { const metadata = registry.getSafeMetadata(runtimeProfiles()); return { ...metadata, agent_status: metadata.status || 'ONLINE', agent_version: require('../package.json').version, active_task_ids: [] }; }, events }), events });
 (async () => { if (process.env.RX_AGENT_ENROLLMENT_TOKEN) await transport.enroll(process.env.RX_AGENT_ENROLLMENT_TOKEN, { agent_id: agent.agentId, display_name: agent.displayName }); if (process.env.RX_AGENT_ONCE === 'true') await service.runOnce(); else service.start(); })().catch((error) => { console.error(`RX_AGENT_ERROR:${JSON.stringify({ code: error.code || 'START_FAILED', message: error.message })}`); process.exitCode = 1; });
