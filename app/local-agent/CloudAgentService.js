@@ -9,7 +9,8 @@ class CloudAgentService {
   }
   metadata() { return this.registry.getSafeMetadata(this.runtimeProfiles()); }
   async runOnce() {
-    await this.transport.heartbeat({ ...this.metadata(), agent_version: require('../../package.json').version, active_task_ids: [] });
+    const metadata = this.metadata();
+    await this.transport.heartbeat({ ...metadata, agent_status: metadata.agent_status || metadata.status || 'ONLINE', agent_version: require('../../package.json').version, active_task_ids: [] });
     const claimed = await this.transport.claimNextTask(); const task = claimed.task;
     if (!task) return { task: null };
     this.events('TASK_CLAIMED', { task_id: task.task_id });

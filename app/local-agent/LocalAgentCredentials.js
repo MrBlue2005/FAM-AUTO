@@ -5,10 +5,12 @@ const { spawnSync } = require('child_process');
 const { dataPath } = require('../config/storagePaths');
 
 function dpapi(mode, value) {
+  const prefix = 'Add-Type -AssemblyName System.Security;';
   const script = mode === 'protect'
-    ? '$bytes=[Text.Encoding]::UTF8.GetBytes([Console]::In.ReadToEnd());[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser))'
-    : '$bytes=[Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String([Console]::In.ReadToEnd()),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Text.Encoding]::UTF8.GetString($bytes)';
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { input: value, encoding: 'utf8', windowsHide: true });
+    ? `${prefix}$bytes=[Text.Encoding]::UTF8.GetBytes([Console]::In.ReadToEnd());[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser))`
+    : `${prefix}$bytes=[Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String([Console]::In.ReadToEnd()),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Text.Encoding]::UTF8.GetString($bytes)`;
+  const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodedScript], { input: value, encoding: 'utf8', windowsHide: true });
   if (result.status !== 0 || result.error) throw new Error('Windows DPAPI operation failed.');
   return result.stdout.trim();
 }

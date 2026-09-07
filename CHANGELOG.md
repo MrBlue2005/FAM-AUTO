@@ -2,6 +2,7 @@
 
 - Fixed Phase 3 control-plane defects found by real local Supabase validation: Edge hash syntax, Supabase `extensions.pgcrypto` qualification, PL/pgSQL ambiguities, active-profile claim progress, and stale lease transitions.
 - Fixed lease-expiry reconciliation rollback exposed by live `OUTCOME_UNKNOWN` validation; Edge lease-scoped requests reconcile in a committed call before transition validation.
+- Added explicit Local Agent `DRY_RUN` validation mode and fixed Windows DPAPI assembly loading plus Local Agent `agent_status` protocol mapping, validated against the local Supabase stack.
 - Added Phase 3 Supabase/Postgres Protocol v1 control-plane migrations, Edge Function API, RLS, atomic task claiming, lease expiry reconciliation, durable idempotency, operator `OUTCOME_UNKNOWN` resolution, enrollment-token flow, and credential rotation.
 - Added Windows CurrentUser DPAPI protection with safe migration for Local Agent credentials; HTTP/Supabase mode remains opt-in and local mode remains default.
 - Added Phase 2 Agent Protocol v1: authenticated versioned outbound HTTP transport, persistent local agent secret, safe profile sync, atomic agent/profile-scoped claiming, leases, renewals, idempotency keys, cooperative cancellation, heartbeat expiry, and `OUTCOME_UNKNOWN` handling.

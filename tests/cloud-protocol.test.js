@@ -113,7 +113,7 @@ test('HTTP transport retries a network failure with the same idempotency key', a
 
 test('cloud agent service uses the transport protocol without depending on dashboard APIs', async () => {
   const calls = []; const task = { task_id: 'task_service', profile_id: 'profile_service', lease_id: 'lease_service', task_type: 'TEST', payload: {} };
-  const transport = { heartbeat: async () => calls.push('heartbeat'), claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }), reportRunning: async () => calls.push('running'), reportCompletion: async () => calls.push('completed'), reportFailure: async () => calls.push('failed') };
+  const transport = { heartbeat: async (metadata) => { calls.push('heartbeat'); assert.equal(metadata.agent_status, 'ONLINE'); }, claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }), reportRunning: async () => calls.push('running'), reportCompletion: async () => calls.push('completed'), reportFailure: async () => calls.push('failed') };
   const registry = { getSafeMetadata: () => ({ agent_id: 'agent_service', profiles: [] }) };
   const service = new CloudAgentService({ transport, registry, executeTask: async () => ({ processed: 1 }) });
   const result = await service.runOnce(); assert.equal(result.result.processed, 1); assert.deepEqual(calls, ['heartbeat', 'running', 'completed']);

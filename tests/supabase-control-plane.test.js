@@ -29,6 +29,11 @@ test('Windows credential storage migrates a legacy plaintext secret only after D
   assert.equal(storage.commitRotation().agent_secret, 'new-secret');
 });
 
+test('Windows DPAPI invocation uses encoded PowerShell so secret syntax is not shell-expanded', () => {
+  const source = fs.readFileSync(path.join(root, 'app', 'local-agent', 'LocalAgentCredentials.js'), 'utf8');
+  assert.match(source, /-EncodedCommand/); assert.match(source, /utf16le/); assert.match(source, /Add-Type -AssemblyName System\.Security/);
+});
+
 test('Supabase Edge Function exposes only the versioned Protocol v1 agent and operator surface', () => {
   const edge = fs.readFileSync(path.join(root, 'supabase', 'functions', 'agent-protocol', 'index.ts'), 'utf8');
   for (const route of ['/v1/agents/enroll', '/v1/agent/heartbeat', '/v1/agent/tasks/claim', '/v1/agent/credentials/rotate', '/resolve']) assert.match(edge, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
