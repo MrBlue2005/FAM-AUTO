@@ -4,14 +4,25 @@ const path = require('path');
 const { updateState, addLiveFeed } = require('./AppState');
 const DataManager = require('./DataManager');
 const { buildPreflightReport, buildQueuePlan } = require('./CampaignTools');
+const { LocalAgentRegistry } = require('../local-agent/LocalAgentRegistry');
+const { LocalTaskTransport } = require('../local-agent/LocalTaskTransport');
+const { createTaskSnapshots } = require('../local-agent/TaskContract');
 
 // A persistent Chromium profile may be used by one worker only. Different
 // profiles receive independent Node/Playwright workers and config snapshots.
 const activeRobots = new Map();
+const agentRegistry = new LocalAgentRegistry();
+
+function findActiveWorker(profileId) {
+  return activeRobots.get(profileId) || [...activeRobots.values()].find((worker) =>
+    worker.profileId === profileId || worker.immutableProfileId === profileId
+  ) || null;
+}
 
 function activeRuns() {
   return [...activeRobots.values()].map((worker) => ({
     profileId: worker.profileId,
+    immutableProfileId: worker.immutableProfileId,
     runId: worker.runId,
     robotStatus: worker.state.robotStatus || 'running',
     currentProperty: worker.state.currentProperty || null,
@@ -81,10 +92,17 @@ function start(options = {}) {
     addLiveFeed({ type: 'error', message });
     return { ...status(), startedProfileId: null, lastMessage: message };
   }
-  if (activeRobots.has(profileId)) {
+  const registry = agentRegistry.load(baseConfig.facebookProfiles || []);
+  const registeredProfile = agentRegistry.getProfileByRuntimeId(profileId, baseConfig.facebookProfiles || []);
+  if (!registeredProfile) {
+    const message = `Profilul local nu a putut fi adoptat: ${profileId}`;
+    addLiveFeed({ type: 'error', message, profileId });
+    return { ...status(), startedProfileId: null, lastMessage: message };
+  }
+  if (activeRobots.has(registeredProfile.profileId)) {
     const message = `Profilul ${selectedProfile.label || profileId} ruleaza deja. Alege un profil diferit.`;
     addLiveFeed({ type: 'warning', message, profileId });
-    return { ...status(), startedProfileId: null, lastMessage: message };
+    return { ...status(), startedProfileId: null, lastMessage: message, reason: 'PROFILE_BUSY' };
   }
 
   // Pause and stop-after-current are shared safety controls. Reset them only
@@ -128,24 +146,44 @@ function start(options = {}) {
   }
 
   const queuePlan = buildQueuePlan(workerData);
-  const run = DataManager.createCampaignRun({ config: executionConfig, tasks: queuePlan.activeTasks });
+  const runConfig = {
+    ...executionConfig,
+    agentId: registry.agent.agentId,
+    immutableProfileId: registeredProfile.profileId,
+  };
+  const run = DataManager.createCampaignRun({ config: runConfig, tasks: queuePlan.activeTasks });
+  const tasks = createTaskSnapshots({
+    agentId: registry.agent.agentId,
+    profileId: registeredProfile.profileId,
+    runtimeProfileId: profileId,
+    config: executionConfig,
+    queueTasks: queuePlan.activeTasks,
+    properties: workerData.properties,
+    jobs: workerData.jobs,
+    groups: workerData.groups,
+  });
+  const transport = new LocalTaskTransport(run.id);
+  transport.createRun(agentRegistry.getSafeMetadata(baseConfig.facebookProfiles || [], [registeredProfile.profileId]), tasks);
   const robotProcess = spawn(process.execPath, ['index.js'], {
     cwd: path.join(__dirname, '../..'),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       RX_RUN_ID: run.id,
+      RX_AGENT_ID: registry.agent.agentId,
+      RX_PROFILE_ID: registeredProfile.profileId,
       RX_EXECUTION_CONFIG: JSON.stringify(executionConfig),
       RX_SKIP_GROUPS_POSTED_TODAY: executionConfig.skipGroupsPostedToday ? '1' : '0',
     },
   });
   const worker = {
     profileId,
+    immutableProfileId: registeredProfile.profileId,
     runId: run.id,
     process: robotProcess,
     state: { robotStatus: 'running', preflight, lastMessage: 'Robot pornit.', progress: 0, totalGroups: 0 },
   };
-  activeRobots.set(profileId, worker);
+  activeRobots.set(registeredProfile.profileId, worker);
   addLiveFeed({ type: 'info', message: `Robot pornit pe profilul ${selectedProfile.label || profileId}.`, profileId });
   refreshAggregateState();
 
@@ -175,12 +213,12 @@ function start(options = {}) {
   });
   robotProcess.on('error', (error) => {
     DataManager.finishCampaignRun(run.id, 'failed', { errorMessage: error.message });
-    activeRobots.delete(profileId);
+    activeRobots.delete(registeredProfile.profileId);
     addLiveFeed({ type: 'error', message: `Robotul nu a putut porni: ${error.message}`, profileId });
     refreshAggregateState();
   });
   robotProcess.on('close', (code, signal) => {
-    activeRobots.delete(profileId);
+    activeRobots.delete(registeredProfile.profileId);
     DataManager.finishCampaignRun(run.id, signal ? 'stopped' : code === 0 ? 'completed' : 'failed', { exitCode: code, signal: signal || null });
     addLiveFeed({ type: code === 0 && !signal ? 'success' : 'warning', message: `Robot finalizat pe profilul ${selectedProfile.label || profileId}.`, profileId });
     refreshAggregateState();
@@ -189,7 +227,7 @@ function start(options = {}) {
 }
 
 function stop(profileId = null) {
-  const workers = profileId ? [activeRobots.get(profileId)].filter(Boolean) : [...activeRobots.values()];
+  const workers = profileId ? [findActiveWorker(profileId)].filter(Boolean) : [...activeRobots.values()];
   workers.forEach((worker) => worker.process.kill());
   addLiveFeed({ type: 'warning', message: profileId ? `Robot oprit pe profilul ${profileId}.` : 'Toate rulările robotului au fost oprite.' });
   return status();
@@ -205,7 +243,7 @@ function stopAfterCurrentGroup() {
 
 function pause(profileId = null) {
   const config = DataManager.getRuntimeConfig();
-  if (profileId && !activeRobots.has(profileId)) {
+  if (profileId && !findActiveWorker(profileId)) {
     return { ...status(), lastMessage: `Nu exista o rulare activa pentru profilul ${profileId}.` };
   }
   if (profileId) {
@@ -234,6 +272,11 @@ function resume(profileId = null) {
   addLiveFeed({ type: 'success', message: 'Toate rulările active au fost reluate.' });
   return { ...status(), pauseRequested: false };
 }
-function isRunning(profileId = null) { return profileId ? activeRobots.has(profileId) : activeRobots.size > 0; }
+function isRunning(profileId = null) { return profileId ? Boolean(findActiveWorker(profileId)) : activeRobots.size > 0; }
 
-module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume, summarizeBlockingIssues };
+function safeAgentMetadata() {
+  const config = DataManager.getRuntimeConfig();
+  return agentRegistry.getSafeMetadata(config.facebookProfiles || [], [...activeRobots.keys()]);
+}
+
+module.exports = { start, stop, stopAfterCurrentGroup, status, isRunning, pause, resume, safeAgentMetadata, summarizeBlockingIssues };

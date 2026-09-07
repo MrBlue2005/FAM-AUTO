@@ -77,6 +77,8 @@ const password = 'production-test-password';
     }
     const unauthorized = await fetch(`http://127.0.0.1:${port}/api/properties`);
     assert.equal(unauthorized.status, 401);
+    const unauthorizedLocalAgent = await fetch(`http://127.0.0.1:${port}/api/local-agent`);
+    assert.equal(unauthorizedLocalAgent.status, 401);
     const unauthorizedMedia = await fetch(`http://127.0.0.1:${port}/uploads/private-file.png`);
 assert.equal(unauthorizedMedia.status, 401);
     const overlayStatus = await fetch(`http://127.0.0.1:${port}/api/overlay/status`, {
@@ -134,6 +136,17 @@ assert.equal(unauthorizedMedia.status, 401);
       headers: { cookie: sessionCookie },
     });
     assert.equal(authorized.status, 200);
+    const localAgent = await fetch(`http://127.0.0.1:${port}/api/local-agent`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(localAgent.status, 200);
+    const localAgentBody = await localAgent.json();
+    assert.match(localAgentBody.agent_id, /^agent_/);
+    assert.ok(localAgentBody.profiles.every((profile) =>
+      JSON.stringify(Object.keys(profile).sort()) === JSON.stringify(['display_name', 'profile_id', 'status'])
+    ));
+    assert.equal(JSON.stringify(localAgentBody).includes(storageRoot), false);
+    assert.equal(JSON.stringify(localAgentBody).includes('profilePath'), false);
     const csrfRejected = await fetch(`http://127.0.0.1:${port}/api/groups`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: sessionCookie },

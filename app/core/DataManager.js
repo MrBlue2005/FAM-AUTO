@@ -534,6 +534,8 @@ function createCampaignRun({ config, tasks = [] }) {
     mode: config.publishEnabled ? 'live' : 'test',
     campaignCategory: config.campaignCategory || 'real_estate',
     facebookProfileId: config.facebookProfileId || 'main',
+    agentId: config.agentId || null,
+    profileId: config.immutableProfileId || null,
     campaignIds: Array.from(new Set(tasks.map((task) => task.campaignId))),
     groupIds: Array.from(new Set(tasks.map((task) => task.groupId))),
     taskCount: tasks.length,

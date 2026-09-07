@@ -643,6 +643,10 @@ app.get('/api/facebook-profiles', (req, res) => {
   });
 });
 
+app.get('/api/local-agent', (req, res) => {
+  res.json(RobotManager.safeAgentMetadata());
+});
+
 app.post('/api/facebook-profiles/:profileId/setup', async (req, res) => {
   try {
     const result = await ProfileSetupManager.startSetup(req.params.profileId);

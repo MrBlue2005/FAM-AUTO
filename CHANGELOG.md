@@ -1,5 +1,8 @@
 # Changelog
 
+- Added Phase 1 of the RX Local Agent architecture without cloud dependencies: persistent installation/profile identities, safe existing-profile adoption, immutable task snapshots, a local `AgentTransport` adapter, and an authenticated cloud-safe metadata endpoint.
+- Enforced one-task-at-a-time use of each physical Chromium profile through immutable-profile dispatcher locking plus a crash-recoverable inter-process executor lock with explicit `PROFILE_BUSY` failures.
+- Added focused Local Agent tests for identity persistence, display-name independence, safe DTOs, same/different-profile locking, lock cleanup, immutable content snapshots, and local task lifecycle transitions.
 - Added a persistent windowed-mode sidebar toggle that expands the compact navigation and restores every tab name on narrower workspace windows.
 
 ## 2026-08-07

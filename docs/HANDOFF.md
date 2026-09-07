@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-04
+Last updated: 2026-09-07
 
 ## Repository state
 
@@ -77,6 +77,11 @@ Always verify these values with `git status` and `git log`; this document descri
 ### Robot and backend
 
 - Express API in `server/server.js`.
+- Phase 1 of the cloud/local split is implemented without cloud dependencies: the existing API and scheduler now create immutable local task snapshots and deliver them to the Windows worker through an `AgentTransport` abstraction with a JSON-backed local adapter.
+- Every installation adopts a persistent `agent_...` identity and every existing Chromium directory receives a persistent `profile_...` identity in ignored local registry state. Legacy dashboard IDs such as `main` and `jobs` remain compatibility aliases; profile directories are never copied, moved, renamed, or exposed by the cloud-safe metadata DTO.
+- Same-profile execution is defended twice: `RobotManager` rejects a second run by immutable physical-profile identity, and the worker holds an inter-process filesystem lock for its complete Playwright session. Duplicate executor requests report `PROFILE_BUSY`; dead-owner locks can be recovered without eagerly stealing a fresh lock.
+- Task lifecycle state is stored locally as `QUEUED`, `CLAIMED`, `RUNNING`, and a terminal status. Execution reads snapshotted campaign text, media references, target group, day, identity, and safe configuration, so later edits do not alter already-created task content.
+- The authenticated `GET /api/local-agent` endpoint exposes only future-cloud-safe agent/profile IDs, display names, and states. It excludes Chromium paths and all browser/Facebook session material. See `docs/CLOUD_AGENT_ARCHITECTURE.md`.
 - Local JSON-backed properties, jobs, groups, runtime configuration, and history.
 - Parallel workers lock history and group-discovery updates per file, preventing read-modify-write data loss while two profiles post at the same time.
 - Local JSON-backed weekly schedules, evaluated while the API process is running using the server's local timezone.
@@ -158,14 +163,15 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
-2. Run the integrated studio E2E suite and verify launcher navigation on this PC.
-3. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
-4. Transfer operational media and other persistent data separately after the VPS storage paths are selected.
-5. Exercise scheduling with representative TEST campaigns over several weekdays and review missed/skipped run behavior in normal operation.
-6. Add or extend E2E coverage for property/job creation, media reuse, queue changes, saved runs, Excel export, and backup/restore.
-7. Obtain a trusted Windows code-signing certificate before publishing the overlay as a production release.
-8. After the VPS deployment is verified, define the normal feature-branch and pull-request flow from the clean baseline.
+1. For Phase 2, specify and threat-model the outbound HTTPS `AgentTransport` protocol, including leases, idempotency, heartbeat expiry, cancellation, version negotiation, and signed temporary media access before selecting or integrating cloud storage/database services.
+2. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
+3. Run the integrated studio E2E suite and verify launcher navigation on this PC.
+4. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
+5. Transfer operational media and other persistent data separately after the VPS storage paths are selected.
+6. Exercise scheduling with representative TEST campaigns over several weekdays and review missed/skipped run behavior in normal operation.
+7. Add or extend E2E coverage for property/job creation, media reuse, queue changes, saved runs, Excel export, and backup/restore.
+8. Obtain a trusted Windows code-signing certificate before publishing the overlay as a production release.
+9. After the VPS deployment is verified, define the normal feature-branch and pull-request flow from the clean baseline.
 
 ## Continuing from another computer
 

@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { profilesPath } = require('../config/storagePaths');
 
-async function startBrowser(profileId = null) {
+async function startBrowser(profileId = null, options = {}) {
   const DataManager = require('../core/DataManager');
   const runtimeConfig = DataManager.getRuntimeConfig();
   const profiles = runtimeConfig.facebookProfiles || [];
@@ -12,7 +12,7 @@ async function startBrowser(profileId = null) {
     (profile) => profile.id === activeProfileId
   );
 
-  const profilePath = selectedProfile?.profilePath || 'chrome-profile';
+  const profilePath = options.profilePath || selectedProfile?.profilePath || 'chrome-profile';
   const safeProfilePath = path.isAbsolute(profilePath)
     ? profilePath
     : path.join(profilesPath, profilePath);
@@ -22,7 +22,7 @@ async function startBrowser(profileId = null) {
   }
 
   console.log(
-    `Profil Facebook activ: ${selectedProfile?.label || activeProfileId || 'main'}`
+    `Profil Facebook activ: ${options.displayName || selectedProfile?.label || activeProfileId || 'main'}`
   );
 
   const configuredSlowMo = Number(process.env.BROWSER_SLOW_MO);
