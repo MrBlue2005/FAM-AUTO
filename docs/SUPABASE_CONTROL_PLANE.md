@@ -58,4 +58,6 @@ Validated with Docker Desktop Engine 29.7.2, PostgreSQL 17.6, Supabase CLI 2.117
 
 Actual concurrent HTTP claims left only one active lease for two tasks sharing one profile. Live validation also found and fixed: the Edge Function hash syntax error; unqualified `pgcrypto` calls under Supabase's `extensions` schema; two PL/pgSQL column/variable ambiguities; claim-loop non-progress for an already-active profile; and missing lease-expiry reconciliation before state transitions. No Facebook, Chromium profile, production credential, or operational data was used.
 
+The follow-up live pass validated `RUNNING` lease expiry to `OUTCOME_UNKNOWN`, explicit operator completion/failure/requeue resolution with audit events, credential rotation overlap and privileged revocation, and HTTP heartbeat idempotency (including payload-conflict rejection). It found that a failed stale transition could roll back reconciliation inside the same RPC; the Edge Function now commits reconciliation before a lease-scoped request is evaluated.
+
 RLS remains enabled and direct anonymous/public access is denied by migration policy. Hosted-project readiness still requires the remaining local checks documented above to be repeated against the deployment configuration, including operator-resolution, credential-revocation, and reconnect scenarios.

@@ -33,5 +33,6 @@ test('Supabase Edge Function exposes only the versioned Protocol v1 agent and op
   const edge = fs.readFileSync(path.join(root, 'supabase', 'functions', 'agent-protocol', 'index.ts'), 'utf8');
   for (const route of ['/v1/agents/enroll', '/v1/agent/heartbeat', '/v1/agent/tasks/claim', '/v1/agent/credentials/rotate', '/resolve']) assert.match(edge, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/); assert.match(edge, /rx_cp_idempotent_rotate_credential/); assert.doesNotMatch(edge, /rejectUnauthorized/);
+  assert.match(edge, /await rpc\('rx_cp_reconcile_expired_leases', \{\}\)/);
   assert.ok(edge.indexOf("route.startsWith('/v1/operator/tasks/')") < edge.indexOf("rx_cp_authenticate_agent"), 'operator endpoints must not require agent credentials');
 });
