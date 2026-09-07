@@ -1,0 +1,4 @@
+project_id = "rx-agent-control-plane"
+
+[functions.agent-protocol]
+verify_jwt = false

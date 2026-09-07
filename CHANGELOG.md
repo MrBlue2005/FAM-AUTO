@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase 3 Supabase/Postgres Protocol v1 control-plane migrations, Edge Function API, RLS, atomic task claiming, lease expiry reconciliation, durable idempotency, operator `OUTCOME_UNKNOWN` resolution, enrollment-token flow, and credential rotation.
+- Added Windows CurrentUser DPAPI protection with safe migration for Local Agent credentials; HTTP/Supabase mode remains opt-in and local mode remains default.
 - Added Phase 2 Agent Protocol v1: authenticated versioned outbound HTTP transport, persistent local agent secret, safe profile sync, atomic agent/profile-scoped claiming, leases, renewals, idempotency keys, cooperative cancellation, heartbeat expiry, and `OUTCOME_UNKNOWN` handling.
 - Added a separate localhost-only reference Cloud Control Plane and protocol race/security tests. Studio remains local by default; HTTP mode is explicit and continues to reject LIVE publishing.
 - Added Phase 1 of the RX Local Agent architecture without cloud dependencies: persistent installation/profile identities, safe existing-profile adoption, immutable task snapshots, a local `AgentTransport` adapter, and an authenticated cloud-safe metadata endpoint.

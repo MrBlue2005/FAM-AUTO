@@ -5,13 +5,15 @@ const { PROTOCOL_VERSION } = require('../cloud-reference/ReferenceControlPlane')
 class HttpAgentTransport extends AgentTransport {
   constructor(options = {}) {
     super(); this.baseUrl = String(options.baseUrl || '').replace(/\/$/, ''); this.agentId = options.agentId; this.agentSecret = options.agentSecret;
-    this.fetch = options.fetch || global.fetch; this.allowInsecureHttp = options.allowInsecureHttp === true;
+    this.fetch = options.fetch || global.fetch; this.allowInsecureHttp = options.allowInsecureHttp === true; this.maxRequestRetries = options.maxRequestRetries ?? 1;
     if (!this.baseUrl) throw new Error('Cloud transport URL is required.');
     if (!this.baseUrl.startsWith('https://') && !(this.allowInsecureHttp && this.baseUrl.startsWith('http://'))) throw new Error('HTTPS is required for cloud transport. HTTP is permitted only for the explicit local reference backend.');
   }
   requestId() { return crypto.randomUUID(); }
-  async request(method, pathname, body = null, extraHeaders = {}, requestId = this.requestId()) {
-    const response = await this.fetch(`${this.baseUrl}${pathname}`, { method, headers: { authorization: `Bearer ${this.agentSecret}`, 'content-type': 'application/json', 'x-rx-agent-id': this.agentId, 'x-rx-agent-protocol': String(PROTOCOL_VERSION), 'x-rx-request-id': requestId, ...extraHeaders }, body: body ? JSON.stringify({ protocol_version: PROTOCOL_VERSION, ...body }) : undefined });
+  async request(method, pathname, body = null, extraHeaders = {}, requestId = this.requestId(), attempt = 0) {
+    let response;
+    try { response = await this.fetch(`${this.baseUrl}${pathname}`, { method, headers: { authorization: `Bearer ${this.agentSecret}`, 'content-type': 'application/json', 'x-rx-agent-id': this.agentId, 'x-rx-agent-protocol': String(PROTOCOL_VERSION), 'x-rx-request-id': requestId, ...extraHeaders }, body: body ? JSON.stringify({ protocol_version: PROTOCOL_VERSION, ...body }) : undefined }); }
+    catch (networkError) { if (attempt < this.maxRequestRetries) return this.request(method, pathname, body, extraHeaders, requestId, attempt + 1); throw networkError; }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) { const error = new Error(data.error?.message || `Cloud transport failed (${response.status}).`); error.code = data.error?.code || 'TRANSPORT_ERROR'; error.status = response.status; throw error; }
     return data;
@@ -30,6 +32,7 @@ class HttpAgentTransport extends AgentTransport {
   reportOutcomeUnknown(task, error, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/outcome-unknown`, { error: { code: error?.code || 'EXECUTION_OUTCOME_UNKNOWN', message: error?.message || String(error) } }, { 'x-rx-lease-id': task.lease_id }, requestId); }
   reportCancelled(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/cancelled`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
   getCancellationState(task) { return this.request('GET', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/cancellation`, null, { 'x-rx-lease-id': task.lease_id }); }
+  rotateCredential(newSecret, overlapSeconds = 900, requestId) { return this.request('POST', '/v1/agent/credentials/rotate', { new_secret: newSecret, overlap_seconds: overlapSeconds }, {}, requestId); }
 }
 
 module.exports = { HttpAgentTransport };

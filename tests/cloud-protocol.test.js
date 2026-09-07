@@ -97,6 +97,20 @@ test('HTTP transport uses authenticated versioned outbound requests and reconnec
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 
+test('HTTP transport retries a network failure with the same idempotency key', async () => {
+  const requestIds = []; let attempts = 0;
+  const transport = new HttpAgentTransport({
+    baseUrl: 'http://127.0.0.1:34567', agentId: 'agent_retry', agentSecret: 'secret-retry', allowInsecureHttp: true,
+    fetch: async (_url, options) => {
+      attempts += 1; requestIds.push(options.headers['x-rx-request-id']);
+      if (attempts === 1) throw new Error('socket reset');
+      return { ok: true, json: async () => ({ protocol_version: PROTOCOL_VERSION, agent_status: 'ONLINE' }) };
+    },
+  });
+  await transport.heartbeat({ display_name: 'Retry agent', profiles: [] }, 'retry-request-id');
+  assert.equal(attempts, 2); assert.deepEqual(requestIds, ['retry-request-id', 'retry-request-id']);
+});
+
 test('cloud agent service uses the transport protocol without depending on dashboard APIs', async () => {
   const calls = []; const task = { task_id: 'task_service', profile_id: 'profile_service', lease_id: 'lease_service', task_type: 'TEST', payload: {} };
   const transport = { heartbeat: async () => calls.push('heartbeat'), claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }), reportRunning: async () => calls.push('running'), reportCompletion: async () => calls.push('completed'), reportFailure: async () => calls.push('failed') };

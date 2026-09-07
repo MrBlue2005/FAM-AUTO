@@ -89,12 +89,16 @@ Phase 2 adds a versioned outbound HTTP transport plus a separate reference Cloud
 
 `CloudAgentService` is opt-in through `RX_AGENT_TRANSPORT_MODE=HTTP`. It sends heartbeats, claims remote tasks, invokes the existing `RobotManager` dispatcher boundary and profile lock, then reports lifecycle state. The default remains the Phase 1 JSON-backed `LOCAL` transport. `docs/AGENT_PROTOCOL_V1.md` is the normative endpoint/state-machine contract.
 
+## Phase 3 Supabase control plane
+
+The production-oriented implementation is Postgres-backed: Supabase Edge Functions authenticate the agent and call transactional RPCs, while RLS prevents browser/anonymous table access. PostgreSQL locks, an advisory profile lock, and a partial unique active-profile index provide the cloud layer of the three-layer same-profile defense. Windows Local Agent credentials migrate to CurrentUser DPAPI where available. Details and local setup are in `docs/SUPABASE_CONTROL_PLANE.md`.
+
 ## Final target architecture
 
 In a later phase, a cloud HTTP implementation of `AgentTransport` can replace or accompany `LocalTaskTransport`. The hosted control plane will own authentication, property/campaign metadata, object-storage references, task scheduling, safe agent/profile metadata, and execution history. The Windows Local Agent will initiate outbound authenticated connections, claim tasks for its profiles, download temporary media, enforce local locks, and invoke the unchanged Facebook robot.
 
 The mapping from immutable `profile_id` to Chromium user-data directory, all Facebook session material, local execution locks, and browser diagnostics remain local permanently.
 
-## Phase 3 recommendation
+## Phase 4 recommendation
 
-Implement the same documented protocol against a managed HTTPS/Postgres control plane, with an enrollment authority, encrypted secret lifecycle/rotation, database transactions and row-level controls, durable scheduler, signed object-storage media URLs, monitoring, and operator workflows for `OUTCOME_UNKNOWN`. Do not migrate the dashboard or Chromium/session data as part of that work.
+Deploy and monitor the Supabase control plane with production enrollment authority, scheduled lease/idempotency cleanup, alerting, operator workflows, and signed temporary media URLs. Only after that is proven should the hosted dashboard/control plane or object storage be considered; never migrate Chromium/session data.

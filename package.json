@@ -9,8 +9,9 @@
   "scripts": {
     "build": "npm --prefix dashboard-v2 run build",
     "start": "node --env-file-if-exists=.env server/server.js",
-    "test": "node --test tests/core.test.js tests/local-agent.test.js tests/cloud-protocol.test.js tests/server.test.js",
+    "test": "node --test tests/core.test.js tests/local-agent.test.js tests/cloud-protocol.test.js tests/supabase-control-plane.test.js tests/server.test.js",
     "test:update": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-continuous-update.ps1",
+    "supabase:dev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-supabase-control-plane.ps1",
     "test:e2e": "node scripts/run-e2e.js",
     "check": "npm test && npm --prefix dashboard-v2 run lint && npm --prefix dashboard-v2 run build && npm run test:e2e",
     "check:production": "node --env-file-if-exists=.env scripts/production-check.js",
@@ -19,6 +20,7 @@
     "server": "node --env-file-if-exists=.env server/server.js",
     "reference-cloud": "node --env-file-if-exists=.env server/reference-cloud-server.js",
     "agent:http": "node --env-file-if-exists=.env scripts/run-http-agent.js",
+    "agent:rotate-credential": "node --env-file-if-exists=.env scripts/rotate-agent-credential.js",
     "overlay:dev": "npm --prefix overlay-desktop run dev",
     "overlay:pack": "npm --prefix overlay-desktop run pack",
     "overlay:dist": "npm --prefix overlay-desktop run dist",

@@ -70,3 +70,7 @@ The client uses bounded exponential retry timing with jitter through `AgentConne
 `npm run reference-cloud` starts the test/reference control plane only on `127.0.0.1:3400`; it is never started by Studio. `npm run agent:http` requires `RX_AGENT_TRANSPORT_MODE=HTTP`, a cloud URL, and explicit enrollment. Default behavior remains Phase 1 `LOCAL` transport.
 
 The reference backend persists agents, profiles, tasks, leases, and safe audit events when `RX_REFERENCE_CLOUD_DATA` is configured. It intentionally has no dashboard integration and is a protocol validation target, not production hosting.
+
+## Supabase production implementation
+
+Phase 3 implements these same semantics in Postgres migrations and the `agent-protocol` Supabase Edge Function. The HTTP routes remain Protocol v1 compatible, so `HttpAgentTransport` needs no agent-facing redesign. Atomic claim, same-profile enforcement, lease expiry, state transitions, and idempotency are database transactions rather than single-process JSON operations. See `docs/SUPABASE_CONTROL_PLANE.md`.
