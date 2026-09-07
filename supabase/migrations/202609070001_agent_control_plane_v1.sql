@@ -153,6 +153,7 @@ create or replace function public.rx_cp_request_cancellation(p_task_id text,p_re
 declare item tasks; begin select * into item from tasks where task_id=p_task_id for update; if not found then raise exception 'TASK_NOT_FOUND'; end if;
   if item.status='QUEUED' then update tasks set status='CANCELLED',completed_at=now(),error=jsonb_build_object('code','CANCELLED_BY_CONTROL_PLANE') where task_id=p_task_id returning * into item;
   elsif item.status in ('CLAIMED','RUNNING') then update tasks set cancellation_requested_at=coalesce(cancellation_requested_at,now()) where task_id=p_task_id returning * into item; end if;
+  if item.status in ('COMPLETED','FAILED','CANCELLED','OUTCOME_UNKNOWN') then return to_jsonb(item); end if;
   perform rx_cp_event('CANCELLATION_REQUESTED',item.agent_id,p_task_id,jsonb_build_object('resolver',p_resolver)); return to_jsonb(item); end $$;
 
 create or replace function public.rx_cp_resolve_outcome(p_task_id text,p_action text,p_resolver text,p_note text default null) returns jsonb language plpgsql security definer set search_path=public as $$
