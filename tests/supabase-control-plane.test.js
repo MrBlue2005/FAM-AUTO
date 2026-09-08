@@ -54,3 +54,13 @@ test('Phase 4B application foundation is separate, private, and models immutable
   assert.match(sql, /APP_MEDIA_OBJECT_IMMUTABLE/); assert.match(sql, /revoke all on table storage\.objects, storage\.buckets from anon, authenticated/);
   assert.match(sql, /references public\.tasks\(task_id\)/);
 });
+
+test('Phase 4B-B transactional RPC foundation is scoped to compound application writes', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase', 'migrations', '202609080004_application_transactional_rpcs.sql'), 'utf8');
+  for (const rpc of ['rx_app_write_campaign_with_posts', 'rx_app_write_schedule_with_campaigns', 'rx_app_set_post_media']) assert.match(sql, new RegExp(`create or replace function public\\.${rpc}`));
+  assert.match(sql, /app_write_idempotency/); assert.match(sql, /APP_REVISION_CONFLICT/); assert.match(sql, /APP_IDEMPOTENCY_KEY_CONFLICT/);
+  assert.match(sql, /security invoker set search_path = pg_catalog, public/g);
+  assert.match(sql, /revoke all on function[\s\S]*from public, anon, authenticated/g);
+  assert.match(sql, /grant execute on function[\s\S]*to service_role/g);
+  assert.doesNotMatch(sql, /rx_cp_|security definer/i);
+});

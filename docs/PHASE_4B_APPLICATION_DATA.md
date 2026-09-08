@@ -16,6 +16,8 @@ Phase 4B-A adds an additive local-validated schema and a read-only import planne
 
 Every application table has RLS enabled. `anon` and `authenticated` receive no table privileges; only `service_role` has the future BFF/Edge access path. The migration also creates `fam-app-media` as `public = false`, revokes direct `storage.objects`/`storage.buckets` privileges from browser roles, and grants the server role. No permanent public URL is created.
 
+`202609080004_application_transactional_rpcs.sql` adds only the compound-write boundary: `rx_app_write_campaign_with_posts`, `rx_app_write_schedule_with_campaigns`, and `rx_app_set_post_media`. Each accepts an expected revision and a request ID/hash. A stale revision with a new request is rejected; an exact retry returns its saved result. The RPC transaction rolls back its idempotency row, parent row and relation changes if any later write fails. They are `SECURITY INVOKER` functions with `search_path = pg_catalog, public`, no PUBLIC/anon/authenticated execute grant, and service-role-only execution. Results/execution runs intentionally have no RPC because the present schema has no required multi-table write invariant there.
+
 ## Snapshot compatibility
 
 Future task creation reads a coherent application revision and writes the complete immutable material into the existing `tasks.payload`:
@@ -45,7 +47,7 @@ Property Copywriter remains intentionally separate: its Prisma SQLite `PropertyR
 
 The future importer writer uses this same store: upsert by legacy identity, stage immutable media by new key, upload, then finalize. It remains intentionally disabled in the CLI until a separately approved real-import slice.
 
-Hosted deployment later requires migration `202609080003`, the existing private bucket, and server/BFF environment values `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` in a server secret store. Do not add either variable to `VITE_*`, `NEXT_PUBLIC_*`, browser code, agent settings, or the existing `agent-protocol` function.
+Hosted deployment later requires migrations `202609080003` and `202609080004`, the existing private bucket, and server/BFF environment values `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` in a server secret store. Do not add either variable to `VITE_*`, `NEXT_PUBLIC_*`, browser code, agent settings, or the existing `agent-protocol` function.
 
 ## Cutover and rollback
 
@@ -55,8 +57,8 @@ Rollback before cutover is simply to not use the new tables/bucket. No automated
 
 ## Local validation evidence
 
-The migration was applied during a clean local Supabase rebuild. It created eleven `app_*` tables, RLS on all eleven, the private bucket, service-role table access, anon denial, and an immutable-media update rejection. The importer DRY_RUN found no eligible local JSON/media in this checkout; it wrote only an ignored `.tmp` sanitized report and performed zero cloud writes/uploads.
+The foundation migration was applied during a clean local Supabase rebuild. It created eleven `app_*` tables, RLS on all eleven, the private bucket, service-role table access, anon denial, and an immutable-media update rejection. The importer DRY_RUN found no eligible local JSON/media in this checkout; it wrote only an ignored `.tmp` sanitized report and performed zero cloud writes/uploads. The transactional-RPC migration was then applied locally and tested using rolled-back synthetic fixtures: all three RPCs succeeded, stale revisions were rejected, exact retries were idempotent, a deliberate second-stage schedule FK failure left neither schedule nor idempotency row, anon/authenticated/PUBLIC execution was denied, and service-role execution succeeded. The test confirms no `rx_app_*` function refers to Protocol V1 control-plane tables.
 
 ## Next implementation step
 
-Phase 4B-B should implement the server-side application repository plus authenticated upload-session/metadata APIs. It must not cut over the dashboard or Local Agent and must keep all Supabase service-role credentials server-only.
+Phase 4B-B should wire the reviewed mutation calls into the existing server-side repository/BFF and implement the still-disabled importer writer, then perform a synthetic local Storage upload/finalize/preview E2E. It must not cut over the dashboard or Local Agent and must keep all Supabase service-role credentials server-only.
