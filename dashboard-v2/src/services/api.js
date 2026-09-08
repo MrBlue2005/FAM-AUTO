@@ -8,6 +8,7 @@ export const dashboardDataMode = normalizeDashboardDataMode(import.meta.env.VITE
 const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY;
 const cloudMediaUpload = cloudMediaUploadEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_MEDIA_UPLOAD_ENABLED);
 const cloudApplicationMutations = cloudApplicationMutationsEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_APP_MUTATIONS_ENABLED);
+const cloudRemoteTasks = cloudReadOnly && import.meta.env.VITE_CLOUD_REMOTE_TASKS_ENABLED === 'true';
 let hostedCsrfToken = '';
 const cloudRevisions = new Map();
 async function rememberCloudRevisions(kind, rows) {
@@ -97,8 +98,9 @@ async function request(endpoint, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const mutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   const enabledCloudMutation = cloudApplicationMutations && endpoint.startsWith('/cloud-mutations/');
-  if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/')) && !enabledCloudMutation) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
-  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/cloud-mutations/') && !endpoint.startsWith('/auth/')) {
+  const enabledRemoteTask = cloudRemoteTasks && endpoint.startsWith('/cloud-remote-tasks/');
+  if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/')) && !enabledCloudMutation && !enabledRemoteTask) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
+  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/cloud-mutations/') && !endpoint.startsWith('/cloud-remote-tasks/') && !endpoint.startsWith('/auth/')) {
     throw new Error('This dashboard feature is unavailable in CLOUD_READ_ONLY; no local read fallback is available.');
   }
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -127,13 +129,16 @@ export const api = {
   isCloudReadOnly: () => cloudReadOnly,
   isCloudMediaUploadEnabled: () => cloudMediaUpload,
   isCloudApplicationMutationsEnabled: () => cloudApplicationMutations,
-  capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload }),
+  isCloudRemoteTasksEnabled: () => cloudRemoteTasks,
+  capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload, remoteTasks: cloudRemoteTasks }),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
     if (!cloudReadOnly) return Promise.resolve(getMediaUrl(media));
     return cloudMediaPreviewCache.resolve(typeof media === 'string' ? media : media?.mediaId || media?.id);
   },
   getAgentStatus: () => cloudRead('/agent-status'),
+  createSyntheticDryRunTask: () => request('/cloud-remote-tasks/synthetic-dry-run', { method: 'POST', body: '{}' }),
+  getSyntheticDryRunTask: (taskId) => request(`/cloud-remote-tasks/synthetic-dry-run/${encodeURIComponent(taskId)}`),
   refreshMediaPreviewUrl: (media) => {
     const mediaId = typeof media === 'string' ? media : media?.mediaId || media?.id;
     cloudMediaPreviewCache.invalidate(mediaId);
