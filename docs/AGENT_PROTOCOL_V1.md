@@ -49,13 +49,14 @@ Renewals extend a configurable expiry. `CloudAgentService` renews while the Face
 
 ```text
 QUEUED -> CLAIMED -> RUNNING -> COMPLETED | FAILED | CANCELLED | OUTCOME_UNKNOWN
+                    \-> FAILED (pre-execution failure)
    |         |          |
    +------> CANCELLED <-- cancellation requested, honored at a safe point
 CLAIMED --lease expiry--> QUEUED
 RUNNING --lease expiry--> OUTCOME_UNKNOWN
 ```
 
-Illegal transitions are rejected. The first valid terminal transition is permanent: a retry of that same result returns the persisted terminal task without duplicating its audit event, while any different terminal result is rejected. Cancelling a queued task is immediate. Cancelling claimed/running work sets `cancellation_requested_at`; the agent polls at safe points and never kills Chromium during a critical posting action. A cancellation request received after terminalization is a no-op and does not create `CANCELLATION_REQUESTED`.
+Illegal transitions are rejected. A claimed task may transition directly to `FAILED` only for a pre-execution failure (for example, manifest or local-media verification), which releases its lease without recording a browser-side outcome. The first valid terminal transition is permanent: a retry of that same result returns the persisted terminal task without duplicating its audit event, while any different terminal result is rejected. Cancelling a queued task is immediate. Cancelling claimed/running work sets `cancellation_requested_at`; the agent polls at safe points and never kills Chromium during a critical posting action. A cancellation request received after terminalization is a no-op and does not create `CANCELLATION_REQUESTED`.
 
 `OUTCOME_UNKNOWN` means a Facebook side effect may have happened but the control plane cannot prove it. It requires operator investigation; the system must not repost blindly.
 

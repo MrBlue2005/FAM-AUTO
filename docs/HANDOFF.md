@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-08 (Phase 4B-B transactional RPC foundation)
+Last updated: 2026-09-08 (local agent media negative-matrix continuation)
 
 ## Repository state
 
@@ -173,6 +173,11 @@ Use `.env.example` files as templates. Never place credentials or authentication
 4. Phase 4B-B mutation/import wiring is locally validated: the server-only store consumes the reviewed compound RPCs and revision-guarded ordinary app-table writes; `/api/cloud` has only application-data mutation routes under existing session/CSRF middleware; and the gated importer completed synthetic DRY_RUN/APPLY/APPLY idempotency with STAGED-only media metadata. No Storage upload/finalize/preview, hosted deployment, dashboard/scheduler/Local Agent cutover, Facebook or Chromium action occurred. The only remaining Phase 4B-B task is local synthetic Storage E2E: signed upload → object verification → STAGED -> READY → authorized preview → negative/security tests.
 5. Phase 4B-B Storage E2E is now complete locally: a short-lived browser upload authorization was used against the private bucket; the server independently streamed and verified exact byte size and SHA-256 before READY; linked signed preview, mismatch/abandoned rejection, private-bucket/RLS checks, and immutable READY identity all passed. No hosted deployment, dashboard/Local Agent cutover, Facebook or Chromium action occurred.
 6. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
+
+## Latest local validation
+
+- The local agent media negative-matrix continuation used only isolated local Supabase/Storage fixtures. Immutable snapshot-size mismatch was rejected before `RUNNING` and executor invocation; real stale-lease reconciliation and valid-lease wrong-task manifest requests were denied without URL/metadata leakage; and a fresh signed-download/hash/size happy path completed once and removed its temporary materialization.
+- That validation exposed a Protocol V1 defect: pre-execution media failure could not transition `CLAIMED` to `FAILED`, leaving a lease held. Additive local migration `202609080005_allow_preexecution_failure.sql` fixes the transition and the reference control-plane now has regression coverage. It is local-only and has not been deployed hosted.
 
 ## Continuing from another computer
 

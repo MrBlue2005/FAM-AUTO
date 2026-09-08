@@ -7,7 +7,7 @@ const TERMINAL = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'OUTCOME_UNKNOWN']
 const ACTIVE = new Set(['CLAIMED', 'RUNNING']);
 const TRANSITIONS = {
   QUEUED: new Set(['CLAIMED', 'CANCELLED']),
-  CLAIMED: new Set(['RUNNING', 'CANCELLED', 'QUEUED']),
+  CLAIMED: new Set(['RUNNING', 'FAILED', 'CANCELLED', 'QUEUED']),
   RUNNING: new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'OUTCOME_UNKNOWN']),
 };
 const PROHIBITED_KEYS = new Set(['cookies', 'password', 'credentials', 'profilepath', 'userdatadir', 'chromiumpath', 'sessionstorage', 'localstorage', 'indexeddb', 'accesstoken', 'refreshtoken', 'authtoken']);

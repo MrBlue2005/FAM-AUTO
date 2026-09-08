@@ -75,6 +75,14 @@ test('idempotent completion/failure and illegal transitions are enforced', () =>
   assert.throws(() => f.plane.update('agent_a', 't1', task.lease_id, { protocol_version: 1 }, 'illegal', 'RUNNING'), (error) => error.code === 'ILLEGAL_TRANSITION');
 });
 
+test('a claimed task may fail before execution starts', () => {
+  const f = fixture(); f.agent('agent_a', 'secret-a'); f.heartbeat('agent_a', [f.profile('p1')]); f.enqueue('agent_a', 'p1', 't1');
+  const task = claim(f, 'agent_a', 'claim');
+  const failed = f.plane.update('agent_a', 't1', task.lease_id, { protocol_version: 1, error: { code: 'MEDIA_DOWNLOAD_FAILED' } }, 'pre-execution-failure', 'FAILED');
+  assert.equal(failed.task.status, 'FAILED');
+  assert.equal(f.plane.state.tasks.t1.started_at, null);
+});
+
 test('queued cancellation is terminal, claimed/running cancellation is cooperative and observable', () => {
   const f = fixture(); f.agent('agent_a', 'secret-a'); f.heartbeat('agent_a', [f.profile('p1'), f.profile('p2')]);
   f.enqueue('agent_a', 'p1', 'queued'); assert.equal(f.plane.requestCancellation('queued').status, 'CANCELLED');
