@@ -74,3 +74,7 @@ The reference backend persists agents, profiles, tasks, leases, and safe audit e
 ## Supabase production implementation
 
 Phase 3 implements these same semantics in Postgres migrations and the `agent-protocol` Supabase Edge Function. The HTTP routes remain Protocol v1 compatible, so `HttpAgentTransport` needs no agent-facing redesign. Atomic claim, same-profile enforcement, lease expiry, state transitions, and idempotency are database transactions rather than single-process JSON operations. See `docs/SUPABASE_CONTROL_PLANE.md`.
+
+### Lease-scoped media manifests
+
+`POST /v1/agent/tasks/:taskId/media-manifest` is an agent-authenticated Protocol v1 extension. It accepts only the current `CLAIMED` task lease, requires every requested media ID to be in immutable `tasks.payload.media`, requires READY application metadata to equal the snapshot hash/size/MIME identity, and returns only 120-second signed download URLs plus verification fields. Before `RUNNING`, the agent streams every item to a task-only temporary directory, verifies byte size and SHA-256, then derives an execution-only local-path payload. Signed URLs and agent/server credentials never reach the executor. A manifest/download failure is pre-side-effect `FAILED`, not `OUTCOME_UNKNOWN`; temporary data is removed on every terminal path.
