@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-07 (Phase 3)
+Last updated: 2026-09-08 (Phase 4 hosted deployment preparation)
 
 ## Repository state
 
@@ -167,7 +167,7 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. For Phase 4, deploy and monitor the Supabase control plane with production enrollment administration, scheduled maintenance, alerts, operator procedures, and signed temporary media delivery before considering dashboard hosting or object storage.
+1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 is currently hosted deployment preparation only: follow `docs/HOSTED_SUPABASE_DEPLOYMENT.md` once the operator supplies a new dedicated project's reference, authorized CLI/database access and a new operator token. No hosted project has been linked/deployed. Apply the four checkpoint migrations unchanged, then the scoped `202609080002` RPC privilege hardening before enabling Data API. Hosted initial execution is isolated DRY_RUN only; media storage, Vercel and Facebook publishing are not authorized in this step. Do not repeat accepted Phase 3 tests absent a concrete hosted issue.
 2. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
 3. Run the integrated studio E2E suite and verify launcher navigation on this PC.
 4. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.

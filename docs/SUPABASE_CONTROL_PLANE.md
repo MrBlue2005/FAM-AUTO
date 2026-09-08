@@ -52,6 +52,8 @@ RLS is enabled on every control-plane table and `anon`/`authenticated` roles rec
 
 ## Deployment and rollback
 
+For Phase 4 use the ordered [hosted deployment runbook](HOSTED_SUPABASE_DEPLOYMENT.md), including project inputs, secret classification, migration/permission gates, isolated hosted DRY_RUN and rollback. Phase 3 is closed at `1b96ff3`. Hosted preparation adds `202609080002` to explicitly revoke PUBLIC/anon/authenticated execution of all RX RPCs and grant service_role access; it does not change Protocol V1 semantics. The original direct-table RLS evidence did not cover inherited RPC execution privileges.
+
 Apply migrations in order, deploy the Edge Function, set secrets in the Supabase project, then enroll agents explicitly. Roll back by leaving agents in `LOCAL` mode and disabling the Edge Function route; do not delete profiles, credentials, or task history. Schema migrations are additive; data reversal should be an operator-reviewed migration, never an automated client action.
 
 ## Live local validation (2026-09-07)
