@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm --prefix dashboard-v2 run build",
+  "buildCommand": "npm ci --prefix dashboard-v2 --include=dev && npm --prefix dashboard-v2 run build",
   "outputDirectory": "dashboard-v2/dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
