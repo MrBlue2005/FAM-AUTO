@@ -1,5 +1,6 @@
 # Changelog
 
+- Finalized Phase 3 hosted-Supabase readiness validation: repeated live HTTP/Postgres terminal/cancellation races, same-task/profile claim races, stale-lease rejection, and concurrent idempotency passed on isolated DRY_RUN fixtures. Added an additive migration that prevents a retained terminal lease from overwriting the first valid terminal result; conflicting later terminal transitions are rejected and identical retries are audit-safe no-ops. Documented the accepted RLS, privileged Edge/API, Local Agent HTTP E2E, DPAPI, and reconnect evidence. No Facebook publishing was enabled.
 - Fixed Phase 3 control-plane defects found by real local Supabase validation: Edge hash syntax, Supabase `extensions.pgcrypto` qualification, PL/pgSQL ambiguities, active-profile claim progress, and stale lease transitions.
 - Fixed lease-expiry reconciliation rollback exposed by live `OUTCOME_UNKNOWN` validation; Edge lease-scoped requests reconcile in a committed call before transition validation.
 - Added explicit Local Agent `DRY_RUN` validation mode and fixed Windows DPAPI assembly loading plus Local Agent `agent_status` protocol mapping, validated against the local Supabase stack.

@@ -14,6 +14,8 @@ The task state machine is Protocol v1: `QUEUED → CLAIMED → RUNNING → COMPL
 
 ## Atomic claims, leases, and idempotency
 
+The first valid terminal transition wins permanently. An identical retry returns the original terminal snapshot without another audit event; a later different terminal transition is rejected.
+
 `rx_cp_claim_task` reconciles expired leases, selects due tasks using `FOR UPDATE SKIP LOCKED`, takes a transaction-scoped advisory lock for the physical profile, and persists the claim/lease/audit event before returning the snapshot. A partial unique index on `tasks(profile_id)` where status is `CLAIMED` or `RUNNING` is the database-level same-profile invariant.
 
 `CLAIMED` lease expiry requeues only work that has not begun. `RUNNING` lease expiry becomes `OUTCOME_UNKNOWN`; it is never auto-requeued. Lease operations validate the authenticated agent, task ID, and lease ID.
@@ -62,4 +64,15 @@ The follow-up live pass validated `RUNNING` lease expiry to `OUTCOME_UNKNOWN`, e
 
 The real `scripts/run-http-agent.js` process was then validated in `RX_AGENT_TRANSPORT_MODE=HTTP` using isolated `RX_DATA_PATH`/`RX_PROFILES_PATH` and `RX_AGENT_DRY_RUN=true`. It used Windows CurrentUser DPAPI, enrolled and synchronized a temporary agent, and completed a `DRY_RUN` task through claim, `RUNNING`, renewal, and completion; Postgres recorded `TASK_CLAIMED`, `TASK_RUNNING`, `LEASE_RENEWED`, and `TASK_COMPLETED`. This uncovered and fixed the local `status` to Protocol `agent_status` mapping and explicit `System.Security` loading required by this Windows PowerShell DPAPI host.
 
-RLS remains enabled and direct anonymous/public access is denied by migration policy. Hosted-project readiness still requires the remaining local checks documented above to be repeated against the deployment configuration, including operator-resolution, credential-revocation, and reconnect scenarios.
+RLS remains enabled and direct anonymous/public access is denied by migration policy.
+
+## Final hosted-readiness live validation (2026-09-08)
+
+The restored local Docker/Supabase stack and locally served `agent-protocol` Edge Function were used without a database reset. An operator enrollment-token request returned HTTP 201 before the tests. All fixtures were isolated `DRY_RUN` tasks for a temporary validation agent; no Facebook publishing, Chromium profile, or operational data was used.
+
+- Completion versus cooperative cancellation was exercised three times each concurrently, cancellation-first, and completion-first, plus cancellation after `COMPLETED` and completion after `CANCELLED`. Every fixture retained one terminal state and exactly one terminal task event. The losing conflicting terminal request returned HTTP 409; an identical terminal retry returned HTTP 200 without another event. Operator cancellation after terminalization returned the existing task and added no `CANCELLATION_REQUESTED` event.
+- Three concurrent same-task claims produced one claimed task and one null response each time; three two-task/same-profile runs kept exactly one active lease; and three different-profile runs held one lease for each profile independently.
+- A deliberately expired `CLAIMED` lease was reconciled and replaced. The old lease was rejected (HTTP 409) for renew, `RUNNING`, completion, and failure; its event sequence was `TASK_CLAIMED`, `LEASE_EXPIRED_REQUEUED`, `TASK_CLAIMED`.
+- Two concurrent heartbeat calls with one request ID returned the same HTTP 200 response and added one durable `AGENT_HEARTBEAT` event. Reusing that ID with a different body returned HTTP 409 `IDEMPOTENCY_KEY_CONFLICT`.
+
+Previously completed live evidence remains accepted: privileged Edge/API enrollment through completion and cooperative cancellation, `OUTCOME_UNKNOWN` resolution, credential rotation/revocation, Windows CurrentUser DPAPI, direct RLS write denial, Local Agent HTTP `DRY_RUN` E2E, and manual reconnect recovery (`HEARTBEAT_FAILED` followed by `AGENT_RECONNECTED`, with no automatic replay). The one defect found by this final pass was terminal overwrite through a retained lease ID; additive migration `202609080001` rejects a conflicting post-terminal transition and preserves the original terminal response for identical retries.

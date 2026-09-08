@@ -55,7 +55,7 @@ CLAIMED --lease expiry--> QUEUED
 RUNNING --lease expiry--> OUTCOME_UNKNOWN
 ```
 
-Illegal transitions are rejected. Cancelling a queued task is immediate. Cancelling claimed/running work sets `cancellation_requested_at`; the agent polls at safe points and never kills Chromium during a critical posting action.
+Illegal transitions are rejected. The first valid terminal transition is permanent: a retry of that same result returns the persisted terminal task without duplicating its audit event, while any different terminal result is rejected. Cancelling a queued task is immediate. Cancelling claimed/running work sets `cancellation_requested_at`; the agent polls at safe points and never kills Chromium during a critical posting action. A cancellation request received after terminalization is a no-op and does not create `CANCELLATION_REQUESTED`.
 
 `OUTCOME_UNKNOWN` means a Facebook side effect may have happened but the control plane cannot prove it. It requires operator investigation; the system must not repost blindly.
 

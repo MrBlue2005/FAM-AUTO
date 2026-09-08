@@ -17,6 +17,7 @@ test('Supabase migrations define the Protocol v1 schema, RLS, atomic claim, leas
   assert.match(sql, /extensions\.digest/); assert.match(sql, /extensions\.crypt/);
   assert.match(sql, /update agent_credentials c set last_used_at/);
   assert.match(sql, /if item\.status in \('COMPLETED','FAILED','CANCELLED','OUTCOME_UNKNOWN'\) then return to_jsonb\(item\)/);
+  assert.match(sql, /if item\.status = p_next then return jsonb_build_object\('protocol_version',1,'task',to_jsonb\(item\)\); end if;[\s\S]*raise exception 'ILLEGAL_TRANSITION'/);
   assert.match(sql, /enable row level security/g); assert.match(sql, /revoke all on all tables in schema public from anon, authenticated/);
 });
 
