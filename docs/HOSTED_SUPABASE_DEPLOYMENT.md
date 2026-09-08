@@ -306,4 +306,16 @@ select public.rx_cp_revoke_credential('<actual credential_id>'::uuid,'hosted-tes
 
 The hosted ACL issue was confirmed through read-only PostgreSQL privilege inspection. The added `supabase/tests/hosted_privileges.sql` applies the new ACL migration inside a rollback-only local transaction, checks all 19 RPCs and seven RLS tables, exercises denied anon/authenticated RPC calls, and proves a service-role RPC can persist an event and read it. It rolls back the test event and privilege changes, preserving local migration history and Phase 3 fixtures. For a future local recheck use `psql -X -v ON_ERROR_STOP=1 -f supabase/tests/hosted_privileges.sql` against the explicitly selected local database; it requires the four checkpoint migrations.
 
-Repository preparation does not attest that a hosted project is already operational. Deployment is waiting for the actual project reference, authorized login/database access and a new hosted operator token. No service-role key needs to be supplied in chat. No push or hosted deployment is performed by preparing this runbook.
+## First hosted control-plane validation (2026-09-08)
+
+`HOSTED_CONTROL_PLANE = VALIDATED`; `HOSTED_DRY_RUN_E2E = PASS`
+
+The first real hosted validation used a second, isolated Local Agent fixture only. It enrolled synthetic agent `agent_0MTSV3DPNA9532F96D094476D4A0F` with one synthetic profile, `profile_0MTSV3DPQB0032D5CAA756463A950`. Its single immutable `DRY_RUN` task, `hosted_dry_run_8570925d087a4407a00be97193efc536`, completed durably with this sequence:
+
+```text
+QUEUED -> CLAIMED -> RUNNING -> COMPLETED
+```
+
+The hosted task recorded one attempt and one lease for the synthetic identity. The audit history was `TASK_CLAIMED`, `TASK_RUNNING`, `LEASE_RENEWED` x3 and `TASK_COMPLETED`; its persisted result was `{ dry_run: true, publishEnabled: false }`. The operational hosted agent stayed ONLINE and held zero tasks. Its operational profiles received none. The fixture stayed below `.tmp`, its synthetic profile directory contained no Chromium data, and no Facebook or publishing path was invoked.
+
+One lease-renewal request already in flight received `STALE_LEASE` after terminal completion. It created no durable audit event, no second execution, and no state mutation. Record this as a non-blocking timer cleanup opportunity, not a hosted-readiness blocker. Facebook publishing remains disabled and has not been validated against hosted infrastructure.

@@ -167,7 +167,7 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 is currently hosted deployment preparation only: follow `docs/HOSTED_SUPABASE_DEPLOYMENT.md` once the operator supplies a new dedicated project's reference, authorized CLI/database access and a new operator token. No hosted project has been linked/deployed. Apply the four checkpoint migrations unchanged, then the scoped `202609080002` RPC privilege hardening before enabling Data API. Hosted initial execution is isolated DRY_RUN only; media storage, Vercel and Facebook publishing are not authorized in this step. Do not repeat accepted Phase 3 tests absent a concrete hosted issue.
+1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 hosted control-plane deployment is validated: all five migrations through `202609080002` and `agent-protocol` are deployed to the dedicated hosted project, and the first isolated synthetic-agent task passed `QUEUED -> CLAIMED -> RUNNING -> COMPLETED` with one lease and three renewals. `HOSTED_CONTROL_PLANE = VALIDATED`; `HOSTED_DRY_RUN_E2E = PASS`. The operational hosted agent stayed ONLINE with zero assigned tasks. Facebook publishing remains disabled and unvalidated; media storage, Vercel and Facebook publishing are not authorized by this checkpoint. See `docs/HOSTED_SUPABASE_DEPLOYMENT.md`.
 2. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
 3. Run the integrated studio E2E suite and verify launcher navigation on this PC.
 4. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
