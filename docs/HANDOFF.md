@@ -178,6 +178,7 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 - The local agent media negative-matrix continuation used only isolated local Supabase/Storage fixtures. Immutable snapshot-size mismatch was rejected before `RUNNING` and executor invocation; real stale-lease reconciliation and valid-lease wrong-task manifest requests were denied without URL/metadata leakage; and a fresh signed-download/hash/size happy path completed once and removed its temporary materialization.
 - That validation exposed a Protocol V1 defect: pre-execution media failure could not transition `CLAIMED` to `FAILED`, leaving a lease held. Additive local migration `202609080005_allow_preexecution_failure.sql` fixes the transition and the reference control-plane now has regression coverage. It is local-only and has not been deployed hosted.
+- Deterministic Local Agent runtime coverage now proves bounded retry exhaustion and interrupted-stream cleanup, exactly one stale signed-URL manifest refresh, zero-media bypass, and executor-error cleanup. These cases do not contact hosted Supabase, Facebook, Chromium, or operational media.
 
 ## Continuing from another computer
 

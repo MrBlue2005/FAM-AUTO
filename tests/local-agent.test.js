@@ -11,6 +11,7 @@ const { LocalTaskTransport } = require('../app/local-agent/LocalTaskTransport');
 const { ProfileLockManager } = require('../app/local-agent/ProfileLockManager');
 const { TASK_STATUS, createTaskSnapshots } = require('../app/local-agent/TaskContract');
 const { TaskMediaMaterializer } = require('../app/local-agent/TaskMediaMaterializer');
+const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -203,4 +204,62 @@ test('task media materializer rejects unsafe task and media identifiers before w
   const root = temporaryDirectory('media-path'); const materializer = new TaskMediaMaterializer({ root });
   await assert.rejects(materializer.materialize({ task_id: '../escape' }, { media: [] }), { code: 'MEDIA_MANIFEST_INVALID' });
   await assert.rejects(materializer.materialize({ task_id: 'task_safe' }, { media: [{ media_id: '../escape', ordinal: 0, sha256: 'a'.repeat(64), byte_size: 1, download_url: 'https://fixture/x' }] }), { code: 'MEDIA_MANIFEST_INVALID' });
+});
+
+function cloudMediaFixture(mediaId = 'media_runtime', bytes = Buffer.from('runtime-media')) {
+  return { media_id: mediaId, ordinal: 0, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), byte_size: bytes.length, mime_type: 'image/png', download_url: 'https://fixture/media' };
+}
+
+function cloudTaskFixture(taskId, profileId, media = []) {
+  return { task_id: taskId, profile_id: profileId, lease_id: `lease_${taskId}`, task_type: 'TEST', payload: { media: media.map(({ media_id, ordinal, sha256, byte_size, mime_type }) => ({ media_id, ordinal, sha256, byte_size, mime_type })) } };
+}
+
+function cloudRuntime({ task, materializer, getManifest, executeTask }) {
+  const calls = { manifest: 0, running: 0, completed: 0, failed: 0, unknown: 0, executor: 0 };
+  const transport = {
+    claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }),
+    getMediaManifest: async (...args) => { calls.manifest += 1; return getManifest(...args); },
+    reportRunning: async () => { calls.running += 1; }, reportCompletion: async () => { calls.completed += 1; },
+    reportFailure: async () => { calls.failed += 1; }, reportOutcomeUnknown: async () => { calls.unknown += 1; }, renewLease: async () => ({}),
+  };
+  const service = new CloudAgentService({ transport, mediaMaterializer: materializer, registry: { getSafeMetadata: () => ({ agent_id: 'agent_runtime' }) }, connectionManager: { heartbeat: async () => ({ ok: true }) }, executor: { runProfile: async (_profileId, handler) => handler() }, executeTask: async (...args) => { calls.executor += 1; return executeTask(...args); } });
+  return { service, calls };
+}
+
+test('CloudAgentService bounds exhausted media-download retries and fails before RUNNING', async () => {
+  const root = temporaryDirectory('media-exhaustion'); const item = cloudMediaFixture(); const task = cloudTaskFixture('task_download_exhausted', 'profile_download_exhausted', [item]); let fetches = 0;
+  const materializer = new TaskMediaMaterializer({ root, retries: 1, fetchImpl: async () => { fetches += 1; return new Response(null, { status: 503 }); } });
+  const { service, calls } = cloudRuntime({ task, materializer, getManifest: async () => ({ media: [item] }), executeTask: async () => ({}) });
+  await assert.rejects(service.runOnce(), { code: 'MEDIA_DOWNLOAD_FAILED' });
+  assert.deepEqual(calls, { manifest: 2, running: 0, completed: 0, failed: 1, unknown: 0, executor: 0 }); assert.equal(fetches, 4); assert.equal(fs.existsSync(path.join(root, task.task_id)), false);
+});
+
+test('interrupted media streams retry finitely and remove partial task output', async () => {
+  const root = temporaryDirectory('media-interrupted'); const item = cloudMediaFixture(); const task = cloudTaskFixture('task_download_interrupted', 'profile_download_interrupted', [item]); let fetches = 0;
+  const materializer = new TaskMediaMaterializer({ root, retries: 1, fetchImpl: async () => { fetches += 1; let sent = false; return new Response(new ReadableStream({ pull(controller) { if (!sent) { sent = true; controller.enqueue(Buffer.from('part')); } else controller.error(Object.assign(new Error('interrupted'), { code: 'MEDIA_DOWNLOAD_FAILED' })); } }), { status: 200 }); } });
+  const { service, calls } = cloudRuntime({ task, materializer, getManifest: async () => ({ media: [item] }), executeTask: async () => ({}) });
+  await assert.rejects(service.runOnce(), { code: 'MEDIA_DOWNLOAD_FAILED' });
+  assert.equal(fetches, 4); assert.deepEqual(calls, { manifest: 2, running: 0, completed: 0, failed: 1, unknown: 0, executor: 0 }); assert.equal(fs.existsSync(path.join(root, task.task_id)), false);
+});
+
+test('CloudAgentService refreshes one unusable signed URL and executes once after a verified retry', async () => {
+  const root = temporaryDirectory('media-refresh'); const bytes = Buffer.from('refreshed-media'); const item = cloudMediaFixture('media_refresh', bytes); const task = cloudTaskFixture('task_media_refresh', 'profile_media_refresh', [item]); let fetches = 0;
+  const materializer = new TaskMediaMaterializer({ root, retries: 0, fetchImpl: async (url) => { fetches += 1; return url.endsWith('/stale') ? new Response(null, { status: 403 }) : new Response(bytes, { status: 200 }); } });
+  const { service, calls } = cloudRuntime({ task, materializer, getManifest: async () => ({ media: [{ ...item, download_url: calls.manifest === 1 ? 'https://fixture/stale' : 'https://fixture/fresh' }] }), executeTask: async (executionTask) => { assert.equal(executionTask.payload.local_media_paths.length, 1); return { ok: true }; } });
+  const result = await service.runOnce();
+  assert.equal(result.result.ok, true); assert.deepEqual(calls, { manifest: 2, running: 1, completed: 1, failed: 0, unknown: 0, executor: 1 }); assert.equal(fetches, 2); assert.equal(fs.existsSync(path.join(root, task.task_id)), false);
+});
+
+test('CloudAgentService bypasses media acquisition for valid zero-media work', async () => {
+  const task = cloudTaskFixture('task_zero_media', 'profile_zero_media'); const { service, calls } = cloudRuntime({ task, materializer: null, getManifest: async () => { throw new Error('must not request manifest'); }, executeTask: async () => ({ ok: true }) });
+  const result = await service.runOnce();
+  assert.equal(result.result.ok, true); assert.deepEqual(calls, { manifest: 0, running: 1, completed: 1, failed: 0, unknown: 0, executor: 1 });
+});
+
+test('executor failure after verified materialization is ordinary FAILED and cleans local media', async () => {
+  const root = temporaryDirectory('media-executor-failure'); const bytes = Buffer.from('executor-failure-media'); const item = cloudMediaFixture('media_executor_failure', bytes); const task = cloudTaskFixture('task_executor_failure', 'profile_executor_failure', [item]);
+  const materializer = new TaskMediaMaterializer({ root, retries: 0, fetchImpl: async () => new Response(bytes, { status: 200 }) });
+  const { service, calls } = cloudRuntime({ task, materializer, getManifest: async () => ({ media: [item] }), executeTask: async () => { throw Object.assign(new Error('executor failed'), { code: 'EXECUTOR_FAILED' }); } });
+  await assert.rejects(service.runOnce(), { code: 'EXECUTOR_FAILED' });
+  assert.deepEqual(calls, { manifest: 1, running: 1, completed: 0, failed: 1, unknown: 0, executor: 1 }); assert.equal(fs.existsSync(path.join(root, task.task_id)), false);
 });
