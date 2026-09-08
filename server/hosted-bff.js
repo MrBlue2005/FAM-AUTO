@@ -52,6 +52,10 @@ function secureScryptMatch(password, encoded) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+function passwordFingerprint(password) {
+  return crypto.createHash('sha256').update(String(password || ''), 'utf8').digest('hex').slice(0, 16);
+}
+
 // Temporary deployment diagnostic: deliberately exposes only a short identity
 // fingerprint, never any credential material or derived password data.
 function hostedAuthDiagnostic(env) {
@@ -183,7 +187,12 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     if (origin && !config.allowedOrigins.includes(origin)) return res.status(403).json({ error: 'Origin is not allowed.' });
     if (!config.authEnabled) return res.json({ enabled: false, username: 'admin', role: 'admin' });
     const user = authenticate(String(req.body?.username || ''), req.body?.password);
-    if (!user) return res.status(401).json({ error: 'Invalid username or password.' });
+    if (!user) {
+      if (config.env.RX_BFF_AUTH_DIAGNOSTICS_ENABLED === 'true') {
+        res.setHeader('X-RX-Auth-Diagnostic-Password-Fingerprint', passwordFingerprint(req.body?.password));
+      }
+      return res.status(401).json({ error: 'Invalid username or password.' });
+    }
     const session = issueSession(user);
     res.setHeader('Set-Cookie', cookieValue(session.token, config.production, SESSION_TTL_SECONDS));
     return res.json({ username: user.username, role: user.role, expiresAt: session.payload.exp * 1000, csrfToken: session.payload.csrf });
@@ -209,4 +218,4 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   return app;
 }
 
-module.exports = { createHostedBffApp, createHostedBffConfig, hostedAuthDiagnostic, signPayload, verifyPayload, SESSION_COOKIE, SESSION_TTL_SECONDS };
+module.exports = { createHostedBffApp, createHostedBffConfig, hostedAuthDiagnostic, passwordFingerprint, signPayload, verifyPayload, SESSION_COOKIE, SESSION_TTL_SECONDS };
