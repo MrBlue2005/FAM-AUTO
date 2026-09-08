@@ -13,6 +13,7 @@ class ApplicationDataStore {
   async listScheduleFolders() { throw new Error('ApplicationDataStore.listScheduleFolders is not implemented'); }
   async saveScheduleFolder(_folder) { throw new Error('ApplicationDataStore.saveScheduleFolder is not implemented'); }
   async listSchedules() { throw new Error('ApplicationDataStore.listSchedules is not implemented'); }
+  async listMedia() { throw new Error('ApplicationDataStore.listMedia is not implemented'); }
   async saveSchedule(_schedule) { throw new Error('ApplicationDataStore.saveSchedule is not implemented'); }
   async findMediaByHash(_sha256) { throw new Error('ApplicationDataStore.findMediaByHash is not implemented'); }
   async saveMediaMetadata(_media) { throw new Error('ApplicationDataStore.saveMediaMetadata is not implemented'); }

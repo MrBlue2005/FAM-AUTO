@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { SupabaseApplicationDataStore } = require('../app/cloud/SupabaseApplicationDataStore');
 const { createCloudApplicationRouter } = require('./cloud-application-api');
+const { createCloudDashboardReadRouter } = require('./cloud-dashboard-read-api');
 
 const SESSION_COOKIE = 'rx_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -182,7 +183,10 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   const applicationStore = store || (env.RX_APP_SUPABASE_URL && env.RX_APP_SUPABASE_SERVICE_ROLE_KEY
     ? new SupabaseApplicationDataStore({ url: env.RX_APP_SUPABASE_URL, serviceRoleKey: env.RX_APP_SUPABASE_SERVICE_ROLE_KEY })
     : null);
-  if (applicationStore) app.use('/api/cloud', requireSession, requireCloudAccess, createCloudApplicationRouter(applicationStore));
+  if (applicationStore) {
+    app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore));
+    app.use('/api/cloud', requireSession, requireCloudAccess, createCloudApplicationRouter(applicationStore));
+  }
   return app;
 }
 

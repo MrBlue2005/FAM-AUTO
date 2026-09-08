@@ -63,6 +63,14 @@ Unlike the local Express server, this hosted seam has no in-memory session or CS
 
 The scheduler, Facebook/Chromium execution, and Property Copywriter remain local. Browser bundles and BFF JSON responses must never expose the service-role key, signing secret, password hash, operator token, agent credential, enrollment token, or database credentials.
 
+## Feature-gated cloud dashboard reads
+
+The dashboard defaults to `VITE_DASHBOARD_DATA_MODE=LOCAL`. Setting it to `CLOUD_READ_ONLY` makes the existing service abstraction read only the same-origin authenticated `/api/cloud-read/*` BFF routes for properties, jobs, targets/groups, campaign folders, schedule folders, schedules with ordered campaign links, minimal campaign preview text, and safe media-library metadata. Browser code never queries Supabase directly.
+
+The cloud read adapter maps application rows to legacy-shaped dashboard DTOs and intentionally omits raw database internals such as UUID relationship keys, revisions, JSON payloads, bucket/object keys, SHA-256 values, and all credentials. Media metadata has no local path and currently sets `previewAvailable: false`; upload, finalization, deletion, cleanup, and signed-preview UI integration are deferred to Task C.
+
+`CLOUD_READ_ONLY` rejects every dashboard application mutation before network fallback, with a clear no-local-write-fallback error. Authentication login/logout remain available so the hosted BFF session can be established and cleared. Local-only runtime configuration, queue/robot state, history/runs/reports, exports, scheduler execution, and Property Copywriter are explicitly unavailable through this mode rather than silently read from the local API. The scheduler itself remains local; the cloud schedule DTO is display data only and carries `timezone: cloud-read-only`.
+
 ## Cutover and rollback
 
 Keep local `DataManager` authoritative until an explicit later cutover. The `ApplicationDataStore` abstract interface is a compatibility seam only; existing API and dashboard calls remain unchanged. A future importer must be idempotent by `(kind, legacy_id)` / folder, target and schedule legacy IDs, preserve media hashes, report every conflict and never delete sources.

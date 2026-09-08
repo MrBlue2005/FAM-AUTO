@@ -116,7 +116,9 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
   }, []);
 
   async function loadJobs() {
-    const [data, config] = await Promise.all([api.getJobs(), api.getRuntimeConfig()]);
+    const [data, config] = api.isCloudReadOnly()
+      ? await Promise.all([api.getJobs(), Promise.resolve({ facebookProfiles: [] })])
+      : await Promise.all([api.getJobs(), api.getRuntimeConfig()]);
     setJobs(data);
     setFacebookProfiles(config.facebookProfiles || []);
   }
@@ -124,7 +126,10 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
   useEffect(() => {
     let ignore = false;
 
-    Promise.all([api.getJobs(), api.getRuntimeConfig()]).then(([data, config]) => {
+    const cloudReads = api.isCloudReadOnly()
+      ? Promise.all([api.getJobs(), Promise.resolve({ facebookProfiles: [] })])
+      : Promise.all([api.getJobs(), api.getRuntimeConfig()]);
+    cloudReads.then(([data, config]) => {
       if (ignore) return;
 
       setJobs(data);

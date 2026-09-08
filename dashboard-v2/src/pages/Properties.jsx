@@ -143,11 +143,9 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   }, []);
 
   async function loadData() {
-    const [propertiesData, logsData, config] = await Promise.all([
-      api.getProperties(),
-      api.getPropertyLogs(),
-      api.getRuntimeConfig(),
-    ]);
+    const [propertiesData, logsData, config] = api.isCloudReadOnly()
+      ? await Promise.all([api.getProperties(), Promise.resolve([]), Promise.resolve({ facebookProfiles: [] })])
+      : await Promise.all([api.getProperties(), api.getPropertyLogs(), api.getRuntimeConfig()]);
 
     setProperties(propertiesData);
     setPropertyLogs(logsData);
@@ -157,18 +155,16 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
   useEffect(() => {
     let ignore = false;
     const transferId = new URLSearchParams(window.location.search).get('descriptionTransfer');
-    const transferRequest = transferId
+    const transferRequest = !api.isCloudReadOnly() && transferId
       ? api.getPropertyDescriptionTransfer(transferId)
         .then((data) => ({ data }))
         .catch((error) => ({ error }))
       : Promise.resolve(null);
 
-    Promise.all([
-      api.getProperties(),
-      api.getPropertyLogs(),
-      api.getRuntimeConfig(),
-      transferRequest,
-    ]).then(([propertiesData, logsData, config, transferResult]) => {
+    const cloudReads = api.isCloudReadOnly()
+      ? Promise.all([api.getProperties(), Promise.resolve([]), Promise.resolve({ facebookProfiles: [] }), transferRequest])
+      : Promise.all([api.getProperties(), api.getPropertyLogs(), api.getRuntimeConfig(), transferRequest]);
+    cloudReads.then(([propertiesData, logsData, config, transferResult]) => {
       if (ignore) return;
       setProperties(propertiesData);
       setPropertyLogs(logsData);

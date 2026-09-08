@@ -1,6 +1,20 @@
+import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest } from './dashboardDataMode';
+
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
+export const dashboardDataMode = normalizeDashboardDataMode(import.meta.env.VITE_DASHBOARD_DATA_MODE);
+const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY;
+let hostedCsrfToken = '';
+
+function cloudRead(endpoint) {
+  return request(`/cloud-read${endpoint}`);
+}
+
+function cacheHostedCsrf(payload) {
+  if (typeof payload?.csrfToken === 'string') hostedCsrfToken = payload.csrfToken;
+  return payload;
+}
 
 function getMediaUrl(reference) {
   const value = typeof reference === 'string' ? reference : reference?.path;
@@ -17,6 +31,7 @@ function getMediaUrl(reference) {
 }
 
 async function downloadExport(type) {
+  if (cloudReadOnly) throw new Error('CLOUD_READ_ONLY does not provide local exports; no local read fallback is available.');
   const response = await fetch(`${API_URL}/export/${encodeURIComponent(type)}`, {
     credentials: 'include',
     headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}) },
@@ -28,6 +43,7 @@ async function downloadExport(type) {
 }
 
 async function downloadFile(endpoint, fallbackName) {
+  if (cloudReadOnly) throw new Error('CLOUD_READ_ONLY does not provide local report downloads; no local read fallback is available.');
   const response = await fetch(`${API_URL}${endpoint}`, {
     credentials: 'include',
     headers: { ...(API_KEY ? { 'x-api-key': API_KEY } : {}) },
@@ -51,13 +67,18 @@ async function downloadFile(endpoint, fallbackName) {
 
 async function request(endpoint, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
+  const mutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
+  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/auth/')) {
+    throw new Error('This dashboard feature is unavailable in CLOUD_READ_ONLY; no local read fallback is available.');
+  }
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
-      ...(['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? { 'x-rx-csrf': '1' } : {}),
+      ...(mutation ? { 'x-rx-csrf': cloudReadOnly ? hostedCsrfToken : '1' } : {}),
       ...(options.headers || {}),
     },
   });
@@ -73,12 +94,14 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+  dashboardDataMode,
+  isCloudReadOnly: () => cloudReadOnly,
   getMediaUrl,
   downloadExport,
-  getAuthStatus: () => request('/auth/status'),
-  login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
-  logout: () => request('/auth/logout', { method: 'POST', body: '{}' }),
-  getProperties: () => request('/properties'),
+  getAuthStatus: () => request('/auth/status').then(cacheHostedCsrf),
+  login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }).then(cacheHostedCsrf),
+  logout: () => request('/auth/logout', { method: 'POST', body: '{}' }).then((payload) => { hostedCsrfToken = ''; return payload; }),
+  getProperties: () => cloudReadOnly ? cloudRead('/properties') : request('/properties'),
   getPropertyDescriptionTransfer: (transferId) =>
     request(`/property-description-transfers/${encodeURIComponent(transferId)}`),
   saveProperty: (property) =>
@@ -96,11 +119,11 @@ export const api = {
       method: 'DELETE',
     }),
 
-  getCampaignFolders: () => request('/campaign-folders'),
+  getCampaignFolders: () => cloudReadOnly ? cloudRead('/campaign-folders') : request('/campaign-folders'),
   createCampaignFolder: (name) => request('/campaign-folders', { method: 'POST', body: JSON.stringify({ name }) }),
   deleteCampaignFolder: (folderId) => request(`/campaign-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
 
-  getJobs: () => request('/jobs'),
+  getJobs: () => cloudReadOnly ? cloudRead('/jobs') : request('/jobs'),
   saveJob: (job) =>
     request('/jobs', {
       method: 'POST',
@@ -111,7 +134,7 @@ export const api = {
       method: 'DELETE',
     }),
 
-  getGroups: () => request('/groups'),
+  getGroups: () => cloudReadOnly ? cloudRead('/groups') : request('/groups'),
   saveGroups: (groups) =>
     request('/groups', {
       method: 'POST',
@@ -174,7 +197,7 @@ export const api = {
       body: JSON.stringify({ taskIds }),
     }),
   getCampaignPreview: ({ category, campaignId, day }) =>
-    request(
+    (cloudReadOnly ? cloudRead : request)(
       `/campaign-preview?category=${encodeURIComponent(category)}&campaignId=${encodeURIComponent(
         campaignId || ''
       )}&day=${encodeURIComponent(day || '')}`
@@ -197,7 +220,7 @@ export const api = {
   retryRunErrors: (runId) => request(`/runs/${encodeURIComponent(runId)}/retry-errors`, { method: 'POST', body: '{}' }),
   archiveRun: (runId, archived = true) => request(`/runs/${encodeURIComponent(runId)}/archive`, { method: 'POST', body: JSON.stringify({ archived }) }),
 
-  getSchedules: () => request('/schedules'),
+  getSchedules: () => cloudReadOnly ? cloudRead('/schedules') : request('/schedules'),
   createScheduleFolder: (name) => request('/schedule-folders', { method: 'POST', body: JSON.stringify({ name }) }),
   deleteScheduleFolder: (folderId) => request(`/schedule-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
   createSchedule: (schedule) => request('/schedules', { method: 'POST', body: JSON.stringify(schedule) }),
@@ -211,7 +234,7 @@ export const api = {
       method: 'POST',
     }),
 
-  getMedia: () => request('/media'),
+  getMedia: () => cloudReadOnly ? cloudRead('/media') : request('/media'),
   deleteMedia: (path) => request('/media', { method: 'DELETE', body: JSON.stringify({ path }) }),
   cleanupUnusedMedia: () => request('/media/cleanup-unused', { method: 'POST', body: '{}' }),
 
