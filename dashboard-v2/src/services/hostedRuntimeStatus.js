@@ -8,3 +8,12 @@ export async function loadRuntimeStatus({ cloudReadOnly, getHealth, getAgentStat
   if (cloudReadOnly) return { cloudAvailable: true, agent: await getAgentStatus() };
   return { cloudAvailable: false, health: await getHealth() };
 }
+
+export async function loadDashboardSummary({ cloudReadOnly, getDashboardSummary }) {
+  if (cloudReadOnly) return { summary: null, error: '' };
+  try {
+    return { summary: await getDashboardSummary(), error: '' };
+  } catch {
+    return { summary: null, error: 'Dashboard-ul nu poate comunica momentan cu API-ul.' };
+  }
+}

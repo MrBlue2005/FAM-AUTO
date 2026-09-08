@@ -72,13 +72,17 @@ test('agent-status is online only for a fresh reported heartbeat and handles no 
   assert.deepEqual(mapAgentStatus(null, now), { configured: false, online: false, lastSeenAt: null, agentName: null, capabilities: { localExecution: false, facebookAutomation: false } });
 });
 
-test('hosted runtime status never calls local health and keeps local mode unchanged', async () => {
-  const { loadRuntimeStatus, localAgentStatusView } = await import('../dashboard-v2/src/services/hostedRuntimeStatus.js');
+test('hosted status omits the legacy API banner while local mode retains it', async () => {
+  const { loadDashboardSummary, loadRuntimeStatus, localAgentStatusView } = await import('../dashboard-v2/src/services/hostedRuntimeStatus.js');
   let healthCalls = 0; let agentCalls = 0;
-  const hosted = await loadRuntimeStatus({ cloudReadOnly: true, getHealth: async () => { healthCalls += 1; throw new Error('localhost must not be called'); }, getAgentStatus: async () => { agentCalls += 1; return { configured: true, online: false }; } });
-  assert.equal(healthCalls, 0); assert.equal(agentCalls, 1); assert.deepEqual(localAgentStatusView(hosted.agent), { value: 'offline', message: 'Local Agent offline' });
+  const dashboardCalls = [];
+  const hostedOnline = await loadRuntimeStatus({ cloudReadOnly: true, getHealth: async () => { healthCalls += 1; throw new Error('localhost must not be called'); }, getAgentStatus: async () => { agentCalls += 1; return { configured: true, online: true }; } });
+  const hostedOffline = await loadRuntimeStatus({ cloudReadOnly: true, getHealth: async () => { healthCalls += 1; throw new Error('localhost must not be called'); }, getAgentStatus: async () => { agentCalls += 1; return { configured: true, online: false }; } });
+  const hostedDashboard = await loadDashboardSummary({ cloudReadOnly: true, getDashboardSummary: async () => { dashboardCalls.push('local-summary'); throw new Error('localhost must not be called'); } });
+  assert.equal(healthCalls, 0); assert.equal(agentCalls, 2); assert.deepEqual(dashboardCalls, []); assert.equal(hostedDashboard.error, ''); assert.deepEqual(localAgentStatusView(hostedOnline.agent), { value: 'online', message: 'Local Agent online' }); assert.deepEqual(localAgentStatusView(hostedOffline.agent), { value: 'offline', message: 'Local Agent offline' });
   const local = await loadRuntimeStatus({ cloudReadOnly: false, getHealth: async () => { healthCalls += 1; return { api: 'online' }; }, getAgentStatus: async () => { agentCalls += 1; return {}; } });
-  assert.equal(healthCalls, 1); assert.equal(agentCalls, 1); assert.deepEqual(local.health, { api: 'online' });
+  const localDashboard = await loadDashboardSummary({ cloudReadOnly: false, getDashboardSummary: async () => { throw new Error('local API unavailable'); } });
+  assert.equal(healthCalls, 1); assert.equal(agentCalls, 2); assert.deepEqual(local.health, { api: 'online' }); assert.equal(localDashboard.error, 'Dashboard-ul nu poate comunica momentan cu API-ul.');
   assert.deepEqual(localAgentStatusView({ configured: false, online: false }), { value: 'requires agent', message: 'Requires Local Agent' });
 });
 

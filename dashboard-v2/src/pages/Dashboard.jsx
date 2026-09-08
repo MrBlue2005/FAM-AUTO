@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
+import { loadDashboardSummary } from '../services/hostedRuntimeStatus';
 
 const initialData = {
   activeProperties: 0,
@@ -67,34 +68,30 @@ export default function Dashboard({ onChangePage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const cloudReadOnly = api.isCloudReadOnly();
   const refreshDelay = data.robot?.robotStatus === 'running' ? 5000 : 20000;
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setRefreshing(true);
     try {
-      const summary = await api.getDashboardSummary();
-      setData({ ...initialData, ...summary });
-      setError('');
-    } catch {
-      setError('Dashboard-ul nu poate comunica momentan cu API-ul.');
+      const result = await loadDashboardSummary({ cloudReadOnly, getDashboardSummary: api.getDashboardSummary });
+      if (result.summary) setData({ ...initialData, ...result.summary });
+      setError(result.error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [cloudReadOnly]);
 
   useEffect(() => {
     let ignore = false;
 
-    api.getDashboardSummary()
-      .then((summary) => {
+    loadDashboardSummary({ cloudReadOnly, getDashboardSummary: api.getDashboardSummary })
+      .then((result) => {
         if (!ignore) {
-          setData({ ...initialData, ...summary });
-          setError('');
+          if (result.summary) setData({ ...initialData, ...result.summary });
+          setError(result.error);
         }
-      })
-      .catch(() => {
-        if (!ignore) setError('Dashboard-ul nu poate comunica momentan cu API-ul.');
       })
       .finally(() => {
         if (!ignore) {
@@ -112,7 +109,7 @@ export default function Dashboard({ onChangePage }) {
       ignore = true;
       clearInterval(interval);
     };
-  }, [loadData, refreshDelay]);
+  }, [cloudReadOnly, loadData, refreshDelay]);
 
   const robotStatus = data.robot?.robotStatus || 'idle';
   const robotProgress = Number(data.robot?.totalCampaignProgress || 0);
