@@ -57,6 +57,17 @@ Deno.serve(async (request) => {
     const fingerprint = await hash({ route, body });
     if (route === '/v1/agent/heartbeat' && request.method === 'POST') return json(await rpc('rx_cp_idempotent_heartbeat', { p_agent_id: authenticatedId, p_request_id: requestId, p_request_hash: fingerprint, p_display_name: body.display_name, p_agent_status: body.agent_status, p_agent_version: body.agent_version, p_profiles: body.profiles || [], p_active_task_ids: body.active_task_ids || [] }));
     if (route === '/v1/agent/tasks/claim' && request.method === 'POST') return json(await rpc('rx_cp_idempotent_claim', { p_agent_id: authenticatedId, p_request_id: requestId, p_request_hash: fingerprint, p_lease_seconds: Number(body.lease_seconds || 120) }));
+    const mediaMatch = route.match(/^\/v1\/agent\/tasks\/([^/]+)\/media-manifest$/);
+    if (mediaMatch && request.method === 'POST') {
+      const leaseId = request.headers.get('x-rx-lease-id'); const { data: task, error: taskError } = await supabase.from('tasks').select('payload,status').eq('task_id', mediaMatch[1]).eq('agent_id', authenticatedId).eq('lease_id', leaseId).eq('status', 'CLAIMED').single();
+      if (taskError) return error('STALE_LEASE', 'Task lease is no longer valid.', 409);
+      const snapshot = Array.isArray(task.payload?.media) ? task.payload.media : []; const requested = Array.isArray(body.media) ? body.media : [];
+      if (requested.length !== snapshot.length || requested.some((id: unknown) => !snapshot.some((item: any) => item.media_id === id))) return error('MEDIA_NOT_IN_TASK', 'Requested media is not in the immutable task snapshot.', 403);
+      const { data: media, error: mediaError } = await supabase.from('app_media_objects').select('media_id,bucket,object_key,sha256,byte_size,mime_type,state').in('media_id', requested).eq('state','READY');
+      if (mediaError || media.length !== snapshot.length) return error('MEDIA_NOT_READY', 'Task media is unavailable.', 409);
+      const result = await Promise.all(snapshot.sort((a: any,b: any) => a.ordinal-b.ordinal).map(async (item: any) => { const row = media.find((entry: any) => entry.media_id === item.media_id); if (!row || row.sha256 !== item.sha256 || Number(row.byte_size) !== Number(item.byte_size) || row.mime_type !== item.mime_type) throw new Error('MEDIA_SNAPSHOT_MISMATCH'); const { data, error: signError } = await supabase.storage.from(row.bucket).createSignedUrl(row.object_key, 120); if (signError) throw signError; return { media_id: row.media_id, sha256: row.sha256, byte_size: row.byte_size, mime_type: row.mime_type, ordinal: item.ordinal, download_url: data.signedUrl }; }));
+      return json({ protocol_version: VERSION, media: result });
+    }
     const match = route.match(/^\/v1\/agent\/tasks\/([^/]+)\/(renew|running|completed|failed|outcome-unknown|cancelled|cancellation)$/);
     if (match) {
       const [, taskId, action] = match; const leaseId = request.headers.get('x-rx-lease-id');

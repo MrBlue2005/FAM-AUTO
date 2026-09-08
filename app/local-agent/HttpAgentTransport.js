@@ -32,6 +32,7 @@ class HttpAgentTransport extends AgentTransport {
   reportOutcomeUnknown(task, error, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/outcome-unknown`, { error: { code: error?.code || 'EXECUTION_OUTCOME_UNKNOWN', message: error?.message || String(error) } }, { 'x-rx-lease-id': task.lease_id }, requestId); }
   reportCancelled(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/cancelled`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
   getCancellationState(task) { return this.request('GET', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/cancellation`, null, { 'x-rx-lease-id': task.lease_id }); }
+  getMediaManifest(task, media) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/media-manifest`, { media }, { 'x-rx-lease-id': task.lease_id }); }
   rotateCredential(newSecret, overlapSeconds = 900, requestId) { return this.request('POST', '/v1/agent/credentials/rotate', { new_secret: newSecret, overlap_seconds: overlapSeconds }, {}, requestId); }
 }
 
