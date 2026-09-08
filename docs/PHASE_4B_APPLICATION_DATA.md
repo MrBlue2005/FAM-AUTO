@@ -75,6 +75,12 @@ The cloud read adapter maps application rows to legacy-shaped dashboard DTOs and
 
 The Media Library, post preview, and read-only media picker use this resolver. CLOUD_READ_ONLY visibly disables upload, media cleanup, and media deletion; centralized capability helpers also make the remaining unsupported runtime/queue/robot/scheduler/history/report/copywriter surfaces reject clearly rather than falling back locally.
 
+## Narrow cloud media upload capability
+
+Cloud media writes require both `VITE_CLOUD_MEDIA_UPLOAD_ENABLED=true` in a `CLOUD_READ_ONLY` dashboard build and `RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED=true` on the BFF. This is deliberately separate from general application mutations; all other cloud-mode writes remain blocked. The browser first sends metadata plus SHA-256 to the authenticated, CSRF- and Origin-protected `/api/cloud-media/initiate` route, receives a short-lived scoped upload authorization, and PUTs bytes directly to private Storage. The BFF never proxies media bytes.
+
+The browser then calls `/api/cloud-media/:mediaId/finalize`; server-side streaming verification must confirm the private object, immutable size, and SHA-256 before STAGED becomes READY. Only READY media may be appended through the narrow `/api/cloud-media/attach` route, which resolves the legacy campaign/day server-side and uses the existing ordered post-media RPC. A failed upload or failed verification leaves STAGED media unattached and unusable. Upload/finalize responses expose only scoped authorization or safe state/size/MIME fields, never service credentials or raw Storage identity fields. Local mode retains Multer and `app/uploads` unchanged.
+
 ## Cutover and rollback
 
 Keep local `DataManager` authoritative until an explicit later cutover. The `ApplicationDataStore` abstract interface is a compatibility seam only; existing API and dashboard calls remain unchanged. A future importer must be idempotent by `(kind, legacy_id)` / folder, target and schedule legacy IDs, preserve media hashes, report every conflict and never delete sources.

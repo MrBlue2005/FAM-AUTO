@@ -519,12 +519,13 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
               </label>
 
               <MediaDropzone
+                campaignKind="job"
                 entityId={form.id || generateIdFromName(form.title) || 'TEMP_JOB'}
                 day={post.day}
                 media={post.media || []}
                 onChange={(paths) => {
                   updatePost(index, 'media', paths);
-                  updatePost(index, 'imagePath', paths[0] || '');
+                  updatePost(index, 'imagePath', typeof paths[0] === 'string' ? paths[0] : '');
                 }}
               />
 

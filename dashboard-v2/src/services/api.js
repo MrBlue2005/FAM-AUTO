@@ -1,4 +1,4 @@
-import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities } from './dashboardDataMode';
+import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities, cloudMediaUploadEnabled } from './dashboardDataMode';
 import { createEphemeralPreviewCache } from './cloudMediaPreview';
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
@@ -6,6 +6,7 @@ const API_KEY = import.meta.env.VITE_API_KEY || '';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 export const dashboardDataMode = normalizeDashboardDataMode(import.meta.env.VITE_DASHBOARD_DATA_MODE);
 const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY;
+const cloudMediaUpload = cloudMediaUploadEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_MEDIA_UPLOAD_ENABLED);
 let hostedCsrfToken = '';
 const cloudMediaPreviewCache = createEphemeralPreviewCache({ requestPreview: (mediaId) => cloudRead(`/media/${encodeURIComponent(mediaId)}/preview`) });
 
@@ -70,8 +71,8 @@ async function downloadFile(endpoint, fallbackName) {
 async function request(endpoint, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const mutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-  assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
-  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/auth/')) {
+  if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/'))) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
+  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/auth/')) {
     throw new Error('This dashboard feature is unavailable in CLOUD_READ_ONLY; no local read fallback is available.');
   }
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -98,6 +99,7 @@ async function request(endpoint, options = {}) {
 export const api = {
   dashboardDataMode,
   isCloudReadOnly: () => cloudReadOnly,
+  isCloudMediaUploadEnabled: () => cloudMediaUpload,
   capabilities: () => dashboardCapabilities(dashboardDataMode),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
@@ -247,6 +249,17 @@ export const api = {
     }),
 
   getMedia: () => cloudReadOnly ? cloudRead('/media') : request('/media'),
+  uploadCloudMedia: async ({ file, campaignId, kind, day, onProgress, signal }) => {
+    if (!cloudMediaUpload) throw new Error('Cloud media upload is not enabled; no local upload fallback is available.');
+    const bytes = new Uint8Array(await file.arrayBuffer()); const hash = await crypto.subtle.digest('SHA-256', bytes); const sha256 = Array.from(new Uint8Array(hash)).map((value) => value.toString(16).padStart(2, '0')).join('');
+    const initiated = await request('/cloud-media/initiate', { method: 'POST', body: JSON.stringify({ originalName: file.name, mimeType: file.type, byteSize: file.size, sha256 }) });
+    const response = await fetch(initiated.upload.url, { method: 'PUT', headers: { authorization: `Bearer ${initiated.upload.token}`, 'content-type': file.type }, body: file, signal });
+    if (!response.ok) throw new Error('Cloud Storage upload failed; media remains staged.'); onProgress?.(100);
+    const finalized = await request(`/cloud-media/${encodeURIComponent(initiated.media.mediaId)}/finalize`, { method: 'POST', body: '{}' });
+    if (finalized.media.state !== 'READY') throw new Error('Cloud media was not verified as READY.');
+    await request('/cloud-media/attach', { method: 'POST', body: JSON.stringify({ campaignId, kind, day, mediaId: finalized.media.mediaId }) });
+    return { mediaId: finalized.media.mediaId, type: file.type.startsWith('video/') ? 'video' : 'image', name: file.name };
+  },
   deleteMedia: (path) => request('/media', { method: 'DELETE', body: JSON.stringify({ path }) }),
   cleanupUnusedMedia: () => request('/media/cleanup-unused', { method: 'POST', body: '{}' }),
 

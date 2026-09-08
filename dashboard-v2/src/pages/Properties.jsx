@@ -574,12 +574,13 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               </label>
 
               <MediaDropzone
+                campaignKind="property"
                 entityId={editingId || form.id || generateIdFromName(form.name) || 'TEMP'}
                 day={post.day}
                 media={post.media || []}
                 onChange={(paths) => {
                   updatePost(index, 'media', paths);
-                  updatePost(index, 'imagePath', paths[0] || '');
+                  updatePost(index, 'imagePath', typeof paths[0] === 'string' ? paths[0] : '');
                 }}
               />
 

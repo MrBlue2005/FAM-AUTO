@@ -24,3 +24,5 @@ export function dashboardCapabilities(mode) {
 export function cloudReadOnlyUnavailableMessage(feature = 'Aceasta actiune') {
   return `${feature} nu este disponibila in CLOUD_READ_ONLY. Nu exista fallback catre datele locale.`;
 }
+
+export function cloudMediaUploadEnabled(mode, value) { return mode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY && value === 'true'; }

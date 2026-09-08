@@ -12,7 +12,7 @@ function isAccepted(file) {
   return file.type.startsWith('image/') || ACCEPTED_TYPES.includes(file.type);
 }
 
-export default function MediaDropzone({ entityId, day, media = [], onChange }) {
+export default function MediaDropzone({ entityId, campaignKind = 'property', day, media = [], onChange }) {
   const inputRef = useRef(null);
   const uploadControllerRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
@@ -24,9 +24,10 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
   const [librarySearch, setLibrarySearch] = useState('');
   const [progress, setProgress] = useState(0);
   const cloudReadOnly = api.isCloudReadOnly();
+  const cloudMediaUpload = api.isCloudMediaUploadEnabled();
 
   async function upload(filesLike) {
-    if (cloudReadOnly) { setError('Incarcarea media nu este disponibila in CLOUD_READ_ONLY.'); return; }
+    if (cloudReadOnly && !cloudMediaUpload) { setError('Incarcarea media nu este disponibila in CLOUD_READ_ONLY.'); return; }
     const files = Array.from(filesLike || []);
     if (!files.length) return;
 
@@ -46,10 +47,10 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
     uploadControllerRef.current = new AbortController();
     setError('');
     try {
-      const result = await api.uploadMedia({ propertyId: entityId, day, files, onProgress: setProgress, signal: uploadControllerRef.current.signal });
-      const uploaded = result.files.map((file) => file.path);
+      const uploaded = cloudMediaUpload
+        ? await Promise.all(files.map((file) => api.uploadCloudMedia({ file, campaignId: entityId, kind: campaignKind, day, onProgress: setProgress, signal: uploadControllerRef.current.signal })))
+        : (await api.uploadMedia({ propertyId: entityId, day, files, onProgress: setProgress, signal: uploadControllerRef.current.signal })).files.map((file) => file.path);
       onChange([...new Set([...media, ...uploaded])]);
-      if (result.files.some((file) => file.duplicate)) setError('Un fisier identic exista deja. A fost reutilizata copia existenta.');
     } catch (uploadError) {
       setError(uploadError.name === 'AbortError' ? 'Upload anulat.' : uploadError.message || 'Media nu a putut fi incarcata.');
     } finally {
@@ -104,7 +105,7 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
         type="file"
         multiple
         accept="image/*,video/mp4,video/quicktime"
-        disabled={cloudReadOnly}
+        disabled={cloudReadOnly && !cloudMediaUpload}
         onChange={(event) => upload(event.target.files)}
       />
 
@@ -116,7 +117,7 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
         onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
         onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
         onDrop={handleDrop}
-        disabled={uploading || cloudReadOnly}
+        disabled={uploading || (cloudReadOnly && !cloudMediaUpload)}
       >
         {uploading ? <LoaderCircle className="spin" size={25} /> : <UploadCloud size={25} />}
         <strong>{uploading ? 'Se incarca...' : 'Trage media aici'}</strong>
