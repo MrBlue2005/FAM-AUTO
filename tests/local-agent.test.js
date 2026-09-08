@@ -191,3 +191,16 @@ test('task media materializer verifies ordered media and removes its isolated ta
   const output = await materializer.materialize({ task_id: 'task_media_fixture' }, { media: [{ media_id: 'media_two', ordinal: 1, sha256, byte_size: bytes.length, download_url: 'https://fixture/2' }, { media_id: 'media_one', ordinal: 0, sha256, byte_size: bytes.length, download_url: 'https://fixture/1' }] });
   assert.match(output.localMediaPaths[0], /0000-media_one$/); await output.cleanup(); assert.equal(fs.existsSync(path.join(root, 'task_media_fixture')), false);
 });
+
+test('task media materializer rejects a hash mismatch without leaving a partial file or touching sibling task data', async () => {
+  const root = temporaryDirectory('media-negative'); const sibling = path.join(root, 'task_sibling'); fs.mkdirSync(sibling); fs.writeFileSync(path.join(sibling, 'keep'), 'safe');
+  const materializer = new TaskMediaMaterializer({ root, retries: 0, fetchImpl: async () => new Response(Buffer.from('wrong'), { status: 200 }) });
+  await assert.rejects(materializer.materialize({ task_id: 'task_bad_hash' }, { media: [{ media_id: 'media_bad', ordinal: 0, sha256: 'a'.repeat(64), byte_size: 5, download_url: 'https://fixture/bad' }] }), { code: 'MEDIA_HASH_MISMATCH' });
+  assert.equal(fs.existsSync(path.join(root, 'task_bad_hash')), false); assert.equal(fs.readFileSync(path.join(sibling, 'keep'), 'utf8'), 'safe');
+});
+
+test('task media materializer rejects unsafe task and media identifiers before writing', async () => {
+  const root = temporaryDirectory('media-path'); const materializer = new TaskMediaMaterializer({ root });
+  await assert.rejects(materializer.materialize({ task_id: '../escape' }, { media: [] }), { code: 'MEDIA_MANIFEST_INVALID' });
+  await assert.rejects(materializer.materialize({ task_id: 'task_safe' }, { media: [{ media_id: '../escape', ordinal: 0, sha256: 'a'.repeat(64), byte_size: 1, download_url: 'https://fixture/x' }] }), { code: 'MEDIA_MANIFEST_INVALID' });
+});
