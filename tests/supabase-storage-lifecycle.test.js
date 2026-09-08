@@ -1,0 +1,12 @@
+const test = require('node:test'); const assert = require('node:assert/strict'); const crypto = require('crypto');
+const { SupabaseApplicationDataStore } = require('../app/cloud/SupabaseApplicationDataStore');
+const enabled = process.env.RX_RUN_LOCAL_SUPABASE_STORAGE_TESTS === '1';
+test('local private Storage lifecycle independently verifies bytes and SHA-256 before READY', { skip: !enabled, timeout: 30000 }, async () => {
+  const store = new SupabaseApplicationDataStore(); const suffix = crypto.randomUUID().slice(0, 8); const bytes = Buffer.concat([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9J3ZcAAAAASUVORK5CYII=', 'base64'), Buffer.from(suffix)]); const sha256 = crypto.createHash('sha256').update(bytes).digest('hex'); const created = [];
+  const upload = async (item, body) => { const response = await fetch(item.upload.url, { method: 'PUT', headers: { authorization: `Bearer ${item.upload.token}`, 'content-type': 'image/png' }, body }); assert.equal(response.status, 200); };
+  try {
+    const good = await store.initiateMedia({ originalName: `storage-${suffix}.png`, mimeType: 'image/png', byteSize: bytes.length, sha256 }); created.push(good.media); assert.equal(good.media.state, 'STAGED'); assert.equal(JSON.stringify(good).includes(store.key), false); await upload(good, bytes); const ready = await store.finalizeMedia({ mediaId: good.media.media_id }); assert.equal(ready.media.state, 'READY'); assert.equal(ready.verification.sha256, sha256);
+    const bad = await store.initiateMedia({ originalName: `storage-bad-${suffix}.png`, mimeType: 'image/png', byteSize: bytes.length, sha256: 'a'.repeat(64) }); created.push(bad.media); await upload(bad, bytes); await assert.rejects(store.finalizeMedia({ mediaId: bad.media.media_id }), { code: 'APP_MEDIA_HASH_MISMATCH' }); assert.equal((await store.getMedia(bad.media.media_id)).state, 'STAGED');
+    const abandoned = await store.initiateMedia({ originalName: `storage-abandoned-${suffix}.png`, mimeType: 'image/png', byteSize: bytes.length, sha256: 'b'.repeat(64) }); created.push(abandoned.media); await assert.rejects(store.createPreview(abandoned.media.media_id), { status: 404 });
+  } finally { for (const media of created) { await store.request(`/storage/v1/object/${media.bucket}`, { method: 'DELETE', body: JSON.stringify({ prefixes: [media.object_key] }) }).catch(() => null); await store.request(`/rest/v1/app_media_objects?media_id=eq.${media.media_id}`, { method: 'DELETE' }).catch(() => null); } }
+});
