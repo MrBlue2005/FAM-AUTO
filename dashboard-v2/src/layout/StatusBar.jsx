@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
+import { loadRuntimeStatus, localAgentStatusView } from '../services/hostedRuntimeStatus';
 
 function statusTone(value) {
   if (['online', 'running', 'active', 'ready'].includes(value)) return 'online';
@@ -19,7 +20,9 @@ function StatusItem({ label, value }) {
 
 export default function StatusBar() {
   const [health, setHealth] = useState(null);
+  const [agent, setAgent] = useState(null);
   const [offline, setOffline] = useState(false);
+  const cloudReadOnly = api.isCloudReadOnly();
   const refreshDelay = health?.robotStatus === 'running' ? 5000 : 20000;
 
   useEffect(() => {
@@ -27,9 +30,10 @@ export default function StatusBar() {
 
     async function load() {
       try {
-        const data = await api.getHealth();
+        const data = await loadRuntimeStatus({ cloudReadOnly, getHealth: api.getHealth, getAgentStatus: api.getAgentStatus });
         if (!ignore) {
-          setHealth(data);
+          setHealth(data.health || null);
+          setAgent(data.agent || null);
           setOffline(false);
         }
       } catch {
@@ -43,7 +47,19 @@ export default function StatusBar() {
       ignore = true;
       clearInterval(interval);
     };
-  }, [refreshDelay]);
+  }, [cloudReadOnly, refreshDelay]);
+
+  const agentView = localAgentStatusView(agent);
+
+  if (cloudReadOnly) {
+    return (
+      <footer className={`status-bar ${offline ? 'offline' : ''}`} aria-live="polite">
+        <StatusItem label="Cloud BFF" value={offline ? 'offline' : 'online'} />
+        <StatusItem label="Local Agent" value={offline ? 'checking' : agentView.value} />
+        <span className="status-bar-updated">{offline ? 'Cloud status unavailable' : agentView.message}</span>
+      </footer>
+    );
+  }
 
   return (
     <footer className={`status-bar ${offline ? 'offline' : ''}`} aria-live="polite">

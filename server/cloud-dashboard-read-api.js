@@ -2,6 +2,8 @@
 
 const express = require('express');
 
+const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
+
 const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const string = (value) => typeof value === 'string' ? value : undefined;
 const boolean = (value) => typeof value === 'boolean' ? value : undefined;
@@ -67,6 +69,20 @@ function mapMedia(row, campaignByPostId) {
   };
 }
 
+function mapAgentStatus(row, nowMs = Date.now()) {
+  if (!row) return { configured: false, online: false, lastSeenAt: null, agentName: null, capabilities: { localExecution: false, facebookAutomation: false } };
+  const lastSeenMs = Date.parse(row.last_seen_at || '');
+  const fresh = Number.isFinite(lastSeenMs) && nowMs - lastSeenMs <= AGENT_HEARTBEAT_FRESHNESS_MS;
+  const reportedOnline = ['ONLINE', 'BUSY', 'DEGRADED'].includes(String(row.reported_status || '').toUpperCase());
+  return {
+    configured: true,
+    online: fresh && reportedOnline,
+    lastSeenAt: Number.isFinite(lastSeenMs) ? new Date(lastSeenMs).toISOString() : null,
+    agentName: String(row.display_name || 'RX Local Agent'),
+    capabilities: { localExecution: true, facebookAutomation: false },
+  };
+}
+
 function createCloudDashboardReadRouter(store) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
@@ -89,6 +105,7 @@ function createCloudDashboardReadRouter(store) {
     const campaignByPostId = new Map([...properties, ...jobs].flatMap((campaign) => (campaign.app_campaign_posts || []).map((post) => [post.post_id, campaign.legacy_id])));
     return media.map((row) => mapMedia(row, campaignByPostId));
   })));
+  router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
   router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
   router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));
@@ -99,4 +116,4 @@ function createCloudDashboardReadRouter(store) {
   return router;
 }
 
-module.exports = { createCloudDashboardReadRouter, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };
+module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, createCloudDashboardReadRouter, mapAgentStatus, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };

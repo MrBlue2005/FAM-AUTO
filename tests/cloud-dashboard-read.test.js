@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
 const { createHostedBffApp } = require('../server/hosted-bff');
-const { mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia } = require('../server/cloud-dashboard-read-api');
+const { AGENT_HEARTBEAT_FRESHNESS_MS, mapAgentStatus, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia } = require('../server/cloud-dashboard-read-api');
 
 const origin = 'http://127.0.0.1:5173';
 const password = 'correct horse battery staple';
@@ -23,6 +23,7 @@ function fixtureStore() {
     listCampaigns: async (kind) => kind === 'property' ? [property] : [job], listTargets: async () => [{ target_id: 'target-1', legacy_id: 'GROUP_1', display_name: 'Synthetic group', target_url: 'https://example.test/group', active: true, category: 'Romania', data: { category: 'real_estate', favorite: true, secret: 'nope' }, revision: 8 }],
     listCampaignFolders: async () => campaignFolders, listScheduleFolders: async () => scheduleFolders, listSchedules: async () => schedules,
     listMedia: async () => [{ media_id: 'media-1', original_name: 'home.png', mime_type: 'image/png', byte_size: 12, state: 'READY', created_at: '2026-09-08T00:00:00Z', sha256: 'secret-hash', object_key: 'private/key', app_post_media: [{ post_id: 'post-property' }] }],
+    getAgentStatus: async () => ({ agent_id: 'agent-private', display_name: 'Synthetic Local Agent', reported_status: 'ONLINE', last_seen_at: new Date().toISOString(), credential: 'must-not-leak', lease_id: 'must-not-leak' }),
   };
 }
 
@@ -53,11 +54,32 @@ test('authenticated cloud dashboard reads expose synthetic legacy DTOs only and 
   await withBff(async (request) => {
     const anonymous = await request('/api/cloud-read/properties'); assert.equal(anonymous.response.status, 401);
     const login = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password } }); assert.equal(login.response.status, 200);
-    const [properties, jobs, groups, folders, scheduleFolders, schedules, media] = await Promise.all(['/properties', '/jobs', '/groups', '/campaign-folders', '/schedule-folders', '/schedules', '/media'].map((path) => request(`/api/cloud-read${path}`, { cookie: login.cookie })));
+    const anonymousAgent = await request('/api/cloud-read/agent-status'); assert.equal(anonymousAgent.response.status, 401);
+    const [properties, jobs, groups, folders, scheduleFolders, schedules, media, agent] = await Promise.all(['/properties', '/jobs', '/groups', '/campaign-folders', '/schedule-folders', '/schedules', '/media', '/agent-status'].map((path) => request(`/api/cloud-read${path}`, { cookie: login.cookie })));
     assert.equal(properties.body[0].id, 'PROPERTY_1'); assert.equal(properties.body[0].posts[0].text, 'Property post'); assert.equal(jobs.body[0].id, 'JOB_1'); assert.equal(groups.body[0].id, 'GROUP_1'); assert.equal(folders.body[0].id, 'FOLDER_1'); assert.equal(scheduleFolders.body[0].id, 'SCHEDULE_FOLDER_1'); assert.deepEqual(schedules.body.schedules[0].campaignIds, ['PROPERTY_1']); assert.equal(media.body[0].path, '');
     assert.ok(!JSON.stringify([properties.body, jobs.body, groups.body, folders.body, scheduleFolders.body, schedules.body, media.body]).match(/secret|revision|object_key|sha256|bucket/));
+    assert.deepEqual(agent.body, { configured: true, online: true, lastSeenAt: agent.body.lastSeenAt, agentName: 'Synthetic Local Agent', capabilities: { localExecution: true, facebookAutomation: false } });
+    assert.ok(!JSON.stringify(agent.body).match(/agent_id|credential|lease/));
     const write = await request('/api/cloud-read/properties', { method: 'POST', body: { unsafe: true }, cookie: login.cookie, csrf: login.body.csrfToken }); assert.equal(write.response.status, 404);
   });
+});
+
+test('agent-status is online only for a fresh reported heartbeat and handles no registration safely', () => {
+  const now = Date.parse('2026-09-09T12:00:00.000Z');
+  const fresh = mapAgentStatus({ display_name: 'Agent', reported_status: 'ONLINE', last_seen_at: new Date(now - AGENT_HEARTBEAT_FRESHNESS_MS + 1).toISOString() }, now);
+  const stale = mapAgentStatus({ display_name: 'Agent', reported_status: 'ONLINE', last_seen_at: new Date(now - AGENT_HEARTBEAT_FRESHNESS_MS - 1).toISOString() }, now);
+  assert.equal(fresh.online, true); assert.equal(stale.online, false);
+  assert.deepEqual(mapAgentStatus(null, now), { configured: false, online: false, lastSeenAt: null, agentName: null, capabilities: { localExecution: false, facebookAutomation: false } });
+});
+
+test('hosted runtime status never calls local health and keeps local mode unchanged', async () => {
+  const { loadRuntimeStatus, localAgentStatusView } = await import('../dashboard-v2/src/services/hostedRuntimeStatus.js');
+  let healthCalls = 0; let agentCalls = 0;
+  const hosted = await loadRuntimeStatus({ cloudReadOnly: true, getHealth: async () => { healthCalls += 1; throw new Error('localhost must not be called'); }, getAgentStatus: async () => { agentCalls += 1; return { configured: true, online: false }; } });
+  assert.equal(healthCalls, 0); assert.equal(agentCalls, 1); assert.deepEqual(localAgentStatusView(hosted.agent), { value: 'offline', message: 'Local Agent offline' });
+  const local = await loadRuntimeStatus({ cloudReadOnly: false, getHealth: async () => { healthCalls += 1; return { api: 'online' }; }, getAgentStatus: async () => { agentCalls += 1; return {}; } });
+  assert.equal(healthCalls, 1); assert.equal(agentCalls, 1); assert.deepEqual(local.health, { api: 'online' });
+  assert.deepEqual(localAgentStatusView({ configured: false, online: false }), { value: 'requires agent', message: 'Requires Local Agent' });
 });
 
 test('dashboard mode gate selects LOCAL by default and rejects cloud-read-only writes without a local fallback', async () => {

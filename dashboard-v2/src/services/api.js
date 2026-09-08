@@ -133,6 +133,7 @@ export const api = {
     if (!cloudReadOnly) return Promise.resolve(getMediaUrl(media));
     return cloudMediaPreviewCache.resolve(typeof media === 'string' ? media : media?.mediaId || media?.id);
   },
+  getAgentStatus: () => cloudRead('/agent-status'),
   refreshMediaPreviewUrl: (media) => {
     const mediaId = typeof media === 'string' ? media : media?.mediaId || media?.id;
     cloudMediaPreviewCache.invalidate(mediaId);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import ProfileStartModal from '../components/ProfileStartModal';
 import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
+import { localAgentStatusView } from '../services/hostedRuntimeStatus';
 
 function formatEta(seconds) {
   if (!seconds && seconds !== 0) return '-';
@@ -32,9 +33,16 @@ export default function Robot() {
   const running = isRunning(status);
   const paused = status === 'paused';
   const activeRuns = robot?.activeRuns || [];
+  const cloudReadOnly = api.isCloudReadOnly();
+  const [agent, setAgent] = useState(null);
 
   useEffect(() => {
     let ignore = false;
+
+    if (cloudReadOnly) {
+      api.getAgentStatus().then((data) => { if (!ignore) setAgent(data); }).catch(() => { if (!ignore) setAgent({ configured: false, online: false }); });
+      return () => { ignore = true; };
+    }
 
     function load() {
       api.getRobotStatus().then((data) => {
@@ -53,7 +61,17 @@ export default function Robot() {
       ignore = true;
       clearInterval(interval);
     };
-  }, [running]);
+  }, [cloudReadOnly, running]);
+
+  if (cloudReadOnly) {
+    const agentView = localAgentStatusView(agent);
+    return (
+      <div className="management-page">
+        <header className="management-header"><div><span className="hero-eyebrow">{PROPULSE_MOTTO}</span><h1>{PROPULSE_NAME}</h1><p>{agentView.message}</p></div><span className={`robot-pill ${agentView.value === 'online' ? 'idle' : 'stopped'}`}>{agentView.value}</span></header>
+        <section className="editor-panel"><h2>Local runtime</h2><p>{agent?.agentName || 'No Local Agent is registered.'}</p><p>Remote execution is not implemented in the hosted dashboard. Facebook publishing remains disabled.</p></section>
+      </div>
+    );
+  }
 
   async function runAction(label, action) {
     const result = await action();

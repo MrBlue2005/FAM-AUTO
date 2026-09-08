@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-08 (Vercel Preview repository configuration added)
+Last updated: 2026-09-09 (hosted Local Agent status bridge added)
 
 ## Repository state
 
@@ -14,6 +14,8 @@ Last updated: 2026-09-08 (Vercel Preview repository configuration added)
 Always verify these values with `git status` and `git log`; this document describes the latest known handoff, not a replacement for Git.
 
 ## What is implemented
+
+- Hosted `CLOUD_READ_ONLY` dashboard status now separates same-origin cloud BFF availability from a read-only, heartbeat-derived Local Agent status DTO. The bridge exposes no agent credential, task, lease, profile secret, or raw control-plane data; it does not implement remote execution, and Facebook publishing remains disabled. Local mode remains unchanged.
 
 ### Dashboard and workflow
 
