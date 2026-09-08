@@ -43,3 +43,14 @@ test('Supabase Edge Function exposes only the versioned Protocol v1 agent and op
   assert.match(edge, /await rpc\('rx_cp_reconcile_expired_leases', \{\}\)/);
   assert.ok(edge.indexOf("route.startsWith('/v1/operator/tasks/')") < edge.indexOf("rx_cp_authenticate_agent"), 'operator endpoints must not require agent credentials');
 });
+
+test('Phase 4B application foundation is separate, private, and models immutable media', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase', 'migrations', '202609080003_application_data_foundation.sql'), 'utf8');
+  for (const table of ['app_campaigns', 'app_campaign_posts', 'app_media_objects', 'app_post_media', 'app_targets', 'app_campaign_folders', 'app_schedule_folders', 'app_schedules', 'app_schedule_campaigns', 'app_execution_runs', 'app_posting_results']) {
+    assert.match(sql, new RegExp(`create table if not exists public\\.${table}`));
+    assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`));
+  }
+  assert.match(sql, /fam-app-media/); assert.match(sql, /public = false/); assert.match(sql, /rx_app_media_object_immutable/);
+  assert.match(sql, /APP_MEDIA_OBJECT_IMMUTABLE/); assert.match(sql, /revoke all on table storage\.objects, storage\.buckets from anon, authenticated/);
+  assert.match(sql, /references public\.tasks\(task_id\)/);
+});

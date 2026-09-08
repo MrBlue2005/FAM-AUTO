@@ -34,6 +34,7 @@ const {
 } = require('../overlay-desktop/launcher/update-client');
 const { summarizeBlockingIssues } = require('../app/core/RobotManager');
 const { buildDiagnostics, diagnoseEmptyQueue } = require('../app/core/Diagnostics');
+const { planLocalApplicationImport, publicImportReport } = require('../app/cloud/LocalApplicationImportPlanner');
 
 test('preflight blocking summary groups repeated task failures by root cause', () => {
   const message = summarizeBlockingIssues({
@@ -535,4 +536,20 @@ test('Excel report periods support 60 and 90 days together with exact Facebook p
   assert.equal(filterHistory(history, '60', 'agent-a').length, 2);
   assert.equal(filterHistory(history, '90', 'agent-a').length, 3);
   assert.equal(filterHistory(history, '30', 'agent-b').length, 1);
+});
+
+test('application import planner is read-only, hashes media, and redacts the public report', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-app-import-'));
+  const mediaPath = path.join(directory, 'fixture.jpg'); fs.writeFileSync(mediaPath, 'safe fixture media');
+  const readers = {
+    getProperties: () => [{ id: 'P1', posts: [{ day: 1, text: 'private text', media: ['app/uploads/P1/day-1/fixture.jpg'] }] }],
+    getJobs: () => [], getCampaignFolders: () => [{ id: 'F1' }], getScheduleFolders: () => [],
+    getGroups: () => [{ id: 'G1', url: 'https://private.example/group' }],
+    getSchedules: () => [{ id: 'S1', campaignIds: ['P1'] }], getHistory: () => [{ propertyId: 'P1' }], getCampaignRuns: () => [{ id: 'R1' }],
+  };
+  const result = planLocalApplicationImport({ dataManager: readers, resolveMedia: () => mediaPath, copywriterDatabasePath: path.join(directory, 'missing.db') });
+  assert.equal(result.mode, 'DRY_RUN'); assert.equal(result.writes_performed, false); assert.equal(result.media.files_hashed, 1);
+  assert.equal(result.execution_mapping.proposed_posting_results, 1);
+  const report = JSON.stringify(publicImportReport(result));
+  assert.doesNotMatch(report, /private text|private\.example|fixture\.jpg/);
 });

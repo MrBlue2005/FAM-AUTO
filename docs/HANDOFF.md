@@ -167,15 +167,12 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Recommended next work
 
-1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 hosted control-plane deployment is validated: all five migrations through `202609080002` and `agent-protocol` are deployed to the dedicated hosted project, and the first isolated synthetic-agent task passed `QUEUED -> CLAIMED -> RUNNING -> COMPLETED` with one lease and three renewals. `HOSTED_CONTROL_PLANE = VALIDATED`; `HOSTED_DRY_RUN_E2E = PASS`. The operational hosted agent stayed ONLINE with zero assigned tasks. Facebook publishing remains disabled and unvalidated; media storage, Vercel and Facebook publishing are not authorized by this checkpoint. See `docs/HOSTED_SUPABASE_DEPLOYMENT.md`.
-2. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
-3. Run the integrated studio E2E suite and verify launcher navigation on this PC.
-4. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
-5. Transfer operational media and other persistent data separately after the VPS storage paths are selected.
-6. Exercise scheduling with representative TEST campaigns over several weekdays and review missed/skipped run behavior in normal operation.
-7. Add or extend E2E coverage for property/job creation, media reuse, queue changes, saved runs, Excel export, and backup/restore.
-8. Obtain a trusted Windows code-signing certificate before publishing the overlay as a production release.
-9. After the VPS deployment is verified, define the normal feature-branch and pull-request flow from the clean baseline.
+1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 hosted control-plane deployment is validated: all five migrations through `202609080002` and `agent-protocol` are deployed to the dedicated hosted project, and the first isolated synthetic-agent task passed `QUEUED -> CLAIMED -> RUNNING -> COMPLETED` with one lease and three renewals. `HOSTED_CONTROL_PLANE = VALIDATED`; `HOSTED_DRY_RUN_E2E = PASS`. The operational hosted agent stayed ONLINE with zero assigned tasks. Facebook publishing remains disabled and unvalidated.
+2. Phase 4B-A is implemented and locally validated only: migration `202609080003_application_data_foundation.sql` adds separate RLS-protected `app_*` metadata tables and a private `fam-app-media` bucket. `ApplicationDataStore` is only a compatibility seam; the dashboard, scheduler, Local Agent, existing API and Protocol V1 remain unchanged. The importer is DRY_RUN by default and contains no configured hosted writer. See `docs/PHASE_4B_APPLICATION_DATA.md`.
+3. Next Phase 4B work: implement only a server-side application repository and authenticated upload-session/metadata API. Keep Storage signed flows server-only; do not cut over dashboard, scheduler or Local Agent yet.
+4. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
+5. Run the integrated studio E2E suite and verify launcher navigation on this PC.
+6. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
 
 ## Continuing from another computer
 
