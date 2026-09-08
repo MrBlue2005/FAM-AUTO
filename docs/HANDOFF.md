@@ -1,6 +1,6 @@
 # FAM-AUTO handoff
 
-Last updated: 2026-09-08 (local agent media negative-matrix continuation)
+Last updated: 2026-09-08 (Local Agent media foundation closed locally)
 
 ## Repository state
 
@@ -179,6 +179,7 @@ Use `.env.example` files as templates. Never place credentials or authentication
 - The local agent media negative-matrix continuation used only isolated local Supabase/Storage fixtures. Immutable snapshot-size mismatch was rejected before `RUNNING` and executor invocation; real stale-lease reconciliation and valid-lease wrong-task manifest requests were denied without URL/metadata leakage; and a fresh signed-download/hash/size happy path completed once and removed its temporary materialization.
 - That validation exposed a Protocol V1 defect: pre-execution media failure could not transition `CLAIMED` to `FAILED`, leaving a lease held. Additive local migration `202609080005_allow_preexecution_failure.sql` fixes the transition and the reference control-plane now has regression coverage. It is local-only and has not been deployed hosted.
 - Deterministic Local Agent runtime coverage now proves bounded retry exhaustion and interrupted-stream cleanup, exactly one stale signed-URL manifest refresh, zero-media bypass, and executor-error cleanup. These cases do not contact hosted Supabase, Facebook, Chromium, or operational media.
+- `LOCAL_AGENT_MEDIA_FOUNDATION = PASS`: the complete local matrix and the full repository regression suite now pass. The Local Agent receives only lease-scoped signed manifests, verifies size/SHA-256 into isolated temporary paths before `RUNNING`, preserves immutable task payloads, and exposes only verified local paths to the executor. No hosted media validation, dashboard cutover, Facebook publishing validation, or Local Agent Chromium execution is implied.
 
 ## Continuing from another computer
 
