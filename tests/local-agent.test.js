@@ -12,10 +12,94 @@ const { ProfileLockManager } = require('../app/local-agent/ProfileLockManager');
 const { TASK_STATUS, createTaskSnapshots } = require('../app/local-agent/TaskContract');
 const { TaskMediaMaterializer } = require('../app/local-agent/TaskMediaMaterializer');
 const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
+const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredentials');
+const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
 }
+
+function hostedAgentEnvironment(overrides = {}) {
+  return {
+    RX_AGENT_TRANSPORT_MODE: 'HTTP',
+    RX_AGENT_CLOUD_URL: 'https://rccefdsmvtsnpsaouzba.supabase.co/functions/v1/agent-protocol',
+    RX_AGENT_REFERENCE_ALLOW_HTTP: 'false',
+    ...overrides,
+  };
+}
+
+function testDpapi(mode, value) {
+  return mode === 'protect'
+    ? Buffer.from(value, 'utf8').toString('base64url')
+    : Buffer.from(value, 'base64url').toString('utf8');
+}
+
+test('fresh hosted bootstrap creates only an independent registry, DPAPI credential, and safe storage roots', () => {
+  const root = temporaryDirectory('bootstrap-fresh');
+  const data = path.join(root, 'data');
+  const directories = [data, path.join(root, 'logs'), path.join(root, 'uploads'), path.join(root, 'profiles')];
+  const registry = new LocalAgentRegistry({ filePath: path.join(data, 'localAgentRegistry.json'), profilesRoot: path.join(root, 'profiles') });
+  const credentials = new LocalAgentCredentials({ filePath: path.join(data, 'localAgentCredentials.json'), platform: 'win32', dpapi: testDpapi });
+  const result = bootstrapLocalAgent({ environment: hostedAgentEnvironment(), validateConfig: validateHostedAgentConfig, registry, credentials, ensureStoragePaths: () => directories.forEach((directory) => fs.mkdirSync(directory, { recursive: true })) });
+
+  assert.match(result.agentId, /^agent_/);
+  assert.equal(result.credentialProtection, 'dpapi-current-user');
+  assert.ok(directories.every((directory) => fs.statSync(directory).isDirectory()));
+  assert.equal(registry.load([]).profiles.length, 0);
+  assert.equal(fs.existsSync(path.join(data, 'properties')), false);
+  assert.equal(fs.existsSync(path.join(data, 'jobs')), false);
+  assert.equal(fs.existsSync(path.join(root, 'uploads', 'synthetic-media')), false);
+  const storedCredential = JSON.parse(fs.readFileSync(path.join(data, 'localAgentCredentials.json'), 'utf8'));
+  assert.equal(storedCredential.protection, 'dpapi-current-user');
+  assert.equal('agent_secret' in storedCredential, false);
+});
+
+test('bootstrap preserves a configured machine identity and does not overwrite its credential', () => {
+  const root = temporaryDirectory('bootstrap-existing');
+  const data = path.join(root, 'data');
+  const registry = new LocalAgentRegistry({ filePath: path.join(data, 'localAgentRegistry.json'), profilesRoot: path.join(root, 'profiles') });
+  const credentials = new LocalAgentCredentials({ filePath: path.join(data, 'localAgentCredentials.json'), platform: 'win32', dpapi: testDpapi });
+  const options = { environment: hostedAgentEnvironment(), validateConfig: validateHostedAgentConfig, registry, credentials, ensureStoragePaths: () => fs.mkdirSync(data, { recursive: true }) };
+  const first = bootstrapLocalAgent(options);
+  const before = fs.readFileSync(path.join(data, 'localAgentCredentials.json'), 'utf8');
+  const second = bootstrapLocalAgent(options);
+  assert.equal(second.agentId, first.agentId);
+  assert.equal(fs.readFileSync(path.join(data, 'localAgentCredentials.json'), 'utf8'), before);
+});
+
+test('new machines receive distinct credentials and agent identities instead of portable credential reuse', () => {
+  const createMachine = () => {
+    const root = temporaryDirectory('bootstrap-machine'); const data = path.join(root, 'data');
+    const registry = new LocalAgentRegistry({ filePath: path.join(data, 'localAgentRegistry.json'), profilesRoot: path.join(root, 'profiles') });
+    const credentials = new LocalAgentCredentials({ filePath: path.join(data, 'localAgentCredentials.json'), platform: 'win32', dpapi: testDpapi });
+    return { result: bootstrapLocalAgent({ environment: hostedAgentEnvironment(), validateConfig: validateHostedAgentConfig, registry, credentials, ensureStoragePaths: () => fs.mkdirSync(data, { recursive: true }) }), credential: credentials.load().agent_secret };
+  };
+  const first = createMachine(); const second = createMachine();
+  assert.notEqual(first.result.agentId, second.result.agentId);
+  assert.notEqual(first.credential, second.credential);
+});
+
+test('hosted bootstrap rejects missing, insecure, and reference-only cloud configuration before writing identity files', () => {
+  assert.throws(() => validateHostedAgentConfig(hostedAgentEnvironment({ RX_AGENT_TRANSPORT_MODE: 'LOCAL' })), /RX_AGENT_TRANSPORT_MODE=HTTP/);
+  assert.throws(() => validateHostedAgentConfig(hostedAgentEnvironment({ RX_AGENT_CLOUD_URL: '' })), /RX_AGENT_CLOUD_URL/);
+  assert.throws(() => validateHostedAgentConfig(hostedAgentEnvironment({ RX_AGENT_CLOUD_URL: 'http://127.0.0.1:8787', RX_AGENT_REFERENCE_ALLOW_HTTP: 'true' })), /must be false/);
+  const root = temporaryDirectory('bootstrap-invalid'); const data = path.join(root, 'data');
+  const registry = new LocalAgentRegistry({ filePath: path.join(data, 'localAgentRegistry.json'), profilesRoot: root });
+  const credentials = new LocalAgentCredentials({ filePath: path.join(data, 'localAgentCredentials.json'), platform: 'win32', dpapi: testDpapi });
+  assert.throws(() => bootstrapLocalAgent({ environment: hostedAgentEnvironment({ RX_AGENT_CLOUD_URL: '' }), validateConfig: validateHostedAgentConfig, registry, credentials, ensureStoragePaths: () => fs.mkdirSync(data, { recursive: true }) }), /RX_AGENT_CLOUD_URL/);
+  assert.equal(fs.existsSync(path.join(data, 'localAgentRegistry.json')), false);
+  assert.equal(fs.existsSync(path.join(data, 'localAgentCredentials.json')), false);
+});
+
+test('tracked agent template contains only persistent non-secret hosted configuration', () => {
+  const template = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
+  assert.match(template, /^RX_AGENT_TRANSPORT_MODE=HTTP$/m);
+  assert.match(template, /^RX_AGENT_CLOUD_URL=https:\/\/rccefdsmvtsnpsaouzba\.supabase\.co\/functions\/v1\/agent-protocol$/m);
+  assert.match(template, /^RX_AGENT_REFERENCE_ALLOW_HTTP=false$/m);
+  assert.doesNotMatch(template, /^RX_AGENT_ENROLLMENT_TOKEN=.+$/m);
+  assert.doesNotMatch(template, /^RX_AGENT_SECRET=.+$/m);
+  assert.doesNotMatch(template, /^SUPABASE_SERVICE_ROLE_KEY=.+$/m);
+});
 
 function profile(id = 'main', label = 'Profil principal', profilePath = 'chrome-profile') {
   return { id, label, profilePath, category: 'real_estate', useSavedLoginIdentity: true };

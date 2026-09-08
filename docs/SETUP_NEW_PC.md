@@ -1,5 +1,39 @@
 # Instalare RX AI Studio pe alt PC Windows
 
+## Local Agent gazduit si interfata dubla
+
+Pe un PC nou, dintr-o clonare Git curata, ruleaza `npm.cmd run setup:new-pc`. Comanda pastreaza orice `.env` existent, instaleaza dependintele, creeaza directoarele de stocare goale si genereaza automat un ID Local Agent nou in `app/data/localAgentRegistry.json` plus credentialul asociat in `app/data/localAgentCredentials.json`. Pe Windows credentialul este protejat cu DPAPI pentru utilizatorul Windows curent; nu este copiat si nu este afisat.
+
+In `.env` pastreaza numai configuratia locala non-secret a agentului:
+
+```dotenv
+RX_AGENT_TRANSPORT_MODE=HTTP
+RX_AGENT_CLOUD_URL=https://rccefdsmvtsnpsaouzba.supabase.co/functions/v1/agent-protocol
+RX_AGENT_REFERENCE_ALLOW_HTTP=false
+```
+
+Nu pune in `.env` tokenul de enrollment, secretul agentului, service-role, tokenul operatorului sau parole. `npm.cmd run agent:http` valideaza configuratia inainte sa faca orice apel cloud si refuza modul Local, URL-ul lipsa sau HTTP necriptat (cu exceptia backend-ului local de referinta activat explicit). Tokenul unic este furnizat separat de operator si exista numai in procesul de prima pornire; runnerul il elimina din propriul mediu imediat dupa enrollment reusit. Terminalul PowerShell trebuie curatat si el dupa aceea:
+
+```powershell
+$env:RX_AGENT_ENROLLMENT_TOKEN = '<token-unic-primit-separat>'
+try {
+  npm.cmd run agent:http
+} finally {
+  Remove-Item Env:RX_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
+}
+```
+
+Prima pornire trebuie sa afiseze `RX_AGENT_EVENT:{"type":"HEARTBEAT_OK"...}`. Daca enrollment-ul esueaza sau procesul este intrerupt, nu presupune ca tokenul a fost consumat: verifica starea agentului cu operatorul inainte de a cere un token nou. Pentru urmatoarele porniri nu mai seta tokenul: ruleaza numai `npm.cmd run agent:http`.
+
+Interfetele pot rula simultan si nu folosesc acelasi endpoint local: dashboard-ul hosted (`https://fam-auto-git-vercel-preview-rx-d568.vercel.app` sau URL-ul hosted curent) afiseaza datele/statusul cloud, iar `npm.cmd run studio` porneste API-ul, Studio-ul si runtime-ul local la `http://127.0.0.1:5173`. Local Agent face exclusiv conexiuni HTTPS outbound spre control plane. Bootstrap-ul nu creeaza proprietati, joburi, media, profiluri Chromium sau sesiuni Facebook si nu activeaza publicarea.
+
+| Clasificare | Fisiere/directoare |
+| --- | --- |
+| Recreeaza pe fiecare PC | `.env` din `.env.example` (completeaza local), `app/data/localAgentRegistry.json`, `app/data/localAgentCredentials.json`, `app/data/local-agent-locks/`, `chrome-profile*`, `playwright/.auth/` |
+| Se pot copia manual numai dupa revizuire | `app/uploads/`, `logs/`, exporturi de proprietati/joburi/grupuri/programari/foldere; nu sunt necesare pentru bootstrap |
+| Nu copia intre PC-uri | `app/data/localAgentCredentials.json` (DPAPI CurrentUser), `app/data/localAgentRegistry.json` pentru un agent nou, `chrome-profile*`, `playwright/.auth/`, tokenuri de enrollment sau orice secret din `.env` |
+| Date operationale pe care utilizatorul le recreeaza/importa | `app/data/properties/`, `app/data/jobs/`, `app/data/groups.json`, `app/data/schedules.json`, `app/data/campaignFolders.json`, `app/data/scheduleFolders.json`, `app/uploads/`, `logs/` |
+
 ## Varianta recomandata: pachetul offline complet
 
 Descarca sau muta arhiva `RX-AI-Studio-Offline-<versiune>.zip`, extrage-o complet si ruleaza executabilul `RX-AI-Studio-Offline-Setup-<versiune>.exe` din interior. Pachetul instaleaza aplicatia completa, Node.js privat, toate dependentele npm, Chromium Playwright, baza Prisma/SQLite, parola, overlay-ul, launcherul, shortcutul Desktop si pornirea la logare.

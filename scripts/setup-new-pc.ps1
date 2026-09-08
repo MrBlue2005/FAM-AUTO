@@ -55,6 +55,8 @@ foreach ($template in $templates) {
   }
 }
 
+Invoke-Checked node.exe --env-file-if-exists=.env scripts/bootstrap-local-agent.js
+
 $sqlitePath = Join-Path $projectRoot 'property-copywriter\dev.db'
 if (-not (Test-Path -LiteralPath $sqlitePath)) {
   New-Item -ItemType File -Path $sqlitePath | Out-Null
@@ -102,5 +104,6 @@ if (-not $NonInteractive) {
   Write-Host 'Launcherul RX AI Studio a fost instalat pe Desktop.' -ForegroundColor Green
 }
 
-Write-Host "`nInstalarea este gata. Porneste toate aplicatiile cu: npm.cmd run studio" -ForegroundColor Green
+Write-Host "`nInstalarea este gata. Porneste Local Agent-ul dupa enrollment cu: npm.cmd run agent:http" -ForegroundColor Green
+Write-Host 'Pentru Studio local: npm.cmd run studio' -ForegroundColor Green
 Write-Host 'Deschide apoi: http://127.0.0.1:5173'
