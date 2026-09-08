@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { SupabaseApplicationDataStore } = require('../app/cloud/SupabaseApplicationDataStore');
-const { createCloudApplicationRouter } = require('./cloud-application-api');
+const { createCloudApplicationMutationRouter } = require('./cloud-application-mutation-api');
 const { createCloudDashboardReadRouter } = require('./cloud-dashboard-read-api');
 const { createCloudMediaUploadRouter } = require('./cloud-media-upload-api');
 
@@ -187,7 +187,9 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   if (applicationStore) {
     app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore));
     if (env.RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED === 'true') app.use('/api/cloud-media', requireSession, requireCloudAccess, createCloudMediaUploadRouter(applicationStore));
-    app.use('/api/cloud', requireSession, requireCloudAccess, createCloudApplicationRouter(applicationStore));
+    // General application/control-plane mutation routes are intentionally not hosted.
+    // This reviewed route is opt-in and contains only dashboard metadata edits.
+    if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
   }
   return app;
 }

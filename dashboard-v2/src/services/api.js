@@ -1,4 +1,4 @@
-import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities, cloudMediaUploadEnabled } from './dashboardDataMode';
+import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities, cloudMediaUploadEnabled, cloudApplicationMutationsEnabled } from './dashboardDataMode';
 import { createEphemeralPreviewCache } from './cloudMediaPreview';
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
@@ -7,11 +7,36 @@ const API_ORIGIN = API_URL.replace(/\/api$/, '');
 export const dashboardDataMode = normalizeDashboardDataMode(import.meta.env.VITE_DASHBOARD_DATA_MODE);
 const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY;
 const cloudMediaUpload = cloudMediaUploadEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_MEDIA_UPLOAD_ENABLED);
+const cloudApplicationMutations = cloudApplicationMutationsEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_APP_MUTATIONS_ENABLED);
 let hostedCsrfToken = '';
+const cloudRevisions = new Map();
+async function rememberCloudRevisions(kind, rows) {
+  if (!cloudApplicationMutations || !Array.isArray(rows)) return rows;
+  await Promise.all(rows.map(async (row) => {
+    const result = await cloudMutation(`/revisions/${encodeURIComponent(kind)}/${encodeURIComponent(row.id)}`);
+    if (Number.isInteger(result?.revision)) cloudRevisions.set(`${kind}:${row.id}`, result.revision);
+  }));
+  return rows;
+}
+async function cloudRevision(kind, id) {
+  const cached = cloudRevisions.get(`${kind}:${id}`);
+  if (Number.isInteger(cached)) return cached;
+  const result = await cloudMutation(`/revisions/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`);
+  if (!Number.isInteger(result?.revision)) throw new Error('A current cloud revision is required. Reload the data and try again.');
+  return result.revision;
+}
+async function cloudCampaignSave(kind, value) {
+  const revision = await cloudRevision(kind, value.id);
+  return cloudMutation(kind === 'job' ? '/jobs' : '/properties', { method: 'POST', body: JSON.stringify({ ...value, revision }) });
+}
 const cloudMediaPreviewCache = createEphemeralPreviewCache({ requestPreview: (mediaId) => cloudRead(`/media/${encodeURIComponent(mediaId)}/preview`) });
 
 function cloudRead(endpoint) {
   return request(`/cloud-read${endpoint}`);
+}
+function cloudMutation(endpoint, options) {
+  if (!cloudApplicationMutations) throw new Error('Cloud application mutations are disabled; no local write fallback is available.');
+  return request(`/cloud-mutations${endpoint}`, options);
 }
 
 function cacheHostedCsrf(payload) {
@@ -71,8 +96,9 @@ async function downloadFile(endpoint, fallbackName) {
 async function request(endpoint, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const mutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-  if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/'))) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
-  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/auth/')) {
+  const enabledCloudMutation = cloudApplicationMutations && endpoint.startsWith('/cloud-mutations/');
+  if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/')) && !enabledCloudMutation) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
+  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/cloud-mutations/') && !endpoint.startsWith('/auth/')) {
     throw new Error('This dashboard feature is unavailable in CLOUD_READ_ONLY; no local read fallback is available.');
   }
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -100,7 +126,8 @@ export const api = {
   dashboardDataMode,
   isCloudReadOnly: () => cloudReadOnly,
   isCloudMediaUploadEnabled: () => cloudMediaUpload,
-  capabilities: () => dashboardCapabilities(dashboardDataMode),
+  isCloudApplicationMutationsEnabled: () => cloudApplicationMutations,
+  capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload }),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
     if (!cloudReadOnly) return Promise.resolve(getMediaUrl(media));
@@ -115,42 +142,46 @@ export const api = {
   getAuthStatus: () => request('/auth/status').then(cacheHostedCsrf),
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }).then(cacheHostedCsrf),
   logout: () => request('/auth/logout', { method: 'POST', body: '{}' }).then((payload) => { hostedCsrfToken = ''; return payload; }),
-  getProperties: () => cloudReadOnly ? cloudRead('/properties') : request('/properties'),
+  getProperties: () => cloudReadOnly ? cloudRead('/properties').then((rows) => rememberCloudRevisions('property', rows)) : request('/properties'),
   getPropertyDescriptionTransfer: (transferId) =>
     request(`/property-description-transfers/${encodeURIComponent(transferId)}`),
   saveProperty: (property) =>
-    request('/properties', {
+    cloudReadOnly ? cloudCampaignSave('property', property) : request('/properties', {
       method: 'POST',
       body: JSON.stringify(property),
     }),
   updateProperty: (propertyId, property) =>
-    request(`/properties/${encodeURIComponent(propertyId)}`, {
+    cloudReadOnly ? cloudRevision('property', propertyId).then((revision) => cloudMutation(`/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'PUT', body: JSON.stringify({ ...property, revision }),
+    })) : request(`/properties/${encodeURIComponent(propertyId)}`, {
       method: 'PUT',
       body: JSON.stringify(property),
     }),
   deleteProperty: (propertyId) =>
-    request(`/properties/${propertyId}`, {
+    cloudReadOnly ? cloudRevision('property', propertyId).then((revision) => cloudMutation(`/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'DELETE', body: JSON.stringify({ revision }),
+    })) : request(`/properties/${propertyId}`, {
       method: 'DELETE',
     }),
 
   getCampaignFolders: () => cloudReadOnly ? cloudRead('/campaign-folders') : request('/campaign-folders'),
-  createCampaignFolder: (name) => request('/campaign-folders', { method: 'POST', body: JSON.stringify({ name }) }),
-  deleteCampaignFolder: (folderId) => request(`/campaign-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
+  createCampaignFolder: (name) => cloudReadOnly ? cloudMutation('/campaign-folders', { method: 'POST', body: JSON.stringify({ name }) }) : request('/campaign-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteCampaignFolder: (folderId) => cloudReadOnly ? cloudMutation(`/campaign-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE', body: '{}' }) : request(`/campaign-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
 
-  getJobs: () => cloudReadOnly ? cloudRead('/jobs') : request('/jobs'),
+  getJobs: () => cloudReadOnly ? cloudRead('/jobs').then((rows) => rememberCloudRevisions('job', rows)) : request('/jobs'),
   saveJob: (job) =>
-    request('/jobs', {
+    cloudReadOnly ? cloudCampaignSave('job', job) : request('/jobs', {
       method: 'POST',
       body: JSON.stringify(job),
     }),
   deleteJob: (jobId) =>
-    request(`/jobs/${jobId}`, {
+    cloudReadOnly ? cloudRevision('job', jobId).then((revision) => cloudMutation(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE', body: JSON.stringify({ revision }) })) : request(`/jobs/${jobId}`, {
       method: 'DELETE',
     }),
 
-  getGroups: () => cloudReadOnly ? cloudRead('/groups') : request('/groups'),
+  getGroups: () => cloudReadOnly ? cloudRead('/groups').then((rows) => rememberCloudRevisions('group', rows)) : request('/groups'),
   saveGroups: (groups) =>
-    request('/groups', {
+    cloudReadOnly ? Promise.all(groups.map(async (group) => ({ ...group, revision: await cloudRevision('group', group.id) }))).then((rows) => cloudMutation('/groups', { method: 'POST', body: JSON.stringify(rows) })) : request('/groups', {
       method: 'POST',
       body: JSON.stringify(groups),
     }),
@@ -234,12 +265,12 @@ export const api = {
   retryRunErrors: (runId) => request(`/runs/${encodeURIComponent(runId)}/retry-errors`, { method: 'POST', body: '{}' }),
   archiveRun: (runId, archived = true) => request(`/runs/${encodeURIComponent(runId)}/archive`, { method: 'POST', body: JSON.stringify({ archived }) }),
 
-  getSchedules: () => cloudReadOnly ? cloudRead('/schedules') : request('/schedules'),
-  createScheduleFolder: (name) => request('/schedule-folders', { method: 'POST', body: JSON.stringify({ name }) }),
-  deleteScheduleFolder: (folderId) => request(`/schedule-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
-  createSchedule: (schedule) => request('/schedules', { method: 'POST', body: JSON.stringify(schedule) }),
-  updateSchedule: (scheduleId, schedule) => request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'PUT', body: JSON.stringify(schedule) }),
-  deleteSchedule: (scheduleId) => request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' }),
+  getSchedules: () => cloudReadOnly ? cloudRead('/schedules').then(async (result) => ({ ...result, schedules: await rememberCloudRevisions('schedule', result.schedules) })) : request('/schedules'),
+  createScheduleFolder: (name) => cloudReadOnly ? cloudMutation('/schedule-folders', { method: 'POST', body: JSON.stringify({ name }) }) : request('/schedule-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteScheduleFolder: (folderId) => cloudReadOnly ? cloudMutation(`/schedule-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE', body: '{}' }) : request(`/schedule-folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' }),
+  createSchedule: (schedule) => cloudReadOnly ? cloudMutation('/schedules', { method: 'POST', body: JSON.stringify(schedule) }) : request('/schedules', { method: 'POST', body: JSON.stringify(schedule) }),
+  updateSchedule: (scheduleId, schedule) => cloudReadOnly ? cloudRevision('schedule', scheduleId).then((revision) => cloudMutation(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'PUT', body: JSON.stringify({ ...schedule, revision }) })) : request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'PUT', body: JSON.stringify(schedule) }),
+  deleteSchedule: (scheduleId) => cloudReadOnly ? cloudRevision('schedule', scheduleId).then((revision) => cloudMutation(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE', body: JSON.stringify({ revision }) })) : request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' }),
   runScheduleNow: (scheduleId) => request(`/schedules/${encodeURIComponent(scheduleId)}/run-now`, { method: 'POST', body: '{}' }),
 
   getOverlayStatus: () => request('/overlay/status'),

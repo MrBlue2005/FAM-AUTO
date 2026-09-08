@@ -119,6 +119,12 @@ export default function Scheduler() {
   const [saving, setSaving] = useState(false);
 
   async function loadData() {
+    if (api.isCloudReadOnly()) {
+      const [scheduleData, propertyData, jobData, groupData] = await Promise.all([api.getSchedules(), api.getProperties(), api.getJobs(), api.getGroups()]);
+      setSchedules(scheduleData.schedules || []); setFolders(scheduleData.folders || []); setTimezone('cloud metadata only');
+      setProperties(propertyData); setJobs(jobData); setGroups(groupData); setConfig({ facebookProfiles: [] }); setFacebookProfiles([]); setProfilesLoading(false); setProfilesError('Scheduler execution remains local.'); setRobot(null);
+      return;
+    }
     const [scheduleData, propertyData, jobData, groupData, configData, profileData, robotData] = await Promise.all([
       api.getSchedules(),
       api.getProperties(),
@@ -146,6 +152,14 @@ export default function Scheduler() {
 
   useEffect(() => {
     let ignore = false;
+    if (api.isCloudReadOnly()) {
+      Promise.all([api.getSchedules(), api.getProperties(), api.getJobs(), api.getGroups()]).then(([scheduleData, propertyData, jobData, groupData]) => {
+        if (ignore) return;
+        setSchedules(scheduleData.schedules || []); setFolders(scheduleData.folders || []); setTimezone('cloud metadata only'); setProperties(propertyData); setJobs(jobData); setGroups(groupData);
+        setConfig({ facebookProfiles: [] }); setFacebookProfiles([]); setProfilesLoading(false); setProfilesError('Scheduler execution remains local.'); setRobot(null); setForm({ ...freshForm({ facebookProfiles: [] }), facebookProfileId: '' });
+      }).catch((error) => { if (!ignore) { setProfilesLoading(false); setProfilesError(error.message || 'Cloud scheduler metadata could not be loaded.'); } });
+      return () => { ignore = true; };
+    }
     Promise.all([api.getSchedules(), api.getProperties(), api.getJobs(), api.getGroups(), api.getRuntimeConfig(), api.getFacebookProfiles(), api.getRobotStatus()])
       .then(([scheduleData, propertyData, jobData, groupData, configData, profileData, robotData]) => {
         if (ignore) return;
@@ -177,6 +191,7 @@ export default function Scheduler() {
   ), [facebookProfiles, form.campaignCategory]);
   const campaigns = useMemo(() => {
     const source = form.campaignCategory === 'jobs' ? jobs : properties;
+    if (api.isCloudReadOnly()) return source;
     return source.filter((campaign) => campaignMatchesSelectedProfile(
       campaign,
       form.facebookProfileId,
@@ -510,7 +525,7 @@ export default function Scheduler() {
                 {schedule.lastMessage && <small className="schedule-last-message">{schedule.lastMessage}</small>}
               </div>
               <div className="schedule-actions">
-                <button title="Ruleaza acum" onClick={() => runNow(schedule)}><Play size={16} /></button>
+                {!api.isCloudReadOnly() && <button title="Ruleaza acum" onClick={() => runNow(schedule)}><Play size={16} /></button>}
                 <button title={schedule.enabled ? 'Pune pe pauza' : 'Activeaza'} onClick={() => toggleSchedule(schedule)}>{schedule.enabled ? <Pause size={16} /> : <Play size={16} />}</button>
                 <button className="text-action" onClick={() => editSchedule(schedule)}>Editeaza</button>
                 <button className="danger-icon" title="Sterge" onClick={() => deleteSchedule(schedule)}><Trash2 size={16} /></button>

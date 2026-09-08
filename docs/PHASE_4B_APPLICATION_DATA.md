@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Phase 4B-A adds an additive local-validated schema and a read-only import planner. Phase 4B-B adds an opt-in server-side Supabase store and `/api/cloud` BFF router. It does not deploy to hosted Supabase, replace `DataManager`, alter `TaskContract`, start a Local Agent, cut over the dashboard, or enable Facebook publishing.
+Phase 4B-A adds an additive local-validated schema and a read-only import planner. Phase 4B-B adds an opt-in server-side Supabase store and narrowly scoped BFF routes. It does not deploy to hosted Supabase, replace `DataManager`, alter `TaskContract`, start a Local Agent, cut over the dashboard, or enable Facebook publishing.
 
 `202609080003_application_data_foundation.sql` creates the `app_*` application-data model. It is separate from Protocol V1 control-plane tables (`agents`, `profiles`, `tasks`, `task_events`, credentials and idempotency state).
 
@@ -41,13 +41,13 @@ Property Copywriter remains intentionally separate: its Prisma SQLite `PropertyR
 
 ## Phase 4B-B BFF and media flows
 
-`SupabaseApplicationDataStore` is constructed only when both server-only `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` exist. It is never imported by dashboard code. The optional `/api/cloud` router is behind the existing Express authentication middleware. This is a single-operator model; no tenant ownership model exists yet, so multi-tenant authorization is intentionally not claimed.
+`SupabaseApplicationDataStore` is constructed only when both server-only `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` exist. It is never imported by dashboard code. The optional reviewed BFF routes are behind the existing Express authentication middleware. This is a single-operator model; no tenant ownership model exists yet, so multi-tenant authorization is intentionally not claimed.
 
 `POST /api/cloud/media/initiate` validates MIME, max 500 MB size and SHA-256, creates a new STAGED immutable metadata row/key, then returns a short-lived Storage upload authorization. `POST .../finalize` changes only STAGED media to READY; abandoned staged rows cannot preview. `GET .../preview` only signs READY media related through `app_post_media`; no permanent URL is stored. Browser responses contain signed URLs/tokens only, never a service-role/operator/agent credential.
 
 Local Storage E2E now validates the lifecycle with a synthetic 1×1 PNG: the browser authorization PUTs directly to the private bucket using only its short-lived upload token. Before finalization, the server streams the exact private object with service-role authority, independently counts bytes and calculates SHA-256, comparing both against immutable STAGED metadata. Only an exact match can atomically PATCH `STAGED` to `READY`; a mismatch remains STAGED. Preview requires a READY `app_post_media` relationship and returns a short-lived signed URL whose downloaded bytes hash-match the fixture. Initiation refuses an existing SHA-256 identity so it cannot issue an overwrite authorization for an immutable object. Anonymous Storage list access returns no RLS-visible objects, direct read/write is denied, and the bucket is `public = false`.
 
-The server store now consumes the three reviewed transactional RPCs for campaign/post snapshots, schedules/ordered campaign links, and post-media replacement. It uses revision-guarded ordinary table writes for targets and other single-table metadata; a stale revision is surfaced as `APP_REVISION_CONFLICT`. The `/api/cloud` BFF exposes only these application-data reads/mutations and inherits the existing Express session/CSRF gate. It has no route or store method for Protocol V1 state.
+The server store now consumes the three reviewed transactional RPCs for campaign/post snapshots, schedules/ordered campaign links, and post-media replacement. It uses revision-guarded ordinary table writes for targets and other single-table metadata; a stale revision is surfaced as `APP_REVISION_CONFLICT`. The hosted BFF exposes only reviewed application-data routes and has no route or store method for Protocol V1 state.
 
 The importer writer is enabled only by `--apply` plus `RX_APP_IMPORT_CONFIRM=IMPORT_APPLICATION_DATA`. It upserts folders, campaigns/posts, targets, schedules/links and execution-run metadata by legacy identity, reporting every record outcome. It is restartable: an identical import detects existing logical records rather than duplicating them. Media files are hashed and create/reuse deterministic immutable metadata in `STAGED`; this task deliberately does not upload bytes, attach STAGED media to posts, or claim Storage completion. Historical posting-result rows without a stable unique source/result key are reported as `HISTORY_MAPPING_DEFERRED`, never silently skipped.
 
@@ -86,6 +86,16 @@ The browser then calls `/api/cloud-media/:mediaId/finalize`; server-side streami
 Keep local `DataManager` authoritative until an explicit later cutover. The `ApplicationDataStore` abstract interface is a compatibility seam only; existing API and dashboard calls remain unchanged. A future importer must be idempotent by `(kind, legacy_id)` / folder, target and schedule legacy IDs, preserve media hashes, report every conflict and never delete sources.
 
 Rollback before cutover is simply to not use the new tables/bucket. No automated schema/data rollback or cleanup is permitted; a hosted deployment, when authorized, requires an operator-reviewed additive/reversal migration.
+
+## Explicit cloud application mutation capability
+
+Cloud dashboard editing is opt-in on both sides: `VITE_CLOUD_APP_MUTATIONS_ENABLED=true` in a `CLOUD_READ_ONLY` dashboard build and `RX_BFF_CLOUD_APP_MUTATIONS_ENABLED=true` on the BFF. Either flag absent leaves `CLOUD_READ_ONLY` mutation-free, with no local JSON/DataManager fallback. This capability is independent from the separate cloud-media upload flags.
+
+When enabled, `/api/cloud-mutations` is limited to application metadata: property/job campaign snapshots and posts, normalized group/target replacement, campaign/schedule folder CRUD, and schedule metadata with ordered campaign relationships. Campaign/post and schedule/link saves use their reviewed transactional RPCs. Targets use revision-guarded ordinary table writes; folders are ordinary single-table writes. Deletes are revision-guarded where the table has a revision and report FK/reference conflicts without an unrelated cascade. Folder deletion follows the schema's intentional `SET NULL` relationship behavior; media objects are never garbage-collected here.
+
+The browser continues to receive the existing legacy dashboard DTO shapes, without UUIDs, raw JSON, revision columns, Storage identity, or credentials. Just before an enabled cloud write, the BFF supplies a minimal authenticated current revision token; stale saves/deletes receive an explicit reload-required conflict and are never silently retried. Every route remains behind the signed session, admin authorization, session-bound CSRF token, and exact same-origin check. The general `/api/cloud` router is not mounted by the hosted BFF, so execution runs, posting results, runtime/queue/robot controls, history/report mutation, and Protocol V1/control-plane state are unavailable.
+
+Scheduler execution remains local only. Cloud schedule editing is metadata-only: it creates no tasks, has no run-now route, and transfers no scheduler authority. LOCAL mode retains its existing API behavior unchanged.
 
 ## Local validation evidence
 
