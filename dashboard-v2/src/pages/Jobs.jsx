@@ -5,6 +5,7 @@ import FacebookPostPreview from '../components/FacebookPostPreview';
 import CampaignPreviewDrawer from '../components/CampaignPreviewDrawer';
 import { notify } from '../utils/notify';
 import { clearFormDraft, loadFormDraft, saveFormDraft } from '../utils/formDraft';
+import { firstInvalidCampaignPost } from '../utils/campaignPostValidation';
 
 const DRAFT_KEY = 'rx-job-form-draft';
 
@@ -363,7 +364,10 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
       return;
     }
 
-    const invalidPost = form.posts.find((post) => post.active !== false && (!post.text?.trim() || !(post.media?.length || post.imagePath?.trim())));
+    // Cloud media can be attached only after the campaign/post snapshot exists.
+    // Keep local validation strict while allowing that first cloud metadata save.
+    const cloudDraft = api.isCloudReadOnly() && api.isCloudMediaUploadEnabled();
+    const invalidPost = firstInvalidCampaignPost(form.posts, { allowCloudDraftWithoutMedia: cloudDraft });
     if (invalidPost) {
       setValidationErrors({ [`post-${invalidPost.day}`]: true });
       setMessage(`Ziua ${invalidPost.day}: adauga textul si cel putin un fisier media.`);

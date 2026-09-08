@@ -81,6 +81,8 @@ Cloud media writes require both `VITE_CLOUD_MEDIA_UPLOAD_ENABLED=true` in a `CLO
 
 The browser then calls `/api/cloud-media/:mediaId/finalize`; server-side streaming verification must confirm the private object, immutable size, and SHA-256 before STAGED becomes READY. Only READY media may be appended through the narrow `/api/cloud-media/attach` route, which resolves the legacy campaign/day server-side and uses the existing ordered post-media RPC. A failed upload or failed verification leaves STAGED media unattached and unusable. Upload/finalize responses expose only scoped authorization or safe state/size/MIME fields, never service credentials or raw Storage identity fields. Local mode retains Multer and `app/uploads` unchanged.
 
+For a newly created cloud campaign, the dashboard permits the initial text-complete campaign/post save before a media relation exists: the post must first be durable so READY media can be attached through the narrow relation route. This exception applies only when the cloud media capability is enabled; local campaign creation retains its existing required-media validation.
+
 ## Cutover and rollback
 
 Keep local `DataManager` authoritative until an explicit later cutover. The `ApplicationDataStore` abstract interface is a compatibility seam only; existing API and dashboard calls remain unchanged. A future importer must be idempotent by `(kind, legacy_id)` / folder, target and schedule legacy IDs, preserve media hashes, report every conflict and never delete sources.

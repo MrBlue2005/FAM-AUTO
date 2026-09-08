@@ -6,6 +6,7 @@ import FacebookPostPreview from '../components/FacebookPostPreview';
 import CampaignPreviewDrawer from '../components/CampaignPreviewDrawer';
 import { notify } from '../utils/notify';
 import { clearFormDraft, loadFormDraft, saveFormDraft } from '../utils/formDraft';
+import { firstInvalidCampaignPost } from '../utils/campaignPostValidation';
 
 const DRAFT_KEY = 'rx-property-form-draft';
 
@@ -433,7 +434,11 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
       return;
     }
 
-    const invalidPost = form.posts.find((post) => post.active !== false && (!post.text?.trim() || !(post.media?.length || post.imagePath?.trim())));
+    // A new cloud campaign has no post row to attach media to until this first
+    // metadata save completes. The cloud upload flow attaches READY media on the
+    // subsequent edit; local campaigns retain their existing media requirement.
+    const cloudDraft = api.isCloudReadOnly() && api.isCloudMediaUploadEnabled();
+    const invalidPost = firstInvalidCampaignPost(form.posts, { allowCloudDraftWithoutMedia: cloudDraft });
     if (invalidPost) {
       setValidationErrors({ [`post-${invalidPost.day}`]: true });
       setMessage(`Ziua ${invalidPost.day}: adauga textul si cel putin un fisier media.`);
