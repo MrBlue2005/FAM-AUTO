@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import MediaPreviewAsset from '../components/MediaPreviewAsset';
 import { Sparkles, Trash2 } from 'lucide-react';
 import { notify } from '../utils/notify';
 
@@ -19,34 +20,8 @@ function formatDate(value) {
 }
 
 function MediaThumbnail({ item }) {
-  const [failed, setFailed] = useState(false);
-  const source = api.getMediaUrl(item.path);
   const label = item.type === 'video' ? 'VIDEO' : 'IMG';
-
-  if (!source || failed) {
-    return <span className="media-thumb-fallback">{label}</span>;
-  }
-
-  if (item.type === 'video') {
-    return (
-      <video
-        src={source}
-        muted
-        preload="metadata"
-        aria-label={`Preview ${item.name}`}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <img
-      src={source}
-      alt={`Preview ${item.name}`}
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
-  );
+  return <MediaPreviewAsset item={item} alt={`Preview ${item.name}`} fallback={<span className="media-thumb-fallback">{label}</span>} />;
 }
 
 export default function Media() {
@@ -57,6 +32,7 @@ export default function Media() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [campaignFilter, setCampaignFilter] = useState('all');
   const [usageFilter, setUsageFilter] = useState('all');
+  const cloudReadOnly = api.isCloudReadOnly();
 
   useEffect(() => {
     let ignore = false;
@@ -130,9 +106,10 @@ export default function Media() {
         <div>
           <h1>Media Library</h1>
           <p>Biblioteca fisierelor incarcate pentru proprietati si joburi.</p>
+          {cloudReadOnly && <p>Mod CLOUD_READ_ONLY: previzualizarile sunt temporare; incarcarea si stergerea media nu sunt disponibile.</p>}
         </div>
 
-        <div className="button-row"><button className="danger-button" disabled={!unusedCount} onClick={cleanupUnused}><Sparkles size={15} /> Curata nefolosite ({unusedCount})</button><button className="secondary-button" onClick={() => window.location.reload()}>Refresh</button></div>
+        <div className="button-row"><button className="danger-button" disabled={cloudReadOnly || !unusedCount} onClick={cleanupUnused} title={cloudReadOnly ? 'Indisponibil in CLOUD_READ_ONLY' : undefined}><Sparkles size={15} /> Curata nefolosite ({unusedCount})</button><button className="secondary-button" onClick={() => window.location.reload()}>Refresh</button></div>
       </header>
 
       <section className="summary-grid media-summary">
@@ -171,7 +148,7 @@ export default function Media() {
 
       <section className="media-grid-v2">
         {filteredMedia.map((item) => (
-          <article className="media-card-v2" key={item.path}>
+          <article className="media-card-v2" key={item.id || item.path}>
             <div className={`media-thumb ${item.type}`}>
               <MediaThumbnail item={item} />
               <span className="media-type-badge">
@@ -187,7 +164,7 @@ export default function Media() {
               <code>{item.relativePath}</code>
               <div className="media-flags"><span className={item.used ? 'used' : 'unused'}>{item.used ? 'Folosita' : 'Nefolosita'}</span>{item.duplicate && <span className="duplicate">Duplicat</span>}<small title={item.hash}>SHA {item.hash?.slice(0, 10)}</small></div>
             </div>
-            <button className="media-delete-button" onClick={() => deleteMedia(item)} title="Sterge definitiv"><Trash2 size={15} /></button>
+            <button className="media-delete-button" disabled={cloudReadOnly} onClick={() => deleteMedia(item)} title={cloudReadOnly ? 'Indisponibil in CLOUD_READ_ONLY' : 'Sterge definitiv'}><Trash2 size={15} /></button>
           </article>
         ))}
 

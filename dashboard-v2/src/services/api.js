@@ -1,4 +1,5 @@
-import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest } from './dashboardDataMode';
+import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities } from './dashboardDataMode';
+import { createEphemeralPreviewCache } from './cloudMediaPreview';
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY || '';
@@ -6,6 +7,7 @@ const API_ORIGIN = API_URL.replace(/\/api$/, '');
 export const dashboardDataMode = normalizeDashboardDataMode(import.meta.env.VITE_DASHBOARD_DATA_MODE);
 const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY;
 let hostedCsrfToken = '';
+const cloudMediaPreviewCache = createEphemeralPreviewCache({ requestPreview: (mediaId) => cloudRead(`/media/${encodeURIComponent(mediaId)}/preview`) });
 
 function cloudRead(endpoint) {
   return request(`/cloud-read${endpoint}`);
@@ -96,7 +98,17 @@ async function request(endpoint, options = {}) {
 export const api = {
   dashboardDataMode,
   isCloudReadOnly: () => cloudReadOnly,
+  capabilities: () => dashboardCapabilities(dashboardDataMode),
   getMediaUrl,
+  getMediaPreviewUrl: (media) => {
+    if (!cloudReadOnly) return Promise.resolve(getMediaUrl(media));
+    return cloudMediaPreviewCache.resolve(typeof media === 'string' ? media : media?.mediaId || media?.id);
+  },
+  refreshMediaPreviewUrl: (media) => {
+    const mediaId = typeof media === 'string' ? media : media?.mediaId || media?.id;
+    cloudMediaPreviewCache.invalidate(mediaId);
+    return cloudMediaPreviewCache.resolve(mediaId);
+  },
   downloadExport,
   getAuthStatus: () => request('/auth/status').then(cacheHostedCsrf),
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }).then(cacheHostedCsrf),

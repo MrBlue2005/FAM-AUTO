@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Eye, ThumbsUp, MessageCircle, Share2 } from 'lucide-react';
-import { api } from '../services/api';
+import MediaPreviewAsset from './MediaPreviewAsset';
 
 export default function FacebookPostPreview({
   post,
@@ -35,9 +35,7 @@ export default function FacebookPostPreview({
           {media.length > 0 ? (
             <div className={`facebook-media-grid count-${Math.min(media.length, 4)}`}>
               {media.slice(0, 4).map((item, index) => {
-                const source = api.getMediaUrl(item);
-                const video = /\.(mp4|mov|quicktime)(?:$|\?)/i.test(item);
-                return <div key={item}>{video ? <video src={source} muted /> : <img src={source} alt={`Media ${index + 1}`} />}{index === 3 && media.length > 4 && <span>+{media.length - 4}</span>}</div>;
+                return <div key={item.mediaId || item}><MediaPreviewAsset item={item} alt={`Media ${index + 1}`} fallback={<span className="media-file-fallback" />} />{index === 3 && media.length > 4 && <span>+{media.length - 4}</span>}</div>;
               })}
             </div>
           ) : <div className="facebook-no-media">Fara media selectata</div>}

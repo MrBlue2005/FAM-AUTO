@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderOpen, GripVertical, ImagePlus, LoaderCircle, Star, Trash2, UploadCloud, X } from 'lucide-react';
 import { api } from '../services/api';
+import MediaPreviewAsset from './MediaPreviewAsset';
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime'];
 const MAX_FILES = 10;
@@ -9,10 +10,6 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 function isAccepted(file) {
   return file.type.startsWith('image/') || ACCEPTED_TYPES.includes(file.type);
-}
-
-function isVideo(reference) {
-  return /\.(mp4|mov|quicktime)(?:$|\?)/i.test(reference);
 }
 
 export default function MediaDropzone({ entityId, day, media = [], onChange }) {
@@ -26,8 +23,10 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
   const [libraryMedia, setLibraryMedia] = useState([]);
   const [librarySearch, setLibrarySearch] = useState('');
   const [progress, setProgress] = useState(0);
+  const cloudReadOnly = api.isCloudReadOnly();
 
   async function upload(filesLike) {
+    if (cloudReadOnly) { setError('Incarcarea media nu este disponibila in CLOUD_READ_ONLY.'); return; }
     const files = Array.from(filesLike || []);
     if (!files.length) return;
 
@@ -105,6 +104,7 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
         type="file"
         multiple
         accept="image/*,video/mp4,video/quicktime"
+        disabled={cloudReadOnly}
         onChange={(event) => upload(event.target.files)}
       />
 
@@ -116,14 +116,14 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
         onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
         onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
         onDrop={handleDrop}
-        disabled={uploading}
+        disabled={uploading || cloudReadOnly}
       >
         {uploading ? <LoaderCircle className="spin" size={25} /> : <UploadCloud size={25} />}
         <strong>{uploading ? 'Se incarca...' : 'Trage media aici'}</strong>
         <span>sau apasa pentru selectare · imagini / MP4 / MOV · max. 100 MB</span>
       </button>
       {uploading && <div className="media-upload-progress"><div><span style={{ width: `${progress}%` }} /></div><strong>{progress}%</strong><button type="button" onClick={() => uploadControllerRef.current?.abort()}>Anuleaza</button></div>}
-      <button type="button" className="secondary-button media-library-trigger" onClick={openLibrary}>
+      <button type="button" className="secondary-button media-library-trigger" onClick={openLibrary} disabled={cloudReadOnly} title={cloudReadOnly ? 'Indisponibil in CLOUD_READ_ONLY' : undefined}>
         <FolderOpen size={15} /> Alege din Media Library
       </button>
 
@@ -132,11 +132,10 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
       {media.length > 0 && (
         <div className="media-preview-grid">
           {media.map((item, index) => {
-            const source = api.getMediaUrl(item);
             return (
               <div
                 className={`media-preview-item ${index === 0 ? 'is-cover' : ''}`}
-                key={item}
+                key={item.mediaId || item}
                 draggable
                 onDragStart={() => setDraggedIndex(index)}
                 onDragOver={(event) => event.preventDefault()}
@@ -149,22 +148,16 @@ export default function MediaDropzone({ entityId, day, media = [], onChange }) {
               >
                 <span className="media-drag-handle" title="Trage pentru reordonare"><GripVertical size={14} /></span>
                 {index === 0 && <span className="media-cover-badge"><Star size={11} /> Coperta</span>}
-                {source && isVideo(item) ? (
-                  <video src={source} muted preload="metadata" />
-                ) : source ? (
-                  <img src={source} alt="Previzualizare media" />
-                ) : (
-                  <span className="media-file-fallback"><ImagePlus size={22} /></span>
-                )}
-                <button className="media-remove-button" type="button" onClick={() => removeMedia(item)} aria-label="Elimina fisierul">
+                <MediaPreviewAsset item={item} alt="Previzualizare media" fallback={<span className="media-file-fallback"><ImagePlus size={22} /></span>} />
+                <button className="media-remove-button" type="button" onClick={() => removeMedia(item)} aria-label="Elimina fisierul" disabled={cloudReadOnly}>
                   <Trash2 size={14} />
                 </button>
                 {index > 0 && (
-                  <button className="media-cover-button" type="button" onClick={() => setCover(item)}>
+                  <button className="media-cover-button" type="button" onClick={() => setCover(item)} disabled={cloudReadOnly}>
                     Seteaza coperta
                   </button>
                 )}
-                <small title={item}>{item.split(/[\\/]/).pop()}</small>
+                <small title={typeof item === 'string' ? item : item.mediaId}>{typeof item === 'string' ? item.split(/[\\/]/).pop() : item.name || item.mediaId}</small>
               </div>
             );
           })}

@@ -14,9 +14,9 @@ function mapPost(row) {
     ...pick(data, ['title', 'variant', 'published']),
     media: (Array.isArray(row.app_post_media) ? row.app_post_media : [])
       .sort((left, right) => Number(left.ordinal) - Number(right.ordinal))
-      .map((relation) => relation.app_media_objects?.media_id)
-      .filter(Boolean)
-      .map((mediaId) => ({ mediaId })),
+      .map((relation) => relation.app_media_objects)
+      .filter((media) => media?.media_id)
+      .map((media) => ({ mediaId: media.media_id, type: String(media.mime_type || '').startsWith('video/') ? 'video' : 'image', name: media.original_name || 'media' })),
   };
 }
 
@@ -63,7 +63,7 @@ function mapMedia(row, campaignByPostId) {
   return {
     id: String(row.media_id), path: '', relativePath: '', name: String(row.original_name || 'media'),
     type: mime.startsWith('video/') ? 'video' : 'image', size: Number(row.byte_size) || 0, createdAt: row.created_at || null,
-    propertyId: campaignId, used: relations.length > 0, duplicate: false, state: String(row.state || ''), previewAvailable: false,
+    propertyId: campaignId, used: relations.length > 0, duplicate: false, state: String(row.state || ''), previewAvailable: row.state === 'READY' && relations.length > 0,
   };
 }
 
@@ -89,6 +89,7 @@ function createCloudDashboardReadRouter(store) {
     const campaignByPostId = new Map([...properties, ...jobs].flatMap((campaign) => (campaign.app_campaign_posts || []).map((post) => [post.post_id, campaign.legacy_id])));
     return media.map((row) => mapMedia(row, campaignByPostId));
   })));
+  router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
   router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));
     if (!campaign) return { text: '', media: [], warnings: ['Campaign is unavailable in cloud read-only data.'], facebookProfileLabel: '', postingIdentityLabel: '' };

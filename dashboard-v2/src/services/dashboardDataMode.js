@@ -1,4 +1,5 @@
 export const DASHBOARD_DATA_MODES = Object.freeze({ LOCAL: 'LOCAL', CLOUD_READ_ONLY: 'CLOUD_READ_ONLY' });
+export const CLOUD_READ_ONLY_CAPABILITIES = Object.freeze({ signedMediaPreview: true, applicationMutations: false, mediaUpload: false, mediaCleanup: false, runtimeAndRobot: false, schedulerExecution: false, historyAndReports: false, copywriterTransfer: false });
 
 export function normalizeDashboardDataMode(value) {
   const mode = String(value || DASHBOARD_DATA_MODES.LOCAL).trim().toUpperCase();
@@ -12,4 +13,14 @@ export function assertCloudReadOnlyRequest(mode, method, endpoint) {
     && !['/auth/login', '/auth/logout'].includes(endpoint)) {
     throw new Error('CLOUD_READ_ONLY does not permit dashboard mutations; no local write fallback is available.');
   }
+}
+
+export function dashboardCapabilities(mode) {
+  return mode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY
+    ? CLOUD_READ_ONLY_CAPABILITIES
+    : { signedMediaPreview: false, applicationMutations: true, mediaUpload: true, mediaCleanup: true, runtimeAndRobot: true, schedulerExecution: true, historyAndReports: true, copywriterTransfer: true };
+}
+
+export function cloudReadOnlyUnavailableMessage(feature = 'Aceasta actiune') {
+  return `${feature} nu este disponibila in CLOUD_READ_ONLY. Nu exista fallback catre datele locale.`;
 }
