@@ -35,6 +35,7 @@ const {
 const { summarizeBlockingIssues } = require('../app/core/RobotManager');
 const { buildDiagnostics, diagnoseEmptyQueue } = require('../app/core/Diagnostics');
 const { planLocalApplicationImport, publicImportReport } = require('../app/cloud/LocalApplicationImportPlanner');
+const { writeApplicationImport } = require('../app/cloud/ApplicationImportWriter');
 
 test('preflight blocking summary groups repeated task failures by root cause', () => {
   const message = summarizeBlockingIssues({
@@ -552,4 +553,16 @@ test('application import planner is read-only, hashes media, and redacts the pub
   assert.equal(result.execution_mapping.proposed_posting_results, 1);
   const report = JSON.stringify(publicImportReport(result));
   assert.doesNotMatch(report, /private text|private\.example|fixture\.jpg/);
+});
+
+test('application import writer stages metadata and uses legacy identities without Storage completion', async () => {
+  const calls = []; const store = {
+    saveCampaignFolder: async (v) => ({ ...v, folder_id: 'folder-c' }), saveScheduleFolder: async (v) => ({ ...v, folder_id: 'folder-s' }),
+    listCampaigns: async () => [], saveCampaign: async ({ campaign }) => ({ campaign: { campaign_id: `${campaign.kind}-id` } }),
+    findMediaByHash: async () => [], saveMediaMetadata: async (v) => { calls.push(v); return { media_id: 'media-1', state: 'STAGED' }; },
+    listTargets: async () => [], saveTarget: async () => ({}), listSchedules: async () => [], saveSchedule: async () => ({})
+  };
+  const dataManager = { getCampaignFolders: () => [{ id: 'cf', name: 'Campaigns' }], getScheduleFolders: () => [{ id: 'sf', name: 'Schedules' }], getProperties: () => [{ id: 'p1', name: 'Property', posts: [{ day: 1, text: 'post', media: ['fixture.jpg'] }] }], getJobs: () => [{ id: 'j1', name: 'Job', posts: [] }], getGroups: () => [{ id: 'g1', name: 'Group', url: 'https://example.invalid' }], getSchedules: () => [{ id: 's1', name: 'Schedule', campaignIds: ['p1'] }], getCampaignRuns: () => [], getHistory: () => [] };
+  const media = path.join(os.tmpdir(), `phase4b-${crypto.randomUUID()}.jpg`); fs.writeFileSync(media, 'synthetic');
+  try { const result = await writeApplicationImport({ dataManager, store, resolveMedia: () => media }); assert.equal(result.failures.length, 0); assert.equal(result.media_state, 'STAGED_PENDING_STORAGE_VERIFICATION'); assert.equal(calls.length, 1); assert.equal(calls[0].state, 'STAGED'); } finally { fs.unlinkSync(media); }
 });
