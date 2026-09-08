@@ -52,6 +52,18 @@ function secureScryptMatch(password, encoded) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+// Temporary deployment diagnostic: deliberately exposes only a short identity
+// fingerprint, never any credential material or derived password data.
+function hostedAuthDiagnostic(env) {
+  const passwordScrypt = String(env.ADMIN_PASSWORD_SCRYPT || '');
+  return {
+    adminUsername: env.ADMIN_USERNAME || 'admin',
+    adminPasswordScryptFingerprint: crypto.createHash('sha256').update(passwordScrypt, 'utf8').digest('hex').slice(0, 16),
+    adminPasswordScryptLength: passwordScrypt.length,
+    adminPasswordScryptValid: Boolean(parseScryptEncoding(passwordScrypt)),
+  };
+}
+
 function signingKey(secret) {
   return Buffer.from(String(secret || ''), 'utf8');
 }
@@ -163,6 +175,9 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     const session = config.authEnabled ? sessionFor(req) : { username: 'admin', role: 'admin', csrf: null };
     res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, csrfToken: session?.csrf || null });
   });
+  if (config.env.NODE_ENV !== 'production' || config.env.RX_BFF_AUTH_DIAGNOSTICS_ENABLED === 'true') {
+    app.get('/api/auth/diagnostics', (req, res) => res.json(hostedAuthDiagnostic(config.env)));
+  }
   app.post('/api/auth/login', (req, res) => {
     const origin = req.get('origin');
     if (origin && !config.allowedOrigins.includes(origin)) return res.status(403).json({ error: 'Origin is not allowed.' });
@@ -194,4 +209,4 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   return app;
 }
 
-module.exports = { createHostedBffApp, createHostedBffConfig, signPayload, verifyPayload, SESSION_COOKIE, SESSION_TTL_SECONDS };
+module.exports = { createHostedBffApp, createHostedBffConfig, hostedAuthDiagnostic, signPayload, verifyPayload, SESSION_COOKIE, SESSION_TTL_SECONDS };

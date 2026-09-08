@@ -89,6 +89,35 @@ test('hosted BFF fails closed in production without dedicated secrets and origin
   assert.throws(() => createHostedBffApp({ env: { NODE_ENV: 'production', AUTH_ENABLED: 'true' } }), /Hosted BFF configuration is invalid/);
 });
 
+test('hosted auth diagnostic is explicitly gated in production and exposes only credential identity metadata', async () => {
+  const expectedFingerprint = crypto.createHash('sha256').update(adminHash, 'utf8').digest('hex').slice(0, 16);
+  const productionEnv = { ...environment(), NODE_ENV: 'production', RX_BFF_PUBLIC_ORIGIN: 'https://dashboard.example' };
+  const disabledApp = createHostedBffApp({ env: productionEnv });
+  const disabledServer = http.createServer(disabledApp);
+  await new Promise((resolve) => disabledServer.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${disabledServer.address().port}/api/auth/diagnostics`);
+    assert.equal(response.status, 404);
+  } finally { await new Promise((resolve) => disabledServer.close(resolve)); }
+
+  await withBff(async ({ request }) => {
+    const diagnostic = await request('/api/auth/diagnostics');
+    assert.equal(diagnostic.response.status, 200);
+    assert.deepEqual(diagnostic.body, {
+      adminUsername: 'admin',
+      adminPasswordScryptFingerprint: expectedFingerprint,
+      adminPasswordScryptLength: adminHash.length,
+      adminPasswordScryptValid: true,
+    });
+    const responseText = JSON.stringify(diagnostic.body);
+    assert.ok(!responseText.includes(adminHash));
+    assert.ok(!responseText.includes(salt.toString('hex')));
+    assert.ok(!responseText.includes(adminPassword));
+    assert.ok(!responseText.includes(sessionSecret));
+    assert.ok(!responseText.includes('service-role-value-must-not-leak'));
+  }, { env: { ...productionEnv, RX_BFF_AUTH_DIAGNOSTICS_ENABLED: 'true' } });
+});
+
 test('production sessions set Secure cookies for the configured same origin', async () => {
   const productionOrigin = 'https://dashboard.example';
   await withBff(async ({ request }) => {
