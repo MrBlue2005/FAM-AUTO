@@ -1,6 +1,7 @@
 import { Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import AnimatedBrand from './AnimatedBrand';
+import { loginCredentialsFromForm } from './loginCredentials';
 
 export default function LoginPage({ connectionError, error, loading, onLogin }) {
   const [username, setUsername] = useState('admin');
@@ -9,7 +10,7 @@ export default function LoginPage({ connectionError, error, loading, onLogin }) 
 
   function submit(event) {
     event.preventDefault();
-    onLogin({ username: username.trim(), password });
+    onLogin(loginCredentialsFromForm(event.currentTarget));
   }
 
   return (
@@ -37,19 +38,19 @@ export default function LoginPage({ connectionError, error, loading, onLogin }) 
           <form className="login-form" onSubmit={submit}>
             <label>
               <span>Utilizator</span>
-              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus required />
+              <input name="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoFocus required />
             </label>
             <label>
               <span>Parolă</span>
               <div className="login-password-field">
-                <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={16} required />
+                <input name="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={16} required />
                 <button type="button" aria-label={showPassword ? 'Ascunde parola' : 'Arată parola'} onClick={() => setShowPassword((value) => !value)}>
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </label>
             {error && <p className="login-error" role="alert">{error}</p>}
-            <button className="login-submit" type="submit" disabled={loading || !username.trim() || password.length < 16}>
+            <button className="login-submit" type="submit" disabled={loading}>
               {loading ? <><LoaderCircle className="spin" size={18} /> Se verifică…</> : 'Intră în studio'}
             </button>
           </form>

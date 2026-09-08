@@ -118,6 +118,22 @@ test('hosted auth diagnostic is explicitly gated in production and exposes only 
   }, { env: { ...productionEnv, RX_BFF_AUTH_DIAGNOSTICS_ENABLED: 'true' } });
 });
 
+test('browser form-shaped login credentials authenticate through the hosted BFF', async () => {
+  const { loginCredentialsFromFormData } = await import('../dashboard-v2/src/components/loginCredentials.js');
+  await withBff(async ({ request }) => {
+    const form = new FormData();
+    form.set('username', ' admin ');
+    form.set('password', adminPassword);
+    const login = await request('/api/auth/login', { method: 'POST', body: loginCredentialsFromFormData(form) });
+    assert.equal(login.response.status, 200);
+    assert.equal(login.body.username, 'admin');
+
+    form.set('password', 'wrong');
+    const invalid = await request('/api/auth/login', { method: 'POST', body: loginCredentialsFromFormData(form) });
+    assert.equal(invalid.response.status, 401);
+  });
+});
+
 test('production sessions set Secure cookies for the configured same origin', async () => {
   const productionOrigin = 'https://dashboard.example';
   await withBff(async ({ request }) => {

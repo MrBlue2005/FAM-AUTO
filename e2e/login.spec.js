@@ -35,7 +35,11 @@ test('loginul protejează launcherul și nu expune tokenul în JavaScript', asyn
   await expect(page.locator('#login-title')).toHaveText('Bine ai revenit');
   await expect(page.locator('.launcher-grid')).toHaveCount(0);
   await page.getByLabel('Utilizator').fill('admin');
-  await page.getByLabel('Parolă').fill('parola-locala-test-2026');
+  // Simulate a password manager that updates the DOM value without firing the
+  // React change handler. Submit must use the browser form value, not stale state.
+  await page.getByLabel('Parolă').evaluate((input, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+  }, 'parola-locala-test-2026');
   await page.getByRole('button', { name: 'Intră în studio' }).click();
   await expect(page.locator('.launcher-grid')).toBeVisible();
   await expect(page.evaluate(() => Object.keys(localStorage).filter((key) => /token|session|auth/i.test(key)))).resolves.toEqual([]);
