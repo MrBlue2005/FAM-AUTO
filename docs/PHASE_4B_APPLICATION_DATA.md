@@ -41,7 +41,7 @@ Property Copywriter remains intentionally separate: its Prisma SQLite `PropertyR
 
 ## Phase 4B-B BFF and media flows
 
-`SupabaseApplicationDataStore` is constructed only when both server-only `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` exist. It is never imported by dashboard code. The optional `/api/cloud` router is behind the existing Express authentication middleware: production requires the current HttpOnly `rx_session` plus CSRF on mutations. This is a single-operator model; no tenant ownership model exists yet, so multi-tenant authorization is intentionally not claimed.
+`SupabaseApplicationDataStore` is constructed only when both server-only `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` exist. It is never imported by dashboard code. The optional `/api/cloud` router is behind the existing Express authentication middleware. This is a single-operator model; no tenant ownership model exists yet, so multi-tenant authorization is intentionally not claimed.
 
 `POST /api/cloud/media/initiate` validates MIME, max 500 MB size and SHA-256, creates a new STAGED immutable metadata row/key, then returns a short-lived Storage upload authorization. `POST .../finalize` changes only STAGED media to READY; abandoned staged rows cannot preview. `GET .../preview` only signs READY media related through `app_post_media`; no permanent URL is stored. Browser responses contain signed URLs/tokens only, never a service-role/operator/agent credential.
 
@@ -52,6 +52,16 @@ The server store now consumes the three reviewed transactional RPCs for campaign
 The importer writer is enabled only by `--apply` plus `RX_APP_IMPORT_CONFIRM=IMPORT_APPLICATION_DATA`. It upserts folders, campaigns/posts, targets, schedules/links and execution-run metadata by legacy identity, reporting every record outcome. It is restartable: an identical import detects existing logical records rather than duplicating them. Media files are hashed and create/reuse deterministic immutable metadata in `STAGED`; this task deliberately does not upload bytes, attach STAGED media to posts, or claim Storage completion. Historical posting-result rows without a stable unique source/result key are reported as `HISTORY_MAPPING_DEFERRED`, never silently skipped.
 
 Hosted deployment later requires migrations `202609080003` and `202609080004`, the existing private bucket, and server/BFF environment values `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` in a server secret store. Do not add either variable to `VITE_*`, `NEXT_PUBLIC_*`, browser code, agent settings, or the existing `agent-protocol` function.
+
+## Hostable same-origin BFF authentication
+
+`server/hosted-bff.js` is the serverless-safe same-origin BFF seam for a future Vercel dashboard. `api/[...path].js` is its Node catch-all entrypoint, keeping browser routes under `/api/*` and mounting the existing server-only application router only when the application Supabase URL and service-role key are present. No dashboard caller was changed in this step.
+
+Unlike the local Express server, this hosted seam has no in-memory session or CSRF map. Login issues an HMAC-SHA-256 signed, 12-hour `rx_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure` in production). Its signed payload has the single operator identity, expiry, and a random CSRF value. The login/session-status response supplies that CSRF value to same-origin browser code; each authenticated mutation must present it in `x-rx-csrf`, and it is constant-time compared with the value authenticated by the cookie. Logout clears the client cookie; stateless sessions require no sticky instance or local persistence.
+
+`RX_BFF_SESSION_SIGNING_SECRET` is a dedicated server-only secret (minimum 32 characters), distinct from `ADMIN_PASSWORD_SCRYPT`, `RX_OPERATOR_API_TOKEN`, Supabase service-role credentials, and agent credentials. Production additionally requires `AUTH_ENABLED=true`, a valid `ADMIN_PASSWORD_SCRYPT`, `RX_BFF_PUBLIC_ORIGIN`, `RX_APP_SUPABASE_URL`, and `RX_APP_SUPABASE_SERVICE_ROLE_KEY`; startup fails closed when any are absent or invalid. Authenticated mutations require an exact `Origin` match to `RX_BFF_PUBLIC_ORIGIN` in production. Development only permits the explicit `RX_BFF_ALLOWED_ORIGINS` list (with documented localhost defaults), never a wildcard credentialed CORS policy. `/api/bff/healthz`, `/api/auth/*`, and the CSRF-protected no-write `/api/bff/csrf-probe` form the minimum smoke surface.
+
+The scheduler, Facebook/Chromium execution, and Property Copywriter remain local. Browser bundles and BFF JSON responses must never expose the service-role key, signing secret, password hash, operator token, agent credential, enrollment token, or database credentials.
 
 ## Cutover and rollback
 
