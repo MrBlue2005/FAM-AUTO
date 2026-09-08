@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
-const { createHostedBffApp, passwordFingerprint, signPayload } = require('../server/hosted-bff');
+const { createHostedBffApp, signPayload } = require('../server/hosted-bff');
 
 const origin = 'http://127.0.0.1:5173';
 const sessionSecret = 'test-session-signing-secret-that-is-long-enough-12345';
@@ -35,7 +35,7 @@ async function withBff(run, options = {}) {
     const setCookie = response.headers.getSetCookie?.()[0] || response.headers.get('set-cookie') || '';
     return { response, body: await response.json(), cookie: setCookie.split(';')[0], setCookie };
   };
-  try { await run({ request }); } finally { await new Promise((resolve) => server.close(resolve)); }
+  try { await run({ request, base }); } finally { await new Promise((resolve) => server.close(resolve)); }
 }
 
 test('hosted BFF uses signed stateless sessions, session-bound CSRF, and strict origin checks', async () => {
@@ -46,7 +46,6 @@ test('hosted BFF uses signed stateless sessions, session-bound CSRF, and strict 
 
     const invalid = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } });
     assert.equal(invalid.response.status, 401);
-    assert.equal(invalid.response.headers.get('x-rx-auth-diagnostic-password-fingerprint'), null);
     const login = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: adminPassword } });
     assert.equal(login.response.status, 200); assert.equal(login.body.username, 'admin'); assert.ok(login.body.csrfToken);
     assert.match(login.cookie, /^rx_session=/); assert.match(login.setCookie, /HttpOnly; SameSite=Strict; Path=\/; Max-Age=43200$/); assert.ok(!JSON.stringify(login).includes(sessionSecret)); assert.ok(!JSON.stringify(login).includes('service-role-value-must-not-leak'));
@@ -90,44 +89,22 @@ test('hosted BFF fails closed in production without dedicated secrets and origin
   assert.throws(() => createHostedBffApp({ env: { NODE_ENV: 'production', AUTH_ENABLED: 'true' } }), /Hosted BFF configuration is invalid/);
 });
 
-test('hosted auth diagnostic is explicitly gated in production and exposes only credential identity metadata', async () => {
-  const expectedFingerprint = crypto.createHash('sha256').update(adminHash, 'utf8').digest('hex').slice(0, 16);
-  const productionEnv = { ...environment(), NODE_ENV: 'production', RX_BFF_PUBLIC_ORIGIN: 'https://dashboard.example' };
-  const disabledApp = createHostedBffApp({ env: productionEnv });
-  const disabledServer = http.createServer(disabledApp);
-  await new Promise((resolve) => disabledServer.listen(0, '127.0.0.1', resolve));
-  try {
-    const response = await fetch(`http://127.0.0.1:${disabledServer.address().port}/api/auth/diagnostics`);
-    assert.equal(response.status, 404);
-  } finally { await new Promise((resolve) => disabledServer.close(resolve)); }
-
-  await withBff(async ({ request }) => {
-    const diagnostic = await request('/api/auth/diagnostics');
-    assert.equal(diagnostic.response.status, 200);
-    assert.deepEqual(diagnostic.body, {
-      adminUsername: 'admin',
-      adminPasswordScryptFingerprint: expectedFingerprint,
-      adminPasswordScryptLength: adminHash.length,
-      adminPasswordScryptValid: true,
-    });
-    const responseText = JSON.stringify(diagnostic.body);
-    assert.ok(!responseText.includes(adminHash));
-    assert.ok(!responseText.includes(salt.toString('hex')));
-    assert.ok(!responseText.includes(adminPassword));
-    assert.ok(!responseText.includes(sessionSecret));
-    assert.ok(!responseText.includes('service-role-value-must-not-leak'));
-  }, { env: { ...productionEnv, RX_BFF_AUTH_DIAGNOSTICS_ENABLED: 'true' } });
+test('hosted BFF never exposes temporary auth diagnostics', async () => {
+  await withBff(async ({ request, base }) => {
+    const diagnostic = await fetch(`${base}/api/auth/diagnostics`);
+    assert.equal(diagnostic.status, 404);
+    const invalid = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } });
+    assert.equal(invalid.response.status, 401);
+    assert.equal(invalid.response.headers.get('x-rx-auth-diagnostic-password-fingerprint'), null);
+  }, { env: { ...environment(), RX_BFF_AUTH_DIAGNOSTICS_ENABLED: 'true' } });
 });
 
 test('browser form-shaped login credentials authenticate through the hosted BFF', async () => {
   const { loginCredentialsFromFormData } = await import('../dashboard-v2/src/components/loginCredentials.js');
-  const browserPassword = 'Aa9! password with spaces';
-  const browserSalt = Buffer.alloc(16, 9);
-  const browserHash = `scrypt$16384$8$1$${browserSalt.toString('hex')}$${crypto.scryptSync(browserPassword, browserSalt, 64, { N: 16384, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }).toString('hex')}`;
   await withBff(async ({ request }) => {
     const form = new FormData();
     form.set('username', ' admin ');
-    form.set('password', browserPassword);
+    form.set('password', adminPassword);
     const login = await request('/api/auth/login', { method: 'POST', body: loginCredentialsFromFormData(form) });
     assert.equal(login.response.status, 200);
     assert.equal(login.body.username, 'admin');
@@ -135,20 +112,7 @@ test('browser form-shaped login credentials authenticate through the hosted BFF'
     form.set('password', 'wrong');
     const invalid = await request('/api/auth/login', { method: 'POST', body: loginCredentialsFromFormData(form) });
     assert.equal(invalid.response.status, 401);
-  }, { env: { ...environment(), ADMIN_PASSWORD_SCRYPT: browserHash } });
-});
-
-test('failed login exposes only the request password fingerprint when diagnostics are explicitly enabled', async () => {
-  const submittedPassword = 'Aa9! password with spaces';
-  await withBff(async ({ request }) => {
-    const invalid = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: submittedPassword } });
-    assert.equal(invalid.response.status, 401);
-    assert.equal(invalid.response.headers.get('x-rx-auth-diagnostic-password-fingerprint'), passwordFingerprint(submittedPassword));
-    assert.equal(JSON.stringify(invalid.body).includes(submittedPassword), false);
-    const successful = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: adminPassword } });
-    assert.equal(successful.response.status, 200);
-    assert.equal(successful.response.headers.get('x-rx-auth-diagnostic-password-fingerprint'), null);
-  }, { env: { ...environment(), RX_BFF_AUTH_DIAGNOSTICS_ENABLED: 'true' } });
+  });
 });
 
 test('production sessions set Secure cookies for the configured same origin', async () => {
