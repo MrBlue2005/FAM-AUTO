@@ -169,10 +169,9 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 1. Phase 3 is CLOSED at `1b96ff3` (`READY_FOR_HOSTED_SUPABASE = YES`). Phase 4 hosted control-plane deployment is validated: all five migrations through `202609080002` and `agent-protocol` are deployed to the dedicated hosted project, and the first isolated synthetic-agent task passed `QUEUED -> CLAIMED -> RUNNING -> COMPLETED` with one lease and three renewals. `HOSTED_CONTROL_PLANE = VALIDATED`; `HOSTED_DRY_RUN_E2E = PASS`. The operational hosted agent stayed ONLINE with zero assigned tasks. Facebook publishing remains disabled and unvalidated.
 2. Phase 4B-A is implemented and locally validated only: migration `202609080003_application_data_foundation.sql` adds separate RLS-protected `app_*` metadata tables and a private `fam-app-media` bucket. `ApplicationDataStore` is only a compatibility seam; the dashboard, scheduler, Local Agent, existing API and Protocol V1 remain unchanged. The importer is DRY_RUN by default and contains no configured hosted writer. See `docs/PHASE_4B_APPLICATION_DATA.md`.
-3. Next Phase 4B work: implement only a server-side application repository and authenticated upload-session/metadata API. Keep Storage signed flows server-only; do not cut over dashboard, scheduler or Local Agent yet.
-4. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
-5. Run the integrated studio E2E suite and verify launcher navigation on this PC.
-6. Decide the VPS provider, Linux distribution, resources, reverse proxy, process manager, and graphical browser approach.
+3. Phase 4B-B adds an opt-in server-side `SupabaseApplicationDataStore` and `/api/cloud` BFF routes reusing the existing Express HttpOnly-session/CSRF model. It stages immutable private media, returns short-lived upload/preview authorizations, and never exposes service-role credentials to browser code. Existing dashboard routes, Local Agent, Protocol V1 and real importer apply mode remain unchanged. Hosted deployment is not authorized yet.
+4. Next Phase 4B work: add tested application metadata mutations/import writer behind this BFF, then perform a synthetic local Storage upload/finalize/preview E2E. Do not cut over dashboard, scheduler or Local Agent yet.
+5. Configure `property-copywriter/.env` and smoke-test one current public Zonere listing.
 
 ## Continuing from another computer
 

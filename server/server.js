@@ -27,6 +27,8 @@ const {
   getTaskId,
 } = require('../app/core/CampaignTools');
 const { buildDiagnostics } = require('../app/core/Diagnostics');
+const { SupabaseApplicationDataStore } = require('../app/cloud/SupabaseApplicationDataStore');
+const { createCloudApplicationRouter } = require('./cloud-application-api');
 
 const app = express();
 const PORT = process.env.PORT == null || process.env.PORT === '' ? 3000 : Number(process.env.PORT);
@@ -1286,6 +1288,13 @@ app.post('/api/robot/stop-profile', (req, res) => {
   if (!profileId || typeof profileId !== 'string') return res.status(400).json({ error: 'Profil Facebook lipsa.' });
   return res.json(RobotManager.stop(profileId));
 });
+
+// Phase 4B-B is opt-in. Existing local dashboard routes remain authoritative
+// until a separate cutover; the service-role secret is read only by this process.
+if (process.env.RX_APP_SUPABASE_URL || process.env.RX_APP_SUPABASE_SERVICE_ROLE_KEY) {
+  try { app.use('/api/cloud', createCloudApplicationRouter(new SupabaseApplicationDataStore())); }
+  catch (error) { console.error(`Cloud application API disabled: ${error.message}`); }
+}
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Endpoint API inexistent.' });

@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Phase 4B-A adds only an additive local-validated schema and a read-only import planner. It does not deploy to hosted Supabase, upload media, replace `DataManager`, alter `server/server.js`, alter `TaskContract`, start a Local Agent, or enable Facebook publishing.
+Phase 4B-A adds an additive local-validated schema and a read-only import planner. Phase 4B-B adds an opt-in server-side Supabase store and `/api/cloud` BFF router. It does not deploy to hosted Supabase, replace `DataManager`, alter `TaskContract`, start a Local Agent, cut over the dashboard, or enable Facebook publishing.
 
 `202609080003_application_data_foundation.sql` creates the `app_*` application-data model. It is separate from Protocol V1 control-plane tables (`agents`, `profiles`, `tasks`, `task_events`, credentials and idempotency state).
 
@@ -36,6 +36,16 @@ No runner should re-read live `app_*` rows after task creation. The later Local 
 It never writes to Postgres/Storage and never changes local JSON, uploads, logs or SQLite. `--apply` additionally requires `RX_APP_IMPORT_CONFIRM=IMPORT_APPLICATION_DATA`, then deliberately fails because Phase 4B-A has no hosted writer. A later reviewed slice must supply explicit credentials, conflict handling and upload implementation before real import is allowed.
 
 Property Copywriter remains intentionally separate: its Prisma SQLite `PropertyRecord` and `DescriptionTemplate` records need an approved field-level mapping and are not imported by this foundation.
+
+## Phase 4B-B BFF and media flows
+
+`SupabaseApplicationDataStore` is constructed only when both server-only `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` exist. It is never imported by dashboard code. The optional `/api/cloud` router is behind the existing Express authentication middleware: production requires the current HttpOnly `rx_session` plus CSRF on mutations. This is a single-operator model; no tenant ownership model exists yet, so multi-tenant authorization is intentionally not claimed.
+
+`POST /api/cloud/media/initiate` validates MIME, max 500 MB size and SHA-256, creates a new STAGED immutable metadata row/key, then returns a short-lived Storage upload authorization. `POST .../finalize` changes only STAGED media to READY; abandoned staged rows cannot preview. `GET .../preview` only signs READY media related through `app_post_media`; no permanent URL is stored. Browser responses contain signed URLs/tokens only, never a service-role/operator/agent credential.
+
+The future importer writer uses this same store: upsert by legacy identity, stage immutable media by new key, upload, then finalize. It remains intentionally disabled in the CLI until a separately approved real-import slice.
+
+Hosted deployment later requires migration `202609080003`, the existing private bucket, and server/BFF environment values `RX_APP_SUPABASE_URL` and `RX_APP_SUPABASE_SERVICE_ROLE_KEY` in a server secret store. Do not add either variable to `VITE_*`, `NEXT_PUBLIC_*`, browser code, agent settings, or the existing `agent-protocol` function.
 
 ## Cutover and rollback
 
