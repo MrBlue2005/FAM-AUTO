@@ -5,6 +5,7 @@ class CloudAgentService {
   constructor(options) {
     this.transport = options.transport; this.registry = options.registry; this.runtimeProfiles = options.runtimeProfiles || (() => []);
     this.executeTask = options.executeTask; this.executor = options.executor || new LocalAgentExecutor(); this.events = options.events || (() => {}); this.connectionManager = options.connectionManager;
+    this.mediaMaterializer = options.mediaMaterializer || null;
     this.intervalMs = Math.max(15000, options.intervalMs || 30000); this.leaseRenewIntervalMs = Math.max(5000, options.leaseRenewIntervalMs || 30000); this.timer = null;
   }
   metadata() { return this.registry.getSafeMetadata(this.runtimeProfiles()); }
@@ -19,11 +20,19 @@ class CloudAgentService {
     if ((await this.transport.getCancellationState(task)).cancellation_requested) {
       await this.transport.reportCancelled(task); return { task, cancelled: true };
     }
-    let leaseTimer = null; let executionFinished = false;
+    let leaseTimer = null; let executionFinished = false; let materialized = null; let executionTask = task;
     try {
+      const snapshotMedia = Array.isArray(task.payload?.media) ? task.payload.media : [];
+      if (snapshotMedia.length) {
+        if (!this.mediaMaterializer || typeof this.transport.getMediaManifest !== 'function') throw Object.assign(new Error('Cloud task media materializer is unavailable.'), { code: 'MEDIA_MATERIALIZER_UNAVAILABLE' });
+        const getManifest = () => this.transport.getMediaManifest(task, snapshotMedia.map((item) => item.media_id));
+        try { materialized = await this.mediaMaterializer.materialize(task, await getManifest()); }
+        catch (error) { if (error.code !== 'MEDIA_DOWNLOAD_FAILED') throw error; materialized = await this.mediaMaterializer.materialize(task, await getManifest()); }
+        executionTask = { ...task, payload: { ...task.payload, local_media_paths: materialized.localMediaPaths, media: snapshotMedia.map(({ media_id, sha256, byte_size, mime_type, ordinal }) => ({ media_id, sha256, byte_size, mime_type, ordinal })) } };
+      }
       await this.transport.reportRunning(task); this.events('TASK_STARTED', { task_id: task.task_id });
       leaseTimer = setInterval(() => this.transport.renewLease(task).then(() => this.events('LEASE_RENEWED', { task_id: task.task_id })).catch((error) => this.events('LEASE_RENEW_FAILED', { task_id: task.task_id, code: error.code || 'TRANSPORT_ERROR' })), this.leaseRenewIntervalMs);
-      const result = await RobotManager.runExternalProfileTask(task.profile_id, () => this.executor.runProfile(task.profile_id, () => this.executeTask(task, async () => (await this.transport.getCancellationState(task)).cancellation_requested), { taskId: task.task_id }));
+      const result = await RobotManager.runExternalProfileTask(task.profile_id, () => this.executor.runProfile(task.profile_id, () => this.executeTask(executionTask, async () => (await this.transport.getCancellationState(task)).cancellation_requested), { taskId: task.task_id }));
       executionFinished = true;
       if (result?.cancelled || result?.cancellation_requested_after_safe_point) { await this.transport.reportCancelled(task); return { task, cancelled: true, result }; }
       await this.transport.reportCompletion(task, result || {}); this.events('TASK_COMPLETED', { task_id: task.task_id }); return { task, result };
@@ -32,7 +41,7 @@ class CloudAgentService {
       else if (error.code === 'PROFILE_BUSY') { await this.transport.reportFailure(task, error); this.events('PROFILE_BUSY', { task_id: task.task_id }); }
       else { await this.transport.reportFailure(task, error); this.events('TASK_FAILED', { task_id: task.task_id }); }
       throw error;
-    } finally { if (leaseTimer) clearInterval(leaseTimer); }
+    } finally { if (leaseTimer) clearInterval(leaseTimer); if (materialized) await materialized.cleanup(); }
   }
   start() { if (this.timer) return; const tick = async () => { try { await this.runOnce(); } catch {} finally { this.timer = setTimeout(tick, this.intervalMs); } }; tick(); }
   stop() { if (this.timer) clearTimeout(this.timer); this.timer = null; }

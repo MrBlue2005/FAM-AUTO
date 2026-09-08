@@ -11,7 +11,9 @@ function createCloudFacebookTaskExecutor(registry, runtimeProfiles) {
     const browser = await startBrowser(payload.runtime_profile_id, { profilePath: profile.localProfilePath, displayName: profile.displayName });
     try {
       if (await isCancellationRequested()) return { cancelled: true };
-      const result = await runCampaign(browser.page, { ...payload.campaign, postingIdentityId: payload.posting_identity_id }, [payload.group], payload.campaign_day, { plannedGroups: [payload.group], facebookProfileId: payload.runtime_profile_id, executionConfig: { ...payload.execution_config, publishEnabled: false }, skipGroupsPostedToday: Boolean(payload.execution_config?.skipGroupsPostedToday) });
+      const campaign = { ...payload.campaign, postingIdentityId: payload.posting_identity_id };
+      if (Array.isArray(payload.local_media_paths) && campaign.posts?.length) campaign.posts = campaign.posts.map((post, index) => ({ ...post, media: index === 0 ? payload.local_media_paths : post.media, imagePath: index === 0 ? payload.local_media_paths[0] : post.imagePath }));
+      const result = await runCampaign(browser.page, campaign, [payload.group], payload.campaign_day, { plannedGroups: [payload.group], facebookProfileId: payload.runtime_profile_id, executionConfig: { ...payload.execution_config, publishEnabled: false }, skipGroupsPostedToday: Boolean(payload.execution_config?.skipGroupsPostedToday) });
       if (await isCancellationRequested()) return { cancellation_requested_after_safe_point: true, processed: result?.processed || 0 };
       return { processed: result?.processed || 0 };
     } finally { await browser.context.close().catch(() => {}); }

@@ -66,3 +66,7 @@ The foundation migration was applied during a clean local Supabase rebuild. It c
 ## Next implementation step
 
 Phase 4B-B is complete. Future work requires an explicitly scoped next phase; no dashboard or Local Agent cutover is implied.
+
+## Local Agent media materialization
+
+For cloud task snapshots carrying `payload.media`, the agent requests a lease-scoped manifest while the task is `CLAIMED`, materializes and verifies every ordered item under its task-only temporary root, and only then reports `RUNNING` and invokes the executor. The derived execution payload contains local verified paths only; it does not modify the stored task snapshot or pass signed URLs to Chromium. Pre-execution manifest/download/hash/size failures are reported as ordinary failures, not `OUTCOME_UNKNOWN`; temporary media is removed in all terminal paths.

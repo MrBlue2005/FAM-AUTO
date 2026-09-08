@@ -3,12 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 const { LocalAgentRegistry } = require('../app/local-agent/LocalAgentRegistry');
 const { LocalAgentExecutor } = require('../app/local-agent/LocalAgentExecutor');
 const { LocalTaskTransport } = require('../app/local-agent/LocalTaskTransport');
 const { ProfileLockManager } = require('../app/local-agent/ProfileLockManager');
 const { TASK_STATUS, createTaskSnapshots } = require('../app/local-agent/TaskContract');
+const { TaskMediaMaterializer } = require('../app/local-agent/TaskMediaMaterializer');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -181,4 +183,11 @@ test('an abandoned profile lock is recovered when its owner process is confirmed
   }));
   const recovered = lockManager.acquire('profile_1');
   recovered.release();
+});
+
+test('task media materializer verifies ordered media and removes its isolated task directory', async () => {
+  const root = temporaryDirectory('media'); const bytes = Buffer.from('synthetic-media'); const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  const materializer = new TaskMediaMaterializer({ root, fetchImpl: async () => new Response(bytes, { status: 200 }) });
+  const output = await materializer.materialize({ task_id: 'task_media_fixture' }, { media: [{ media_id: 'media_two', ordinal: 1, sha256, byte_size: bytes.length, download_url: 'https://fixture/2' }, { media_id: 'media_one', ordinal: 0, sha256, byte_size: bytes.length, download_url: 'https://fixture/1' }] });
+  assert.match(output.localMediaPaths[0], /0000-media_one$/); await output.cleanup(); assert.equal(fs.existsSync(path.join(root, 'task_media_fixture')), false);
 });
