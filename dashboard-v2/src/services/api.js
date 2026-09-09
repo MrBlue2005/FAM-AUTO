@@ -1,5 +1,6 @@
 import { DASHBOARD_DATA_MODES, normalizeDashboardDataMode, assertCloudReadOnlyRequest, dashboardCapabilities, cloudMediaUploadEnabled, cloudApplicationMutationsEnabled } from './dashboardDataMode';
 import { createEphemeralPreviewCache } from './cloudMediaPreview';
+import { campaignPreflightRequestBody } from './hostedCampaignPreflight.js';
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY || '';
@@ -120,7 +121,9 @@ async function request(endpoint, options = {}) {
     const payload = await response.json().catch(() => ({}));
     const message = payload.error || `Eroare API: ${endpoint}`;
     window.dispatchEvent(new CustomEvent('rx:toast', { detail: { message, type: 'error' } }));
-    throw new Error(message);
+    const error = new Error(message);
+    if (typeof payload.code === 'string') error.code = payload.code;
+    throw error;
   }
 
   return response.json();
@@ -148,7 +151,7 @@ export const api = {
   createManagedUser: ({ username, password }) => request('/admin/users', { method: 'POST', body: JSON.stringify({ username, password }) }),
   updateManagedUser: (userId, { enabled }) => request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   resetManagedUserPassword: (userId, { password }) => request(`/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
-  createCampaignPreflightTask: ({ kind, campaignId, day, targetId, campaignRevision, postRevision }) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify({ kind, campaignId, day, targetId, campaignRevision, postRevision }) }),
+  createCampaignPreflightTask: (intent) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify(campaignPreflightRequestBody(intent)) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),
   getChromiumSafePreflightTask: (taskId) => request(`/cloud-remote-tasks/chromium-safe-preflight/${encodeURIComponent(taskId)}`),

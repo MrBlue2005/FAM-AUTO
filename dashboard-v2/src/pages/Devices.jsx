@@ -3,6 +3,7 @@ import { MonitorSmartphone, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import { DEVICE_PROFILE_READINESS, useHostedDeviceProfileSelection } from '../services/hostedDeviceSelection';
 import { validateDeviceDisplayName } from '../services/deviceAdminUi';
+import { canRequestRoutedPreflight, requiresExplicitReselection, routedPreflightErrorMessage } from '../services/hostedCampaignPreflight';
 
 function formatLastSeen(value) {
   if (!value) return 'Fără heartbeat';
@@ -32,6 +33,13 @@ function HostedDevices() {
   const [adminMessage, setAdminMessage] = useState('');
   const [enrollment, setEnrollment] = useState(null);
   const selection = useHostedDeviceProfileSelection(devices);
+  const [preflightSources, setPreflightSources] = useState({ campaigns: [], targets: [] });
+  const [preflightIntent, setPreflightIntent] = useState({ kind: 'property', campaignId: '', day: '', targetId: '' });
+  const [preflightTask, setPreflightTask] = useState(null);
+  const [preflightTarget, setPreflightTarget] = useState(null);
+  const [preflightError, setPreflightError] = useState('');
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const remoteTasksEnabled = api.isCloudRemoteTasksEnabled();
 
   async function load() {
     setLoading(true);
@@ -62,6 +70,58 @@ function HostedDevices() {
     return () => { ignore = true; };
   }, []);
 
+  useEffect(() => {
+    if (!remoteTasksEnabled) return undefined;
+    let ignore = false;
+    Promise.all([api.getProperties(), api.getJobs(), api.getGroups()])
+      .then(([properties, jobs, targets]) => {
+        if (ignore) return;
+        setPreflightSources({
+          campaigns: [...properties.map((item) => ({ ...item, kind: 'property' })), ...jobs.map((item) => ({ ...item, kind: 'job' }))].filter((item) => item.active !== false),
+          targets: targets.filter((item) => item.active !== false),
+        });
+      })
+      .catch((loadError) => { if (!ignore) setPreflightError(loadError.message || 'Datele necesare pentru preflight nu au putut fi încărcate.'); });
+    return () => { ignore = true; };
+  }, [remoteTasksEnabled]);
+
+  const selectedCampaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.id === preflightIntent.campaignId);
+  const selectedPost = (selectedCampaign?.posts || []).find((post) => Number(post.day) === Number(preflightIntent.day));
+  const preflightReady = canRequestRoutedPreflight(selection, preflightIntent);
+
+  async function createCampaignPreflight() {
+    if (!preflightReady || preflightBusy) return;
+    setPreflightBusy(true); setPreflightError('');
+    try {
+      const task = (await api.createCampaignPreflightTask({
+        ...preflightIntent,
+        deviceId: selection.selectedDeviceId,
+        profileId: selection.selectedProfileId,
+        campaignRevision: selectedCampaign?.revision,
+        postRevision: selectedPost?.revision,
+      })).task;
+      setPreflightTask(task);
+      setPreflightTarget({
+        deviceName: selection.selectedDevice?.displayName || 'Dispozitiv selectat',
+        profileName: selection.selectedProfile?.displayName || 'Profil selectat',
+        campaignName: selectedCampaign?.name || selectedCampaign?.title || 'Campanie selectată',
+        postDay: Number(preflightIntent.day),
+        targetName: preflightSources.targets.find((target) => target.id === preflightIntent.targetId)?.name || 'Target selectat',
+      });
+    } catch (issueError) {
+      setPreflightError(routedPreflightErrorMessage(issueError));
+      if (requiresExplicitReselection(issueError)) {
+        selection.clearSelection();
+        await load();
+      }
+    } finally { setPreflightBusy(false); }
+  }
+  async function refreshCampaignPreflight() {
+    if (!preflightTask?.taskId) return;
+    try { setPreflightTask((await api.getCampaignPreflightTask(preflightTask.taskId)).task); setPreflightError(''); }
+    catch (issueError) { setPreflightError(routedPreflightErrorMessage(issueError)); }
+  }
+
   return (
     <div className="management-page">
       <header className="management-header">
@@ -70,7 +130,7 @@ function HostedDevices() {
       </header>
 
       <section className="editor-panel">
-        <p className="muted-text">Această pagină nu selectează dispozitive sau profiluri pentru execuție. Rutarea, fallback-ul automat și administrarea locală de profiluri rămân pentru etape viitoare și Local Studio.</p>
+        <p className="muted-text">Selectarea dispozitivului și profilului este doar intenție UI. Preflight-ul este validat din nou de server, fără fallback automat și fără publicare.</p>
       </section>
 
       {!loading && !error && devices.length > 0 && <section className="editor-panel">
@@ -78,6 +138,21 @@ function HostedDevices() {
         <div className="button-row">{devices.map((device) => <button className={selection.selectedDeviceId === device.deviceId ? 'primary-button' : 'secondary-button'} key={device.deviceId} onClick={() => selection.selectDevice(device.deviceId)}>{device.displayName} · {device.online ? device.reportedStatus : 'OFFLINE'}</button>)}</div>
         {selection.selectedDevice && <div className="schedule-list"><div className="schedule-empty">Profiluri pentru {selection.selectedDevice.displayName}</div>{selection.selectedDevice.profiles.map((profile) => <button className={selection.selectedProfileId === profile.profileId ? 'primary-button' : 'secondary-button'} key={profile.profileId} onClick={() => selection.selectProfile(profile.profileId)}>{profile.displayName} · {profile.status}</button>)}{!selection.selectedDevice.profiles.length && <div className="schedule-empty">Dispozitivul selectat nu are profiluri înregistrate.</div>}</div>}
         <p className="mission-message"><strong>{selection.readiness}</strong> · {readinessCopy[selection.readiness]}</p>
+      </section>}
+
+      {remoteTasksEnabled && <section className="editor-panel" aria-label="Preflight campanie rutat">
+        <div className="panel-title-row"><div><h2>Preflight campanie</h2><p className="muted-text">Verificare fără publicare pentru dispozitivul și profilul selectate explicit.</p></div></div>
+        <div className="form-grid">
+          <label>Tip campanie<select value={preflightIntent.kind} onChange={(event) => setPreflightIntent({ kind: event.target.value, campaignId: '', day: '', targetId: preflightIntent.targetId })}><option value="property">Proprietate</option><option value="job">Job</option></select></label>
+          <label>Campanie<select value={preflightIntent.campaignId} onChange={(event) => { const campaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.id === event.target.value); setPreflightIntent((current) => ({ ...current, campaignId: event.target.value, day: String(campaign?.posts?.find((post) => post.active !== false)?.day || '') })); }}><option value="">Selectează</option>{preflightSources.campaigns.filter((item) => item.kind === preflightIntent.kind).map((item) => <option key={item.id} value={item.id}>{item.name || item.title || item.id}</option>)}</select></label>
+          <label>Zi postare<select value={preflightIntent.day} onChange={(event) => setPreflightIntent((current) => ({ ...current, day: event.target.value }))}><option value="">Selectează</option>{(selectedCampaign?.posts || []).filter((post) => post.active !== false).map((post) => <option key={post.day} value={post.day}>Ziua {post.day}</option>)}</select></label>
+          <label>Target<select value={preflightIntent.targetId} onChange={(event) => setPreflightIntent((current) => ({ ...current, targetId: event.target.value }))}><option value="">Selectează</option>{preflightSources.targets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        </div>
+        <p className="mission-message">Dispozitiv: <strong>{selection.selectedDevice?.displayName || 'nesetat'}</strong> · Profil: <strong>{selection.selectedProfile?.displayName || 'nesetat'}</strong> · Fără publicare</p>
+        {preflightTask && <p className="mission-message"><strong>{preflightTask.status}</strong> · {preflightTarget?.deviceName} / {preflightTarget?.profileName} · {preflightTarget?.campaignName}, ziua {preflightTarget?.postDay} · {preflightTarget?.targetName}</p>}
+        {preflightTask?.result && <p className="mission-message">Media: {preflightTask.result.mediaCount} · verificată: {preflightTask.result.mediaVerified ? 'da' : 'nu'} · blocaje: {preflightTask.result.blockers.length}</p>}
+        {preflightError && <p className="save-message" role="alert">{preflightError}</p>}
+        <div className="button-row"><button className="secondary-button" disabled={!preflightReady || preflightBusy || Boolean(preflightTask)} onClick={createCampaignPreflight}>Rulează preflight</button>{preflightTask && <button className="ghost-button" onClick={refreshCampaignPreflight}>Actualizează status</button>}</div>
       </section>}
 
       {error && <section className="editor-panel"><p className="save-message">{error}</p></section>}
