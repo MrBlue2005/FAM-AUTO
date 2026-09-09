@@ -109,7 +109,6 @@ function createHostedBffConfig(env = process.env) {
   if (authEnabled && String(env.RX_BFF_SESSION_SIGNING_SECRET || '').length < 32) errors.push('RX_BFF_SESSION_SIGNING_SECRET must be at least 32 characters.');
   if (production && !publicOrigin) errors.push('RX_BFF_PUBLIC_ORIGIN is required in production.');
   if (production && (!env.RX_APP_SUPABASE_URL || !env.RX_APP_SUPABASE_SERVICE_ROLE_KEY)) errors.push('Hosted application Supabase URL and service-role credentials are required in production.');
-  if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true' && (!syntheticAgentId || !syntheticProfileId)) errors.push('Synthetic Local Agent and profile IDs are required when hosted remote tasks are enabled.');
   if (errors.length) throw new Error(`Hosted BFF configuration is invalid: ${errors.join(' ')}`);
   return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, chromiumPreflightEnabled, facebookSessionPreflightEnabled, facebookSessionAgentId, facebookSessionProfileId, env };
 }

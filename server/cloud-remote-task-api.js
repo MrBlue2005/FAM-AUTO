@@ -15,6 +15,14 @@ const AVAILABILITY_CODES = new Set([
   'SYNTHETIC_AGENT_NOT_FOUND',
   'SYNTHETIC_PROFILE_NOT_FOUND',
   'SYNTHETIC_PROFILE_OWNERSHIP_MISMATCH',
+  'DEVICE_NOT_FOUND',
+  'DEVICE_OFFLINE',
+  'DEVICE_STALE',
+  'PROFILE_NOT_FOUND',
+  'PROFILE_NOT_READY',
+  'PROFILE_OWNERSHIP_MISMATCH',
+  'CAPABILITY_UNAVAILABLE',
+  'CONFLICTING_WORK',
 ]);
 
 function safeResult(result, taskType) {
@@ -60,13 +68,29 @@ function availabilityError(code) {
   return Object.assign(new Error('Configured synthetic agent/profile is unavailable.'), { status: 409, code });
 }
 
+function requestedTargetError(code) {
+  return Object.assign(new Error('The selected Local Agent profile is unavailable.'), { status: 409, code });
+}
+
+function normalizedRequestedId(value) {
+  return String(value || '').trim();
+}
+
+function campaignPreflightTaskId(deviceId, profileId, payload) {
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ version: 1, deviceId, profileId, payload })).digest('hex').slice(0, 32);
+  return `${CAMPAIGN_PREFLIGHT_PREFIX}${fingerprint}`;
+}
+
 function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', now = () => Date.now() }) {
   const router = express.Router();
+  const syntheticTargetConfigured = Boolean(agentId && profileId);
   const readTarget = async () => {
+    if (!syntheticTargetConfigured) return { agent: null, profile: null, availability: targetAvailability(null, null, agentId, now()) };
     const [agent, profile] = await Promise.all([store.getControlPlaneAgent(agentId), store.getControlPlaneProfile(profileId)]);
     return { agent, profile, availability: targetAvailability(agent, profile, agentId, now()) };
   };
   const verifyTarget = async () => {
+    if (!syntheticTargetConfigured) throw Object.assign(new Error('Synthetic remote task target is not configured.'), { status: 404 });
     const { agent, profile, availability } = await readTarget();
     if (!agent) throw availabilityError('SYNTHETIC_AGENT_NOT_FOUND');
     if (!profile) throw availabilityError('SYNTHETIC_PROFILE_NOT_FOUND');
@@ -74,6 +98,44 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     if (String(profile.status).toUpperCase() !== 'READY' || !isOnline(agent, now())) throw Object.assign(new Error('Synthetic Local Agent is offline or unavailable; no task was created.'), { status: 409 });
   };
   const belongsToSyntheticTarget = (task, taskType, prefix) => task && task.agent_id === agentId && task.profile_id === profileId && task.task_type === taskType && String(task.task_id || '').startsWith(prefix);
+  const belongsToCampaignPreflight = (task) => task && task.task_type === CAMPAIGN_PREFLIGHT_TASK_TYPE && String(task.task_id || '').startsWith(CAMPAIGN_PREFLIGHT_PREFIX);
+  const verifyRequestedTarget = async (body) => {
+    const deviceId = normalizedRequestedId(body?.deviceId);
+    const requestedProfileId = normalizedRequestedId(body?.profileId);
+    const [agent, profile] = await Promise.all([store.getControlPlaneAgent(deviceId), store.getControlPlaneProfile(requestedProfileId)]);
+    if (!agent) throw requestedTargetError('DEVICE_NOT_FOUND');
+    const status = String(agent.reported_status || '').toUpperCase();
+    if (!['ONLINE', 'BUSY', 'DEGRADED'].includes(status)) throw requestedTargetError('DEVICE_OFFLINE');
+    const seen = Date.parse(agent.last_seen_at || '');
+    if (!Number.isFinite(seen) || now() - seen > FRESHNESS_MS) throw requestedTargetError('DEVICE_STALE');
+    // Agent capability is not yet modeled in the control-plane row. When it is,
+    // this is the single server-side point to enforce local execution capability.
+    if (!profile) throw requestedTargetError('PROFILE_NOT_FOUND');
+    if (profile.agent_id !== deviceId) throw requestedTargetError('PROFILE_OWNERSHIP_MISMATCH');
+    if (String(profile.status || '').toUpperCase() !== 'READY') throw requestedTargetError('PROFILE_NOT_READY');
+    return { deviceId, profileId: requestedProfileId };
+  };
+  const existingCampaignTask = async (taskId, deviceId, requestedProfileId) => {
+    const task = await store.getControlPlaneTask(taskId);
+    return belongsToCampaignPreflight(task) && task.agent_id === deviceId && task.profile_id === requestedProfileId ? task : null;
+  };
+  const createCampaignPreflightTask = async ({ deviceId, requestedProfileId, payload }) => {
+    const taskId = campaignPreflightTaskId(deviceId, requestedProfileId, payload);
+    const existing = await existingCampaignTask(taskId, deviceId, requestedProfileId);
+    if (existing) return { task: existing, created: false };
+    if (typeof store.getActiveControlPlaneTaskForProfile === 'function') {
+      const active = await store.getActiveControlPlaneTaskForProfile(requestedProfileId);
+      if (active) throw requestedTargetError('CONFLICTING_WORK');
+    }
+    try {
+      const task = await store.createControlPlaneTask({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: CAMPAIGN_PREFLIGHT_TASK_TYPE, payload });
+      return { task, created: true };
+    } catch (error) {
+      const concurrent = await existingCampaignTask(taskId, deviceId, requestedProfileId);
+      if (concurrent) return { task: concurrent, created: false };
+      throw error;
+    }
+  };
   const sendError = (res, error) => {
     const body = { error: error.message };
     if (AVAILABILITY_CODES.has(error.code)) body.code = error.code;
@@ -103,19 +165,13 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
 
   router.post('/campaign-preflight', async (req, res) => {
     try {
-      await verifyTarget();
+      const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
       const kind = String(req.body?.kind || '');
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
       const source = await store.getCampaignPreflightSource({ kind, campaignLegacyId: String(req.body?.campaignId || ''), targetLegacyId: String(req.body?.targetId || '') });
       const payload = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
-      const task = await store.createControlPlaneTask({
-        task_id: `${CAMPAIGN_PREFLIGHT_PREFIX}${crypto.randomUUID()}`,
-        agent_id: agentId,
-        profile_id: profileId,
-        task_type: CAMPAIGN_PREFLIGHT_TASK_TYPE,
-        payload,
-      });
-      return res.status(201).json({ task: safeTask(task) });
+      const created = await createCampaignPreflightTask({ deviceId, requestedProfileId, payload });
+      return res.status(created.created ? 201 : 200).json({ task: safeTask(created.task) });
     } catch (error) { return sendError(res, error); }
   });
 
@@ -141,7 +197,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     try {
       if (!String(req.params.taskId || '').startsWith(CAMPAIGN_PREFLIGHT_PREFIX)) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
       const task = await store.getControlPlaneTask(req.params.taskId);
-      if (!belongsToSyntheticTarget(task, CAMPAIGN_PREFLIGHT_TASK_TYPE, CAMPAIGN_PREFLIGHT_PREFIX)) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
+      if (!belongsToCampaignPreflight(task)) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
       const events = (await store.listControlPlaneTaskEvents(task.task_id)).map((event) => ({ type: event.event_type, occurredAt: event.occurred_at }));
       return res.json({ task: safeTask(task), events });
     } catch (error) { return sendError(res, error); }
@@ -169,4 +225,4 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   return router;
 }
 
-module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, FACEBOOK_SESSION_READINESS_PREFIX, AVAILABILITY_CODES, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };
+module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, FACEBOOK_SESSION_READINESS_PREFIX, AVAILABILITY_CODES, campaignPreflightTaskId, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };

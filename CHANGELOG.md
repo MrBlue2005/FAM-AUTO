@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase D1 server-authorized general campaign-preflight routing. ADMIN requests now provide only explicit `deviceId`/`profileId` and campaign identifiers; the BFF independently validates device status/freshness and READY profile ownership, builds the immutable `PREFLIGHT`/`publishEnabled=false` snapshot, routes to that exact pair with no fallback, and returns only safe availability classifications. Synthetic routes stay separately configuration-bound. Repeated identical general preflight intents use a deterministic server task identity; a prequeue active-profile check is advisory while the existing atomic claim/profile lock remains final race authority. No migration or UI integration was added.
+
 - Added B4.2 Admin Users credential handoff UX: browser-cryptographic generated passwords, show/hide and copy controls, and a one-time ephemeral post-create/reset handoff panel. No password is persisted or recoverable after dismissal/reload.
 
 - Added Phase B4 hosted managed USER administration: a private RLS-protected `hosted_users` table, server-side Scrypt creation/reset, normalized case-insensitive usernames, session-version invalidation on disable/reset, ADMIN-only Users API/UI, and safe account DTOs. Bootstrap ADMIN remains environment-backed; legacy environment USER login is temporary compatibility only. `USER_DELETE = DEFERRED`.
