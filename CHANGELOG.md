@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase G1 durable task-ownership foundation. The additive, not-yet-hosted migration adds nullable write-once `tasks.owner_user_id` with an audit-preserving hosted-user FK and bounded per-owner index. Existing/bootstrap/synthetic tasks remain NULL-owned with no backfill. The hosted BFF stamps only a stable managed USER session ID at the internal creation boundary; USER history remains disabled pending G2.
+
 - Added Phase F read-only hosted Device workload/readiness. Devices now derive `ONLINE != READY` from heartbeat freshness, reported state, active control-plane work, and READY/free profiles. The existing explicit routing remains unchanged; no fallback or task mutation was added, and the Local Agent's atomic claim/profile lock remains final race authority.
 
 - Added Phase E hosted ADMIN-only execution history. The same-origin cloud read model provides bounded, filter-validated multi-device task lists and safe detail/event timelines without payloads, leases, credentials, paths, or Local Agent logs. Devices now show read-only recent-task summaries; `OUTCOME_UNKNOWN` remains distinct and requires manual review. No task mutation controls were added.

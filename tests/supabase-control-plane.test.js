@@ -73,3 +73,11 @@ test('hosted managed users are private, RLS-protected, and session-versioned', (
   assert.match(sql, /revoke all on table public\.hosted_users from public, anon, authenticated/);
   assert.match(sql, /grant select, insert, update, delete on table public\.hosted_users to service_role/);
 });
+
+test('Phase G1 task ownership migration is additive, immutable, and remains service-role-only', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase', 'migrations', '202609100001_task_owner_user.sql'), 'utf8');
+  assert.match(sql, /owner_user_id uuid references public\.hosted_users\(user_id\) on delete restrict/i);
+  assert.match(sql, /tasks_owner_history_idx/); assert.match(sql, /where owner_user_id is not null/i);
+  assert.match(sql, /rx_cp_task_owner_immutable/); assert.match(sql, /TASK_OWNER_IMMUTABLE/);
+  assert.doesNotMatch(sql, /grant .* to (anon|authenticated)/i);
+});

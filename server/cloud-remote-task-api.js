@@ -5,6 +5,7 @@ const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
+const { taskWithServerOwner } = require('./task-ownership');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
@@ -119,7 +120,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     const task = await store.getControlPlaneTask(taskId);
     return belongsToCampaignPreflight(task) && task.agent_id === deviceId && task.profile_id === requestedProfileId ? task : null;
   };
-  const createCampaignPreflightTask = async ({ deviceId, requestedProfileId, payload }) => {
+  const createCampaignPreflightTask = async ({ deviceId, requestedProfileId, payload, user }) => {
     const taskId = campaignPreflightTaskId(deviceId, requestedProfileId, payload);
     const existing = await existingCampaignTask(taskId, deviceId, requestedProfileId);
     if (existing) return { task: existing, created: false };
@@ -128,7 +129,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (active) throw requestedTargetError('CONFLICTING_WORK');
     }
     try {
-      const task = await store.createControlPlaneTask({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: CAMPAIGN_PREFLIGHT_TASK_TYPE, payload });
+      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: CAMPAIGN_PREFLIGHT_TASK_TYPE, payload }, user));
       return { task, created: true };
     } catch (error) {
       const concurrent = await existingCampaignTask(taskId, deviceId, requestedProfileId);
@@ -145,13 +146,13 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   router.post('/synthetic-dry-run', async (req, res) => {
     try {
       await verifyTarget();
-      const task = await store.createControlPlaneTask({
+      const task = await store.createControlPlaneTask(taskWithServerOwner({
         task_id: `${TASK_PREFIX}${crypto.randomUUID()}`,
         agent_id: agentId,
         profile_id: profileId,
         task_type: 'DRY_RUN',
         payload: { validation: 'hosted-remote-roundtrip', publishEnabled: false },
-      });
+      }, null));
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
@@ -170,7 +171,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
       const source = await store.getCampaignPreflightSource({ kind, campaignLegacyId: String(req.body?.campaignId || ''), targetLegacyId: String(req.body?.targetId || '') });
       const payload = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
-      const created = await createCampaignPreflightTask({ deviceId, requestedProfileId, payload });
+      const created = await createCampaignPreflightTask({ deviceId, requestedProfileId, payload, user: req.user });
       return res.status(created.created ? 201 : 200).json({ task: safeTask(created.task) });
     } catch (error) { return sendError(res, error); }
   });
@@ -179,7 +180,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     try {
       if (!chromiumPreflightEnabled) throw Object.assign(new Error('Chromium safe preflight is disabled.'), { status: 404, code: 'CHROMIUM_PREFLIGHT_DISABLED' });
       await verifyTarget();
-      const task = await store.createControlPlaneTask({ task_id: `${CHROMIUM_SAFE_PREFLIGHT_PREFIX}${crypto.randomUUID()}`, agent_id: agentId, profile_id: profileId, task_type: CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } });
+      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: `${CHROMIUM_SAFE_PREFLIGHT_PREFIX}${crypto.randomUUID()}`, agent_id: agentId, profile_id: profileId, task_type: CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } }, null));
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
@@ -188,7 +189,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (!facebookSessionPreflightEnabled || !facebookSessionAgentId || !facebookSessionProfileId) throw Object.assign(new Error('Facebook session readiness preflight is disabled.'), { status: 404 });
       const [agent, profile] = await Promise.all([store.getControlPlaneAgent(facebookSessionAgentId), store.getControlPlaneProfile(facebookSessionProfileId)]);
       if (!agent || !profile || profile.agent_id !== facebookSessionAgentId || String(profile.status).toUpperCase() !== 'READY' || !isOnline(agent, now())) throw Object.assign(new Error('Reviewed Local Agent profile is unavailable; no task was created.'), { status: 409 });
-      const task = await store.createControlPlaneTask({ task_id: `${FACEBOOK_SESSION_READINESS_PREFIX}${crypto.randomUUID()}`, agent_id: facebookSessionAgentId, profile_id: facebookSessionProfileId, task_type: FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, payload: { executionMode: 'SESSION_READINESS', publishEnabled: false } });
+      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: `${FACEBOOK_SESSION_READINESS_PREFIX}${crypto.randomUUID()}`, agent_id: facebookSessionAgentId, profile_id: facebookSessionProfileId, task_type: FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, payload: { executionMode: 'SESSION_READINESS', publishEnabled: false } }, null));
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
