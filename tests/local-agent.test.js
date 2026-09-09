@@ -10,7 +10,7 @@ const { LocalAgentExecutor } = require('../app/local-agent/LocalAgentExecutor');
 const { LocalTaskTransport } = require('../app/local-agent/LocalTaskTransport');
 const { ProfileLockManager } = require('../app/local-agent/ProfileLockManager');
 const { TASK_STATUS, createTaskSnapshots } = require('../app/local-agent/TaskContract');
-const { TaskMediaMaterializer } = require('../app/local-agent/TaskMediaMaterializer');
+const { TaskMediaMaterializer, createTaskMediaMaterializerForUploads } = require('../app/local-agent/TaskMediaMaterializer');
 const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
 const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredentials');
 const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
@@ -275,6 +275,12 @@ test('task media materializer verifies ordered media and removes its isolated ta
   const materializer = new TaskMediaMaterializer({ root, fetchImpl: async () => new Response(bytes, { status: 200 }) });
   const output = await materializer.materialize({ task_id: 'task_media_fixture' }, { media: [{ media_id: 'media_two', ordinal: 1, sha256, byte_size: bytes.length, download_url: 'https://fixture/2' }, { media_id: 'media_one', ordinal: 0, sha256, byte_size: bytes.length, download_url: 'https://fixture/1' }] });
   assert.match(output.localMediaPaths[0], /0000-media_one$/); await output.cleanup(); assert.equal(fs.existsSync(path.join(root, 'task_media_fixture')), false);
+});
+
+test('HTTP agent media materialization stays below the configured uploads root', () => {
+  const root = temporaryDirectory('agent-media-root'); const materializer = createTaskMediaMaterializerForUploads(root);
+  assert.equal(materializer.root, path.join(root, 'cloud-task-media'));
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'run-http-agent.js'), 'utf8'), /mediaMaterializer:\s*createTaskMediaMaterializerForUploads\(uploadsPath\)/);
 });
 
 test('task media materializer rejects a hash mismatch without leaving a partial file or touching sibling task data', async () => {

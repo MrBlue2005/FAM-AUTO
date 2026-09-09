@@ -16,4 +16,7 @@ class TaskMediaMaterializer {
     for (let attempt = 0; attempt <= this.retries; attempt += 1) { try { const response = await this.fetch(item.download_url); if (!response.ok || !response.body) throw Object.assign(new Error('Media download failed.'), { code: 'MEDIA_DOWNLOAD_FAILED' }); const out = fs.createWriteStream(partial, { flags: 'w', mode: 0o600 }); const digest = crypto.createHash('sha256'); let bytes = 0; for await (const chunk of response.body) { bytes += chunk.length; digest.update(chunk); if (!out.write(chunk)) await new Promise((resolve) => out.once('drain', resolve)); } await new Promise((resolve, reject) => out.end((error) => error ? reject(error) : resolve())); if (bytes !== item.byte_size) throw Object.assign(new Error('Media byte size mismatch.'), { code: 'MEDIA_SIZE_MISMATCH' }); if (digest.digest('hex') !== item.sha256) throw Object.assign(new Error('Media SHA-256 mismatch.'), { code: 'MEDIA_HASH_MISMATCH' }); await fsp.rename(partial, target); return target; } catch (error) { await fsp.rm(partial, { force: true }); if (attempt === this.retries || ['MEDIA_SIZE_MISMATCH', 'MEDIA_HASH_MISMATCH'].includes(error.code)) throw error; } }
   }
 }
-module.exports = { TaskMediaMaterializer };
+function createTaskMediaMaterializerForUploads(uploadsPath, options = {}) {
+  return new TaskMediaMaterializer({ ...options, root: path.join(path.resolve(uploadsPath), 'cloud-task-media') });
+}
+module.exports = { TaskMediaMaterializer, createTaskMediaMaterializerForUploads };
