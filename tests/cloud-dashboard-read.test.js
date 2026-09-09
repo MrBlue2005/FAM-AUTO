@@ -24,6 +24,16 @@ function fixtureStore() {
     listCampaignFolders: async () => campaignFolders, listScheduleFolders: async () => scheduleFolders, listSchedules: async () => schedules,
     listMedia: async () => [{ media_id: 'media-1', original_name: 'home.png', mime_type: 'image/png', byte_size: 12, state: 'READY', created_at: '2026-09-08T00:00:00Z', sha256: 'secret-hash', object_key: 'private/key', app_post_media: [{ post_id: 'post-property' }] }],
     getAgentStatus: async () => ({ agent_id: 'agent-private', display_name: 'Synthetic Local Agent', reported_status: 'ONLINE', last_seen_at: new Date().toISOString(), credential: 'must-not-leak', lease_id: 'must-not-leak' }),
+    listControlPlaneAgents: async () => [
+      { agent_id: 'agent-office', display_name: 'PC Birou', reported_status: 'ONLINE', last_seen_at: new Date().toISOString(), credential: 'must-not-leak', enrollment_token: 'must-not-leak' },
+      { agent_id: 'agent-home', display_name: 'PC Acasă', reported_status: 'BUSY', last_seen_at: new Date().toISOString(), lease_id: 'must-not-leak' },
+      { agent_id: 'agent-stale', display_name: 'PC Vechi', reported_status: 'ONLINE', last_seen_at: '2020-01-01T00:00:00.000Z', payload: { secret: 'must-not-leak' } },
+    ],
+    listControlPlaneProfiles: async () => [
+      { profile_id: 'profile-office-ready', agent_id: 'agent-office', display_name: 'Profil birou', status: 'READY', last_seen_at: new Date().toISOString(), profile_path: 'must-not-leak' },
+      { profile_id: 'profile-home-busy', agent_id: 'agent-home', display_name: 'Profil acasă', status: 'BUSY', last_seen_at: new Date().toISOString(), cookie: 'must-not-leak' },
+      { profile_id: 'profile-orphan', agent_id: 'agent-unknown', display_name: 'Profil orfan', status: 'READY', last_seen_at: new Date().toISOString() },
+    ],
   };
 }
 
@@ -70,6 +80,22 @@ test('agent-status is online only for a fresh reported heartbeat and handles no 
   const stale = mapAgentStatus({ display_name: 'Agent', reported_status: 'ONLINE', last_seen_at: new Date(now - AGENT_HEARTBEAT_FRESHNESS_MS - 1).toISOString() }, now);
   assert.equal(fresh.online, true); assert.equal(stale.online, false);
   assert.deepEqual(mapAgentStatus(null, now), { configured: false, online: false, lastSeenAt: null, agentName: null, capabilities: { localExecution: false, facebookAutomation: false } });
+});
+
+test('authenticated devices read groups safe profiles by device and marks stale agents offline', async () => {
+  await withBff(async (request) => {
+    const anonymous = await request('/api/cloud-read/devices'); assert.equal(anonymous.response.status, 401);
+    const login = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password } }); assert.equal(login.response.status, 200);
+    const devices = await request('/api/cloud-read/devices', { cookie: login.cookie });
+    assert.equal(devices.response.status, 200); assert.equal(devices.body.devices.length, 3);
+    const office = devices.body.devices.find((item) => item.deviceId === 'agent-office');
+    const home = devices.body.devices.find((item) => item.deviceId === 'agent-home');
+    const stale = devices.body.devices.find((item) => item.deviceId === 'agent-stale');
+    assert.deepEqual(office.profiles, [{ profileId: 'profile-office-ready', displayName: 'Profil birou', status: 'READY', lastSeenAt: office.profiles[0].lastSeenAt, ready: true }]);
+    assert.equal(home.reportedStatus, 'BUSY'); assert.equal(home.online, true); assert.equal(home.profiles[0].profileId, 'profile-home-busy');
+    assert.equal(stale.online, false); assert.equal(stale.reportedStatus, 'OFFLINE'); assert.deepEqual(stale.profiles, []);
+    assert.ok(!JSON.stringify(devices.body).match(/credential|enrollment|lease|payload|profile_path|cookie|secret|agent-unknown/i));
+  });
 });
 
 test('hosted status omits the legacy API banner while local mode retains it', async () => {

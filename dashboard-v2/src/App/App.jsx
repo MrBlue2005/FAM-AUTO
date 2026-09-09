@@ -15,6 +15,7 @@ import Diagnostics from '../pages/Diagnostics';
 import Scheduler from '../pages/Scheduler';
 import Robot from '../pages/Robot';
 import Settings from '../pages/Settings';
+import Devices from '../pages/Devices';
 import DesktopOverlay from '../pages/DesktopOverlay';
 import ToastViewport from '../components/ToastViewport';
 import AuthGate from '../components/AuthGate';
@@ -82,6 +83,7 @@ function DashboardApp({ auth }) {
     if (activePage === 'scheduler') return <Scheduler />;
     if (activePage === 'robot') return <Robot />;
     if (activePage === 'settings') return <Settings />;
+    if (activePage === 'devices') return <Devices />;
 
     return <Dashboard onChangePage={handleChangePage} />;
   }

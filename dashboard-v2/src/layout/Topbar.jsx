@@ -17,6 +17,7 @@ const titles = {
   diagnostics: 'Diagnostic preflight',
   robot: 'RX Propulse Control',
   settings: 'Settings',
+  devices: 'Dispozitive',
 };
 
 function buildSearchItems({ properties, jobs, groups }) {

@@ -83,6 +83,49 @@ function mapAgentStatus(row, nowMs = Date.now()) {
   };
 }
 
+function isoDate(value) {
+  const ms = Date.parse(value || '');
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function mapDevice(row, nowMs = Date.now()) {
+  const reportedStatus = String(row.reported_status || 'OFFLINE').toUpperCase();
+  const lastSeenAt = isoDate(row.last_seen_at);
+  const fresh = lastSeenAt && nowMs - Date.parse(lastSeenAt) <= AGENT_HEARTBEAT_FRESHNESS_MS;
+  const accepted = ['ONLINE', 'BUSY', 'DEGRADED'].includes(reportedStatus);
+  return {
+    deviceId: String(row.agent_id),
+    displayName: String(row.display_name || 'RX Local Agent'),
+    online: Boolean(fresh && accepted),
+    reportedStatus: fresh && accepted ? reportedStatus : 'OFFLINE',
+    lastSeenAt,
+    capabilities: { localExecution: true, facebookAutomation: false },
+    profiles: [],
+  };
+}
+
+function mapDeviceProfile(row) {
+  const status = String(row.status || 'UNAVAILABLE').toUpperCase();
+  return {
+    profileId: String(row.profile_id),
+    displayName: String(row.display_name || row.profile_id),
+    status,
+    lastSeenAt: isoDate(row.last_seen_at),
+    ready: status === 'READY',
+  };
+}
+
+async function listDevices(store, nowMs = Date.now()) {
+  const [agents, profiles] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles()]);
+  const devices = agents.map((agent) => mapDevice(agent, nowMs));
+  const byId = new Map(devices.map((device) => [device.deviceId, device]));
+  for (const profile of profiles) {
+    const device = byId.get(String(profile.agent_id));
+    if (device) device.profiles.push(mapDeviceProfile(profile));
+  }
+  return { devices };
+}
+
 function createCloudDashboardReadRouter(store) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
@@ -106,6 +149,7 @@ function createCloudDashboardReadRouter(store) {
     return media.map((row) => mapMedia(row, campaignByPostId));
   })));
   router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
+  router.get('/devices', (req, res) => send(res, listDevices(store)));
   router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
   router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));
@@ -116,4 +160,4 @@ function createCloudDashboardReadRouter(store) {
   return router;
 }
 
-module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, createCloudDashboardReadRouter, mapAgentStatus, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };
+module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, createCloudDashboardReadRouter, mapAgentStatus, mapDevice, mapDeviceProfile, listDevices, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };

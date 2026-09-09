@@ -22,6 +22,7 @@ const pageLabels = {
   reports: 'rapoarte',
   robot: 'robot',
   settings: 'settings',
+  devices: 'dispozitive',
 };
 
 const navItems = [

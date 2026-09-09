@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Megaphone,
+  MonitorSmartphone,
   PanelLeftClose,
   PanelLeftOpen,
   Radio,
@@ -41,6 +42,7 @@ const secondaryItems = [
   { id: 'robot', label: 'Propulse Control', Icon: Bot, localOnly: true },
   { id: 'settings', label: 'Settings', Icon: Settings, localOnly: true },
 ];
+const hostedItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartphone }];
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
   const cloudReadOnly = api.isCloudReadOnly();
@@ -131,6 +133,8 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
         <div className="sidebar-separator" />
 
         {primaryItems.map(renderItem)}
+
+        {cloudReadOnly && <><div className="sidebar-separator" />{hostedItems.map(renderItem)}</>}
 
         <div className="sidebar-separator" />
 

@@ -1,0 +1,74 @@
+import { useEffect, useState } from 'react';
+import { MonitorSmartphone, RefreshCw } from 'lucide-react';
+import { api } from '../services/api';
+
+function formatLastSeen(value) {
+  if (!value) return 'Fără heartbeat';
+  return new Intl.DateTimeFormat('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function tone(value) {
+  if (value === 'ONLINE' || value === 'READY') return 'active';
+  if (value === 'BUSY' || value === 'DEGRADED') return 'warning';
+  return 'inactive';
+}
+
+function HostedDevices() {
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function load() {
+    setLoading(true);
+    try {
+      const result = await api.getDevices();
+      setDevices(result.devices || []);
+      setError('');
+    } catch (loadError) {
+      setError(loadError.message || 'Dispozitivele nu au putut fi încărcate.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    api.getDevices()
+      .then((result) => { if (!ignore) { setDevices(result.devices || []); setError(''); } })
+      .catch((loadError) => { if (!ignore) setError(loadError.message || 'Dispozitivele nu au putut fi încărcate.'); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
+
+  return (
+    <div className="management-page">
+      <header className="management-header">
+        <div><span className="hero-eyebrow">HOSTED CONTROL PLANE</span><h1>Dispozitive</h1><p>Vizibilitate read-only pentru Local Agents și profilurile deținute de fiecare dispozitiv.</p></div>
+        <button className="ghost-button" onClick={load} disabled={loading}><RefreshCw className={loading ? 'spin-icon' : ''} size={16} /> Actualizează</button>
+      </header>
+
+      <section className="editor-panel">
+        <p className="muted-text">Această pagină nu selectează dispozitive sau profiluri pentru execuție. Rutarea, fallback-ul automat și administrarea locală de profiluri rămân pentru etape viitoare și Local Studio.</p>
+      </section>
+
+      {error && <section className="editor-panel"><p className="save-message">{error}</p></section>}
+      {loading && <section className="editor-panel"><p>Se încarcă dispozitivele…</p></section>}
+      {!loading && !error && devices.length === 0 && <section className="empty-state-v2"><MonitorSmartphone size={28} /><strong>Niciun Local Agent configurat</strong><span>Dispozitivele înscrise vor apărea aici după heartbeat.</span></section>}
+      {!loading && !error && devices.map((device) => (
+        <section className="editor-panel" key={device.deviceId}>
+          <div className="panel-title-row"><div><h2>{device.displayName}</h2><p className="muted-text">Ultimul heartbeat: {formatLastSeen(device.lastSeenAt)}</p></div><span className={`status-pill ${tone(device.reportedStatus)}`}>{device.online ? device.reportedStatus : 'OFFLINE'}</span></div>
+          <p className="muted-text">Execuție locală: {device.capabilities.localExecution ? 'disponibilă' : 'indisponibilă'} · Automatizare Facebook: {device.capabilities.facebookAutomation ? 'disponibilă' : 'nedisponibilă'}</p>
+          <div className="schedule-list">
+            {device.profiles.map((profile) => <article className="schedule-card" key={profile.profileId}><div className="schedule-card-main"><div className="schedule-card-title"><span className={`schedule-state ${tone(profile.status)}`}><MonitorSmartphone size={15} />{profile.status}</span><h3>{profile.displayName}</h3></div><p>Readiness: {profile.ready ? 'pregătit' : 'indisponibil'} · Ultimul heartbeat: {formatLastSeen(profile.lastSeenAt)}</p></div></article>)}
+            {!device.profiles.length && <div className="schedule-empty">Nu există profiluri înregistrate pentru acest dispozitiv.</div>}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+export default function Devices() {
+  if (!api.isCloudReadOnly()) return null;
+  return <HostedDevices />;
+}

@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase B read-only multi-device visibility: authenticated hosted clients can read browser-safe Local Agent/device status with profiles grouped by owner. It adds no execution routing, preferred device, profile picker, or automatic fallback; Facebook sessions and local profile administration remain machine-local.
+
 - Completed hosted Dashboard cloud-native refactor Phase A: hosted navigation and global status now distinguish Cloud BFF from the temporary Local Agent bridge, machine-local tools are visibly marked Local Studio-only, and hosted Dashboard/Schedules no longer imply local runtime ownership. Multi-device/profile routing is deferred to Phase B/C; Local Studio remains unchanged.
 
 - A2 makes machine-local administration surfaces explicit Local Studio-only boundaries in hosted `CLOUD_READ_ONLY` mode. Robot, Queue, Settings, Diagnostics, Reports, Analytics, and Live Feed no longer mount their local runtime loaders when hosted; local mode is unchanged.

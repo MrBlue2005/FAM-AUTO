@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Phase B adds an authenticated, read-only hosted Devices model using existing control-plane agents/profiles. It supports multiple devices and groups safe profile readiness by owner, but intentionally has no execution routing, preferred device, profile picker, or automatic fallback. Facebook sessions remain machine-local and Local Studio remains responsible for local profile administration.
+
 - Hosted Dashboard cloud-native refactor Phase A is complete. `CLOUD_READ_ONLY` represents cloud application data, the hosted BFF/control plane, a safe temporary Local Agent availability bridge, and explicit Local Studio boundaries for machine-local administration. Multi-device Devices/Profile UI and global hosted profile selection are deferred to Phase B/C; Local Studio behavior remains intact.
 
 - Hosted `CLOUD_READ_ONLY` renders intentional Local Studio-only boundaries for Robot, Queue, Settings, Diagnostics, Reports, Analytics, and Live Feed. Those pages do not mount their machine-local loaders while hosted; their existing Local Studio behavior is unchanged.

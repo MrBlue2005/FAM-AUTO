@@ -141,6 +141,7 @@ export const api = {
     return cloudMediaPreviewCache.resolve(typeof media === 'string' ? media : media?.mediaId || media?.id);
   },
   getAgentStatus: () => cloudRead('/agent-status'),
+  getDevices: () => cloudRead('/devices'),
   createCampaignPreflightTask: ({ kind, campaignId, day, targetId, campaignRevision, postRevision }) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify({ kind, campaignId, day, targetId, campaignRevision, postRevision }) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),
