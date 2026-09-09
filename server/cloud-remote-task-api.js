@@ -15,9 +15,11 @@ const AVAILABILITY_CODES = new Set([
   'SYNTHETIC_PROFILE_OWNERSHIP_MISMATCH',
 ]);
 
-function safeResult(result) {
+function safeResult(result, taskType) {
   if (result && result.dry_run === true && result.publishEnabled === false) return { dryRun: true, publishEnabled: false };
-  return safeCampaignPreflightResult(result) || safeChromiumPreflightResult(result);
+  if (taskType === CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE) return safeChromiumPreflightResult(result);
+  if (taskType === CAMPAIGN_PREFLIGHT_TASK_TYPE) return safeCampaignPreflightResult(result);
+  return null;
 }
 
 function safeTask(task) {
@@ -28,7 +30,7 @@ function safeTask(task) {
     claimedAt: task.claimed_at || null,
     startedAt: task.started_at || null,
     completedAt: task.completed_at || null,
-    result: safeResult(task.result),
+    result: safeResult(task.result, task.task_type),
   };
 }
 
