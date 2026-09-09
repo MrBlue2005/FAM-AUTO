@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MonitorSmartphone, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import { DEVICE_PROFILE_READINESS, useHostedDeviceProfileSelection } from '../services/hostedDeviceSelection';
+import { validateDeviceDisplayName } from '../services/deviceAdminUi';
 
 function formatLastSeen(value) {
   if (!value) return 'Fără heartbeat';
@@ -46,8 +47,8 @@ function HostedDevices() {
   }
 
   async function rename(deviceId) {
-    const displayName = renameValue.trim();
-    if (!displayName || displayName.length > 80) return setAdminMessage('Numele dispozitivului trebuie să aibă între 1 și 80 de caractere.');
+    const { displayName, error: validationError } = validateDeviceDisplayName(renameValue);
+    if (validationError) return setAdminMessage(validationError);
     try { await api.renameDevice(deviceId, displayName); setRenamingId(null); setRenameValue(''); setAdminMessage('Dispozitiv redenumit.'); await load(); } catch (renameError) { setAdminMessage(renameError.message || 'Redenumirea nu a reușit.'); }
   }
   async function addDevice() { try { setAdminMessage(''); setEnrollment(await api.createEnrollmentToken()); } catch (issueError) { setAdminMessage(issueError.message || 'Tokenul nu a putut fi creat.'); } }

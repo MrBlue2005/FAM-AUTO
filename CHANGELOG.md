@@ -1,5 +1,7 @@
 # Changelog
 
+- Closed Phase B3 Device Admin control-plane validation: deterministic coverage verifies ADMIN-only Devices UI/API access, exact trimmed display-name rename with CSRF/Origin enforcement, one-time 900-second enrollment issuance through the server-only operator boundary, ephemeral token dismissal/reload behavior, safe Device DTOs, and Phase B/C selection regressions. Revoke and credential rotation remain deferred.
+
 - Added hosted ADMIN/USER RBAC foundation with independent env-backed Scrypt credentials, signed server-issued roles, central permissions, server-enforced Devices/execution restrictions, and role-aware hosted navigation. Operator control-plane tokens remain separate from dashboard login.
 
 - Added Phase C explicit hosted device/profile selection context. It is memory-only UI intent derived exclusively from the Devices read model, has no execution authority or automatic fallback, and requires future BFF task endpoints to revalidate ownership and readiness server-side.

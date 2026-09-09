@@ -14,6 +14,8 @@ RX_AGENT_REFERENCE_ALLOW_HTTP=false
 
 Nu pune in `.env` tokenul de enrollment, secretul agentului, service-role, tokenul operatorului sau parole. Administratorul poate crea un token unic din Hosted Admin → Dispozitive → Adaugă dispozitiv; acesta este afișat o singură dată și expiră rapid. `npm.cmd run agent:http` valideaza configuratia inainte sa faca orice apel cloud si refuza modul Local, URL-ul lipsa sau HTTP necriptat (cu exceptia backend-ului local de referinta activat explicit). Tokenul unic exista numai in procesul de prima pornire; runnerul il elimina din propriul mediu imediat dupa enrollment reusit. Terminalul PowerShell trebuie curatat si el dupa aceea:
 
+Fluxul Hosted Admin → Dispozitive → Adaugă dispozitiv emite un token de enrollment de unică folosință, valabil aproximativ 15 minute; după închiderea panoului sau reîncărcare, tokenul nu poate fi recuperat. Fiecare PC înrolat are propria identitate și propriul credential persistent, care rămâne numai pe mașina respectivă. Tokenul operatorului rămâne exclusiv server-side. Revocarea și rotația credentialelor sunt intenționat deferred, nu acțiuni disponibile în acest flux.
+
 ```powershell
 $env:RX_AGENT_ENROLLMENT_TOKEN = '<token-unic-primit-separat>'
 try {

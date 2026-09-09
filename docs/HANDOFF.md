@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Phase B3 completes the hosted ADMIN Device Admin control plane: Admin can rename only a selected device display name and issue an ephemeral, one-time enrollment token through the server-side operator boundary. The token is shown only in React component state, is not recoverable after dismissal/reload, and persistent Local Agent credentials remain machine-local. USER is denied at navigation, page, and API layers; profiles remain read-only/local-managed, and revoke/credential rotation remain deferred.
+
 - Hosted RBAC supports independent env-backed `ADMIN_USERNAME`/`ADMIN_PASSWORD_SCRYPT` and optional `USER_USERNAME`/`USER_PASSWORD_SCRYPT` credentials, generated with the existing `npm run auth:hash` workflow. Roles are server-issued in signed sessions; Devices and remote preflight routes are ADMIN-only, while normal cloud application reads/writes remain available to USER. `RX_OPERATOR_API_TOKEN` remains separate control-plane authentication.
 
 - Phase C provides explicit hosted `deviceId` + `profileId` selection state derived only from the Devices read model. It is memory-only UI intent, not execution authorization, has no automatic fallback, and leaves Facebook sessions machine-local. Any future BFF execution endpoint must independently revalidate device existence, profile ownership, heartbeat freshness, capability, READY state, conflicting work, and authorization; Local Studio remains separate.
