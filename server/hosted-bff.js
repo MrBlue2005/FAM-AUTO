@@ -90,6 +90,9 @@ function createHostedBffConfig(env = process.env) {
   const syntheticAgentId = normalizedSyntheticTargetId(env.RX_BFF_SYNTHETIC_AGENT_ID);
   const syntheticProfileId = normalizedSyntheticTargetId(env.RX_BFF_SYNTHETIC_PROFILE_ID);
   const chromiumPreflightEnabled = env.RX_BFF_CHROMIUM_PREFLIGHT_ENABLED === 'true';
+  const facebookSessionPreflightEnabled = env.RX_BFF_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true';
+  const facebookSessionAgentId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_AGENT_ID);
+  const facebookSessionProfileId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_PROFILE_ID);
   const developmentOrigins = normalizeOrigins(env.RX_BFF_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:3000,http://localhost:3000');
   const allowedOrigins = production ? [publicOrigin] : [...new Set([publicOrigin, ...developmentOrigins].filter(Boolean))];
   const errors = [];
@@ -102,7 +105,7 @@ function createHostedBffConfig(env = process.env) {
   if (production && (!env.RX_APP_SUPABASE_URL || !env.RX_APP_SUPABASE_SERVICE_ROLE_KEY)) errors.push('Hosted application Supabase URL and service-role credentials are required in production.');
   if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true' && (!syntheticAgentId || !syntheticProfileId)) errors.push('Synthetic Local Agent and profile IDs are required when hosted remote tasks are enabled.');
   if (errors.length) throw new Error(`Hosted BFF configuration is invalid: ${errors.join(' ')}`);
-  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, chromiumPreflightEnabled, env };
+  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, chromiumPreflightEnabled, facebookSessionPreflightEnabled, facebookSessionAgentId, facebookSessionProfileId, env };
 }
 
 function cookieValue(token, production, maxAge) {
@@ -199,7 +202,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.
     if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
-    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, now }));
+    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, facebookSessionPreflightEnabled: config.facebookSessionPreflightEnabled, facebookSessionAgentId: config.facebookSessionAgentId, facebookSessionProfileId: config.facebookSessionProfileId, now }));
   }
   return app;
 }

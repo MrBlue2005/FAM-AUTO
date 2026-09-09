@@ -15,6 +15,7 @@ const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
 const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredentials');
 const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
+const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -309,6 +310,7 @@ test('Chromium safe preflight closes the isolated browser after launch failure d
   await assert.rejects(executor({ task_type: 'CHROMIUM_SAFE_PREFLIGHT', profile_id: 'profile_synthetic', payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } }), /page failed/);
   assert.equal(closed, true);
 });
+test('Facebook session readiness detection is conservative', () => { assert.equal(detectSessionState('<button aria-label="Account menu">Facebook menu</button>'), 'AUTHENTICATED'); assert.equal(detectSessionState('<input name="email"><input name="pass">'), 'UNAUTHENTICATED'); assert.equal(detectSessionState('checkpoint'), 'INDETERMINATE'); assert.equal(detectSessionState('<input name="email">Facebook menu'), 'INDETERMINATE'); });
 
 test('task media materializer rejects a hash mismatch without leaving a partial file or touching sibling task data', async () => {
   const root = temporaryDirectory('media-negative'); const sibling = path.join(root, 'task_sibling'); fs.mkdirSync(sibling); fs.writeFileSync(path.join(sibling, 'keep'), 'safe');

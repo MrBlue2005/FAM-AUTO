@@ -79,6 +79,7 @@ export default function Dashboard({ onChangePage }) {
   const cloudReadOnly = api.isCloudReadOnly();
   const remoteTaskEnabled = api.isCloudRemoteTasksEnabled();
   const chromiumPreflightEnabled = api.isCloudChromiumPreflightEnabled();
+  const facebookSessionPreflightEnabled = api.isCloudFacebookSessionPreflightEnabled();
   const refreshDelay = data.robot?.robotStatus === 'running' ? 5000 : 20000;
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
@@ -224,6 +225,7 @@ export default function Dashboard({ onChangePage }) {
           {chromiumError && <p className="mission-message">{chromiumError}</p>}
           <div className="button-row"><button className="secondary-button" disabled={chromiumBusy || Boolean(chromiumTask)} onClick={createChromiumPreflight}>Rulează preflight Chromium</button>{chromiumTask && <button className="ghost-button" onClick={refreshChromiumPreflight}>Actualizează status</button>}</div>
         </section>}
+        {facebookSessionPreflightEnabled && <section className="dashboard-operation-card attention-card ready" aria-label="Facebook session readiness"><header><span className="operation-icon"><ShieldAlert size={20} /></span><div><p>PREVIEW / READ ONLY / NO POSTING</p><h2>Verifică sesiunea Facebook</h2></div></header><p className="mission-message">Verifică numai sesiunea profilului aprobat. Nu publică și nu interacționează.</p><div className="button-row"><button className="secondary-button" onClick={() => api.createFacebookSessionReadinessTask()}>Verifică sesiunea Facebook</button></div></section>}
         </>
       )}
 

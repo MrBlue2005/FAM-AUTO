@@ -10,6 +10,7 @@ const cloudMediaUpload = cloudMediaUploadEnabled(dashboardDataMode, import.meta.
 const cloudApplicationMutations = cloudApplicationMutationsEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_APP_MUTATIONS_ENABLED);
 const cloudRemoteTasks = cloudReadOnly && import.meta.env.VITE_CLOUD_REMOTE_TASKS_ENABLED === 'true';
 const cloudChromiumPreflight = cloudRemoteTasks && import.meta.env.VITE_CHROMIUM_PREFLIGHT_ENABLED === 'true';
+const cloudFacebookSessionPreflight = cloudRemoteTasks && import.meta.env.VITE_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true';
 let hostedCsrfToken = '';
 const cloudRevisions = new Map();
 async function rememberCloudRevisions(kind, rows) {
@@ -132,6 +133,7 @@ export const api = {
   isCloudApplicationMutationsEnabled: () => cloudApplicationMutations,
   isCloudRemoteTasksEnabled: () => cloudRemoteTasks,
   isCloudChromiumPreflightEnabled: () => cloudChromiumPreflight,
+  isCloudFacebookSessionPreflightEnabled: () => cloudFacebookSessionPreflight,
   capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload, remoteTasks: cloudRemoteTasks, chromiumPreflight: cloudChromiumPreflight }),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
@@ -143,6 +145,7 @@ export const api = {
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),
   getChromiumSafePreflightTask: (taskId) => request(`/cloud-remote-tasks/chromium-safe-preflight/${encodeURIComponent(taskId)}`),
+  createFacebookSessionReadinessTask: () => request('/cloud-remote-tasks/facebook-session-readiness', { method: 'POST', body: '{}' }),
   refreshMediaPreviewUrl: (media) => {
     const mediaId = typeof media === 'string' ? media : media?.mediaId || media?.id;
     cloudMediaPreviewCache.invalidate(mediaId);

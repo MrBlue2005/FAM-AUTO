@@ -1,5 +1,7 @@
 # Changelog
 
+- Added a separately gated, read-only Facebook session-readiness preflight foundation. It uses a reviewed configured profile and fixed Facebook root navigation only; it has no posting or interaction path.
+
 - Added `CHROMIUM_SAFE_PREFLIGHT`: a separately dual-gated, server-selected synthetic Local Agent task that launches real Playwright Chromium only with an isolated registered profile, opens only `about:blank`, then closes and releases the existing profile lock before returning a safe result DTO. A real local smoke validation confirmed launch/page/close with no orphan Chromium process, Facebook/Meta navigation, publishing, or operational profile access.
 
 - Closed `CLOUD_CAMPAIGN_LOCAL_AGENT_PREFLIGHT = PASS`: Preview task `campaign_preflight_76809b91-b746-4057-95e4-71279b72f9e6` completed once with `OUTCOME_UNKNOWN=0`, `publishEnabled=false`, and a verified zero-media result. The hosted BFF retains immutable `CAMPAIGN_PREFLIGHT` snapshots, server-selected synthetic routing, and safe readback; the dashboard validation-only synthetic `DRY_RUN` card was removed in favor of campaign preflight. No Facebook, Chromium, or operational state was touched. `CLOUD_CAMPAIGN_REAL_MEDIA_PREFLIGHT` is the next separately scoped milestone.

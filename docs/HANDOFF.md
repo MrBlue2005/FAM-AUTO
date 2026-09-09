@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- `FACEBOOK_SESSION_READINESS_PREFLIGHT` is a separately gated, read-only session check for the explicitly reviewed `Profil principal`; it uses fixed Facebook-root navigation and cannot post or automate login.
+
 - `CHROMIUM_SAFE_PREFLIGHT` is an opt-in Preview-only Local Agent infrastructure check. It has independent server/client capability gates, creates only a fixed server-selected task, enforces that the registered profile path stays below the isolated profile root, locks that profile, opens only `about:blank` in real headless Playwright Chromium, closes it, and returns no path/session/credential data. Real local launch validation used an ignored synthetic fixture; Facebook and operational profiles were not touched and publishing remained disabled.
 
 - Hosted `CLOUD_READ_ONLY` dashboard status now separates same-origin cloud BFF availability from a read-only, heartbeat-derived Local Agent status DTO. The bridge exposes no agent credential, task, lease, profile secret, or raw control-plane data; it does not implement remote execution, and Facebook publishing remains disabled. Local mode remains unchanged.

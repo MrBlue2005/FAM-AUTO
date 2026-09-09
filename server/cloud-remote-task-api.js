@@ -4,11 +4,13 @@ const crypto = require('crypto');
 const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
+const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
 const CAMPAIGN_PREFLIGHT_PREFIX = 'campaign_preflight_';
 const CHROMIUM_SAFE_PREFLIGHT_PREFIX = 'chromium_safe_preflight_';
+const FACEBOOK_SESSION_READINESS_PREFIX = 'facebook_session_readiness_';
 const AVAILABILITY_CODES = new Set([
   'SYNTHETIC_AGENT_NOT_FOUND',
   'SYNTHETIC_PROFILE_NOT_FOUND',
@@ -18,6 +20,7 @@ const AVAILABILITY_CODES = new Set([
 function safeResult(result, taskType) {
   if (result && result.dry_run === true && result.publishEnabled === false) return { dryRun: true, publishEnabled: false };
   if (taskType === CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE) return safeChromiumPreflightResult(result);
+  if (taskType === FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE) return safeFacebookSessionResult(result);
   if (taskType === CAMPAIGN_PREFLIGHT_TASK_TYPE) return safeCampaignPreflightResult(result);
   return null;
 }
@@ -57,7 +60,7 @@ function availabilityError(code) {
   return Object.assign(new Error('Configured synthetic agent/profile is unavailable.'), { status: 409, code });
 }
 
-function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, now = () => Date.now() }) {
+function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', now = () => Date.now() }) {
   const router = express.Router();
   const readTarget = async () => {
     const [agent, profile] = await Promise.all([store.getControlPlaneAgent(agentId), store.getControlPlaneProfile(profileId)]);
@@ -124,6 +127,15 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
+  router.post('/facebook-session-readiness', async (req, res) => {
+    try {
+      if (!facebookSessionPreflightEnabled || !facebookSessionAgentId || !facebookSessionProfileId) throw Object.assign(new Error('Facebook session readiness preflight is disabled.'), { status: 404 });
+      const [agent, profile] = await Promise.all([store.getControlPlaneAgent(facebookSessionAgentId), store.getControlPlaneProfile(facebookSessionProfileId)]);
+      if (!agent || !profile || profile.agent_id !== facebookSessionAgentId || String(profile.status).toUpperCase() !== 'READY' || !isOnline(agent, now())) throw Object.assign(new Error('Reviewed Local Agent profile is unavailable; no task was created.'), { status: 409 });
+      const task = await store.createControlPlaneTask({ task_id: `${FACEBOOK_SESSION_READINESS_PREFIX}${crypto.randomUUID()}`, agent_id: facebookSessionAgentId, profile_id: facebookSessionProfileId, task_type: FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, payload: { executionMode: 'SESSION_READINESS', publishEnabled: false } });
+      return res.status(201).json({ task: safeTask(task) });
+    } catch (error) { return sendError(res, error); }
+  });
 
   router.get('/campaign-preflight/:taskId', async (req, res) => {
     try {
@@ -157,4 +169,4 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   return router;
 }
 
-module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, AVAILABILITY_CODES, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };
+module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, FACEBOOK_SESSION_READINESS_PREFIX, AVAILABILITY_CODES, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };
