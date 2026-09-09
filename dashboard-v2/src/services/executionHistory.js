@@ -23,6 +23,11 @@ export function profilesForDevice(devices, deviceId) {
   return (devices.find((device) => device.deviceId === deviceId)?.profiles || []);
 }
 
+export function deviceOptionLabel(device) {
+  const id = String(device?.deviceId || '');
+  return `${device?.displayName || 'Dispozitiv necunoscut'} · ${id.slice(-8) || 'necunoscut'}`;
+}
+
 export function historyCards(tasks, devices) {
   return {
     running: tasks.filter((task) => ['CLAIMED', 'RUNNING'].includes(task.status)).length,
