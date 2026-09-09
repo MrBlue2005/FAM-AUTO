@@ -73,8 +73,12 @@ export default function Dashboard({ onChangePage }) {
   const [campaignPreflightTask, setCampaignPreflightTask] = useState(null);
   const [campaignPreflightError, setCampaignPreflightError] = useState('');
   const [campaignPreflightBusy, setCampaignPreflightBusy] = useState(false);
+  const [chromiumTask, setChromiumTask] = useState(null);
+  const [chromiumError, setChromiumError] = useState('');
+  const [chromiumBusy, setChromiumBusy] = useState(false);
   const cloudReadOnly = api.isCloudReadOnly();
   const remoteTaskEnabled = api.isCloudRemoteTasksEnabled();
+  const chromiumPreflightEnabled = api.isCloudChromiumPreflightEnabled();
   const refreshDelay = data.robot?.robotStatus === 'running' ? 5000 : 20000;
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
@@ -148,6 +152,17 @@ export default function Dashboard({ onChangePage }) {
     try { setCampaignPreflightTask((await api.getCampaignPreflightTask(campaignPreflightTask.taskId)).task); setCampaignPreflightError(''); }
     catch (error) { setCampaignPreflightError(error.message); }
   }
+  async function createChromiumPreflight() {
+    setChromiumBusy(true); setChromiumError('');
+    try { setChromiumTask((await api.createChromiumSafePreflightTask()).task); }
+    catch (error) { setChromiumError(error.message); }
+    finally { setChromiumBusy(false); }
+  }
+  async function refreshChromiumPreflight() {
+    if (!chromiumTask?.taskId) return;
+    try { setChromiumTask((await api.getChromiumSafePreflightTask(chromiumTask.taskId)).task); setChromiumError(''); }
+    catch (error) { setChromiumError(error.message); }
+  }
 
   if (loading) {
     return (
@@ -201,6 +216,14 @@ export default function Dashboard({ onChangePage }) {
           {campaignPreflightError && <p className="mission-message">{campaignPreflightError}</p>}
           <div className="button-row"><button className="secondary-button" disabled={campaignPreflightBusy || Boolean(campaignPreflightTask) || !preflightSelection.campaignId || !preflightSelection.day || !preflightSelection.targetId} onClick={createCampaignPreflight}>Rulează preflight</button>{campaignPreflightTask && <button className="ghost-button" onClick={refreshCampaignPreflight}>Actualizează status</button>}</div>
         </section>
+        {chromiumPreflightEnabled && <section className="dashboard-operation-card attention-card ready" aria-label="Chromium safe preflight">
+          <header><span className="operation-icon"><ShieldAlert size={20} /></span><div><p>PREVIEW / ISOLATED / NO NETWORK</p><h2>Preflight Chromium sigur</h2></div></header>
+          <p className="mission-message">Deschide numai Chromium izolat pe about:blank. Facebook și publicarea rămân dezactivate.</p>
+          {chromiumTask && <p className="mission-message"><strong>{chromiumTask.status}</strong> · {chromiumTask.result?.preflightPassed ? 'Chromium verificat' : chromiumTask.taskId}</p>}
+          {chromiumTask?.result && <p className="mission-message">Pagină sigură: {chromiumTask.result.safeNavigation ? 'da' : 'nu'} · browser închis: {chromiumTask.result.browserClosed ? 'da' : 'nu'}</p>}
+          {chromiumError && <p className="mission-message">{chromiumError}</p>}
+          <div className="button-row"><button className="secondary-button" disabled={chromiumBusy || Boolean(chromiumTask)} onClick={createChromiumPreflight}>Rulează preflight Chromium</button>{chromiumTask && <button className="ghost-button" onClick={refreshChromiumPreflight}>Actualizează status</button>}</div>
+        </section>}
         </>
       )}
 

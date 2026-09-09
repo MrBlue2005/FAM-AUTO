@@ -9,6 +9,7 @@ const cloudReadOnly = dashboardDataMode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY
 const cloudMediaUpload = cloudMediaUploadEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_MEDIA_UPLOAD_ENABLED);
 const cloudApplicationMutations = cloudApplicationMutationsEnabled(dashboardDataMode, import.meta.env.VITE_CLOUD_APP_MUTATIONS_ENABLED);
 const cloudRemoteTasks = cloudReadOnly && import.meta.env.VITE_CLOUD_REMOTE_TASKS_ENABLED === 'true';
+const cloudChromiumPreflight = cloudRemoteTasks && import.meta.env.VITE_CHROMIUM_PREFLIGHT_ENABLED === 'true';
 let hostedCsrfToken = '';
 const cloudRevisions = new Map();
 async function rememberCloudRevisions(kind, rows) {
@@ -130,7 +131,8 @@ export const api = {
   isCloudMediaUploadEnabled: () => cloudMediaUpload,
   isCloudApplicationMutationsEnabled: () => cloudApplicationMutations,
   isCloudRemoteTasksEnabled: () => cloudRemoteTasks,
-  capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload, remoteTasks: cloudRemoteTasks }),
+  isCloudChromiumPreflightEnabled: () => cloudChromiumPreflight,
+  capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload, remoteTasks: cloudRemoteTasks, chromiumPreflight: cloudChromiumPreflight }),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
     if (!cloudReadOnly) return Promise.resolve(getMediaUrl(media));
@@ -139,6 +141,8 @@ export const api = {
   getAgentStatus: () => cloudRead('/agent-status'),
   createCampaignPreflightTask: ({ kind, campaignId, day, targetId, campaignRevision, postRevision }) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify({ kind, campaignId, day, targetId, campaignRevision, postRevision }) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
+  createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),
+  getChromiumSafePreflightTask: (taskId) => request(`/cloud-remote-tasks/chromium-safe-preflight/${encodeURIComponent(taskId)}`),
   refreshMediaPreviewUrl: (media) => {
     const mediaId = typeof media === 'string' ? media : media?.mediaId || media?.id;
     cloudMediaPreviewCache.invalidate(mediaId);

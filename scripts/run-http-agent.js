@@ -7,6 +7,7 @@ const { createTaskMediaMaterializerForUploads } = require('../app/local-agent/Ta
 const { AgentConnectionManager } = require('../app/local-agent/AgentConnectionManager');
 const { createCloudFacebookTaskExecutor } = require('../app/local-agent/CloudFacebookTaskExecutor');
 const { createCampaignPreflightExecutor } = require('../app/local-agent/CampaignPreflightExecutor');
+const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
 const { uploadsPath } = require('../app/config/storagePaths');
 
@@ -16,9 +17,11 @@ const agent = registry.load(runtimeProfiles()).agent; const credentials = new Lo
 const transport = new HttpAgentTransport({ baseUrl: agentConfig.cloudUrl, agentId: agent.agentId, agentSecret: credentials.agent_secret, allowInsecureHttp: agentConfig.allowInsecureHttp });
 const dryRun = process.env.RX_AGENT_DRY_RUN === 'true';
 const campaignPreflight = createCampaignPreflightExecutor(registry, runtimeProfiles);
+const chromiumSafePreflight = createChromiumSafePreflightExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CHROMIUM_PREFLIGHT_ENABLED === 'true' });
 const executeTask = dryRun
   ? async (task) => {
     if (task.task_type === 'CAMPAIGN_PREFLIGHT') return campaignPreflight(task);
+    if (task.task_type === 'CHROMIUM_SAFE_PREFLIGHT') return chromiumSafePreflight(task);
     if (task.task_type !== 'DRY_RUN') throw Object.assign(new Error('Dry-run agent accepts only reviewed dry-run task types.'), { code: 'UNSUPPORTED_TASK_TYPE' });
     await new Promise((resolve) => setTimeout(resolve, Number(process.env.RX_AGENT_DRY_RUN_DELAY_MS || 0)));
     return { dry_run: true, publishEnabled: false };

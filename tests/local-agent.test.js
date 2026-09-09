@@ -14,6 +14,7 @@ const { TaskMediaMaterializer, createTaskMediaMaterializerForUploads } = require
 const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
 const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredentials');
 const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
+const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -281,6 +282,32 @@ test('HTTP agent media materialization stays below the configured uploads root',
   const root = temporaryDirectory('agent-media-root'); const materializer = createTaskMediaMaterializerForUploads(root);
   assert.equal(materializer.root, path.join(root, 'cloud-task-media'));
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'run-http-agent.js'), 'utf8'), /mediaMaterializer:\s*createTaskMediaMaterializerForUploads\(uploadsPath\)/);
+});
+
+test('Chromium safe preflight uses only an isolated registered profile and returns a safe result', async () => {
+  const root = temporaryDirectory('chromium-safe'); const profileRoot = path.join(root, 'profiles'); const profilePath = path.join(profileRoot, 'synthetic'); const calls = [];
+  const registry = { getProfile: () => ({ profileId: 'profile_synthetic', status: 'READY', localProfilePath: profilePath }) };
+  const executor = createChromiumSafePreflightExecutor(registry, () => [], { enabled: true, profilesRoot: profileRoot, launchPersistentContext: async (receivedPath, options) => { calls.push({ receivedPath, options }); return { pages: () => [], newPage: async () => ({ goto: async (url) => { assert.equal(url, 'about:blank'); }, url: () => 'about:blank' }), close: async () => { calls.push({ closed: true }); } }; } });
+  const result = await executor({ task_type: 'CHROMIUM_SAFE_PREFLIGHT', profile_id: 'profile_synthetic', payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false, url: 'https://facebook.com/' } });
+  assert.deepEqual(result, { preflight_passed: true, chromium_launched: true, page_ready: true, safe_navigation: true, browser_closed: true, profile_lock_released: true, publishEnabled: false, blockers: [] });
+  assert.equal(calls[0].receivedPath, profilePath); assert.equal(calls[0].options.headless, true); assert.equal(calls.some((entry) => entry.closed), true);
+});
+
+test('Chromium safe preflight rejects disabled mode and profiles outside its isolated root before launch', async () => {
+  const root = temporaryDirectory('chromium-reject'); let launched = false;
+  const outside = { getProfile: () => ({ status: 'READY', localProfilePath: path.join(root, '..', 'operational') }) };
+  const task = { task_type: 'CHROMIUM_SAFE_PREFLIGHT', profile_id: 'profile_synthetic', payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } };
+  await assert.rejects(createChromiumSafePreflightExecutor(outside, () => [], { enabled: true, profilesRoot: path.join(root, 'profiles'), launchPersistentContext: async () => { launched = true; } })(task), { code: 'SYNTHETIC_PROFILE_ROOT_INVALID' });
+  await assert.rejects(createChromiumSafePreflightExecutor(outside, () => [], { enabled: false, profilesRoot: path.join(root, 'profiles') })(task), { code: 'CHROMIUM_PREFLIGHT_DISABLED' });
+  assert.equal(launched, false);
+});
+
+test('Chromium safe preflight closes the isolated browser after launch failure during page setup', async () => {
+  const root = temporaryDirectory('chromium-cleanup'); let closed = false;
+  const registry = { getProfile: () => ({ status: 'READY', localProfilePath: path.join(root, 'profiles', 'synthetic') }) };
+  const executor = createChromiumSafePreflightExecutor(registry, () => [], { enabled: true, profilesRoot: path.join(root, 'profiles'), launchPersistentContext: async () => ({ pages: () => [], newPage: async () => { throw new Error('page failed'); }, close: async () => { closed = true; } }) });
+  await assert.rejects(executor({ task_type: 'CHROMIUM_SAFE_PREFLIGHT', profile_id: 'profile_synthetic', payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } }), /page failed/);
+  assert.equal(closed, true);
 });
 
 test('task media materializer rejects a hash mismatch without leaving a partial file or touching sibling task data', async () => {
