@@ -9,3 +9,7 @@ const COPY = {
 export function readinessMessage(reasonCodes = []) { return reasonCodes.map((code) => COPY[code] || '').filter(Boolean).join(' '); }
 export function readinessTone(state) { return state === 'READY' ? 'active' : state === 'BUSY' || state === 'DEGRADED' || state === 'PROFILE_BUSY' ? 'warning' : 'inactive'; }
 export function workloadLabel(workload = {}) { return `Taskuri active: ${workload.activeTaskCount || 0} · queued: ${workload.queuedTaskCount || 0} · running: ${workload.runningTaskCount || 0}`; }
+export function deviceSelectionLabel(device = {}) {
+  const deviceId = String(device.deviceId || '');
+  return `${device.displayName || 'Dispozitiv necunoscut'} · ${deviceId.slice(-8) || 'necunoscut'}`;
+}

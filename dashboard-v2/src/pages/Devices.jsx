@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { DEVICE_PROFILE_READINESS, useHostedDeviceProfileSelection } from '../services/hostedDeviceSelection';
 import { validateDeviceDisplayName } from '../services/deviceAdminUi';
 import { canRequestRoutedPreflight, requiresExplicitReselection, routedPreflightErrorMessage } from '../services/hostedCampaignPreflight';
-import { readinessMessage, readinessTone, workloadLabel } from '../services/deviceReadiness';
+import { deviceSelectionLabel, readinessMessage, readinessTone, workloadLabel } from '../services/deviceReadiness';
 
 function formatLastSeen(value) {
   if (!value) return 'Fără heartbeat';
@@ -136,7 +136,7 @@ function HostedDevices() {
 
       {!loading && !error && devices.length > 0 && <section className="editor-panel">
         <div className="panel-title-row"><div><h2>Selecție explicită pentru viitor</h2><p className="muted-text">Selecția este intenție UI read-only, nu autorizare de execuție.</p></div>{selection.selectedDeviceId && <button className="ghost-button" onClick={selection.clearSelection}>Șterge selecția</button>}</div>
-        <div className="button-row">{devices.map((device) => <button className={selection.selectedDeviceId === device.deviceId ? 'primary-button' : 'secondary-button'} key={device.deviceId} onClick={() => selection.selectDevice(device.deviceId)}>{device.displayName} · {device.online ? device.reportedStatus : 'OFFLINE'}</button>)}</div>
+        <div className="button-row">{devices.map((device) => <button className={selection.selectedDeviceId === device.deviceId ? 'primary-button' : 'secondary-button'} key={device.deviceId} onClick={() => selection.selectDevice(device.deviceId)}>{deviceSelectionLabel(device)} · {device.online ? device.reportedStatus : 'OFFLINE'}</button>)}</div>
         {selection.selectedDevice && <div className="schedule-list"><div className="schedule-empty">Profiluri pentru {selection.selectedDevice.displayName}</div>{selection.selectedDevice.profiles.map((profile) => <button className={selection.selectedProfileId === profile.profileId ? 'primary-button' : 'secondary-button'} key={profile.profileId} onClick={() => selection.selectProfile(profile.profileId)}>{profile.displayName} · {profile.status}</button>)}{!selection.selectedDevice.profiles.length && <div className="schedule-empty">Dispozitivul selectat nu are profiluri înregistrate.</div>}</div>}
         <p className="mission-message"><strong>{selection.readiness}</strong> · {readinessCopy[selection.readiness]}</p>
       </section>}
