@@ -145,6 +145,14 @@ export const api = {
   },
   getAgentStatus: () => cloudRead('/agent-status'),
   getDevices: () => cloudRead('/devices'),
+  getCloudTasks: ({ limit = 25, deviceId = '', profileId = '', status = '' } = {}) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (deviceId) query.set('deviceId', deviceId);
+    if (profileId) query.set('profileId', profileId);
+    if (status && status !== 'ALL') query.set('status', status);
+    return cloudRead(`/tasks?${query.toString()}`);
+  },
+  getCloudTask: (taskId) => cloudRead(`/tasks/${encodeURIComponent(taskId)}`),
   renameDevice: (deviceId, displayName) => request(`/admin/devices/${encodeURIComponent(deviceId)}`, { method: 'PATCH', body: JSON.stringify({ displayName }) }),
   createEnrollmentToken: () => request('/admin/devices/enrollment-tokens', { method: 'POST', body: '{}' }),
   getManagedUsers: () => request('/admin/users'),

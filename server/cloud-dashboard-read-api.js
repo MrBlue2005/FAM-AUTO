@@ -1,8 +1,13 @@
 'use strict';
 
 const express = require('express');
+const { safeResult } = require('./cloud-remote-task-api');
 
 const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
+const TASK_HISTORY_DEFAULT_LIMIT = 25;
+const TASK_HISTORY_MAX_LIMIT = 50;
+const TASK_HISTORY_STATUSES = new Set(['QUEUED', 'ACTIVE', 'COMPLETED', 'FAILED', 'OUTCOME_UNKNOWN']);
+const SAFE_ERROR_CODES = new Set(['DEVICE_OFFLINE', 'DEVICE_STALE', 'PROFILE_NOT_READY', 'PROFILE_NOT_FOUND', 'PROFILE_OWNERSHIP_MISMATCH', 'CONFLICTING_WORK', 'MEDIA_NOT_READY', 'MEDIA_SNAPSHOT_INVALID', 'CAMPAIGN_REVISION_STALE', 'POST_REVISION_STALE', 'CAMPAIGN_NOT_FOUND', 'TARGET_NOT_FOUND', 'POST_NOT_FOUND', 'EXECUTION_FAILED', 'OUTCOME_UNKNOWN']);
 
 const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const string = (value) => typeof value === 'string' ? value : undefined;
@@ -126,6 +131,43 @@ async function listDevices(store, nowMs = Date.now()) {
   return { devices };
 }
 
+function historyLimit(value) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isInteger(parsed) || parsed < 1) return TASK_HISTORY_DEFAULT_LIMIT;
+  return Math.min(parsed, TASK_HISTORY_MAX_LIMIT);
+}
+
+function safeErrorCode(error, status) {
+  if (String(status).toUpperCase() === 'OUTCOME_UNKNOWN') return 'OUTCOME_UNKNOWN';
+  const code = string(plainObject(error).code);
+  return code && SAFE_ERROR_CODES.has(code) ? code : (error ? 'EXECUTION_FAILED' : null);
+}
+
+function mapHistoryTask(task, agents = new Map(), profiles = new Map()) {
+  const agent = agents.get(String(task.agent_id));
+  const profile = profiles.get(String(task.profile_id));
+  const result = safeResult(task.result, task.task_type);
+  return {
+    taskId: String(task.task_id), taskType: String(task.task_type || 'UNKNOWN'), status: String(task.status || 'QUEUED').toUpperCase(),
+    createdAt: isoDate(task.created_at), claimedAt: isoDate(task.claimed_at), startedAt: isoDate(task.started_at), completedAt: isoDate(task.completed_at),
+    deviceId: String(task.agent_id || ''), deviceDisplayName: String(agent?.display_name || 'Dispozitiv necunoscut'),
+    profileId: String(task.profile_id || ''), profileDisplayName: String(profile?.display_name || 'Profil necunoscut'),
+    attempt: Number.isInteger(task.attempt) ? task.attempt : 0,
+    result,
+    mediaCount: Number.isInteger(result?.mediaCount) ? result.mediaCount : 0,
+    mediaVerified: result?.mediaVerified === true,
+    preflightPassed: result?.preflightPassed === true,
+    blockers: Array.isArray(result?.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [],
+    errorCode: safeErrorCode(task.error, task.status),
+    outcomeUnknown: String(task.status || '').toUpperCase() === 'OUTCOME_UNKNOWN',
+  };
+}
+
+async function taskHistoryContext(store) {
+  const [agents, profiles] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles()]);
+  return { agents: new Map(agents.map((agent) => [String(agent.agent_id), agent])), profiles: new Map(profiles.map((profile) => [String(profile.profile_id), profile])) };
+}
+
 function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
@@ -150,6 +192,25 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   })));
   router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
   router.get('/devices', requirePermission ? requirePermission('devices.read') : (req, res, next) => next(), (req, res) => send(res, listDevices(store)));
+  const adminOnly = requirePermission ? requirePermission('devices.read') : (req, res, next) => next();
+  router.get('/tasks', adminOnly, (req, res) => send(res, (async () => {
+    const deviceId = string(req.query.deviceId)?.trim() || '';
+    const profileId = string(req.query.profileId)?.trim() || '';
+    const status = string(req.query.status)?.trim().toUpperCase() || '';
+    if (status && !TASK_HISTORY_STATUSES.has(status)) return { tasks: [], limit: historyLimit(req.query.limit) };
+    const context = await taskHistoryContext(store);
+    if (deviceId && profileId && context.profiles.get(profileId)?.agent_id !== deviceId) return { tasks: [], limit: historyLimit(req.query.limit) };
+    const limit = historyLimit(req.query.limit);
+    const tasks = await store.listControlPlaneTasks({ limit, deviceId, profileId, status });
+    return { tasks: tasks.map((task) => mapHistoryTask(task, context.agents, context.profiles)), limit };
+  })()));
+  router.get('/tasks/:taskId', adminOnly, (req, res) => send(res, (async () => {
+    const task = await store.getControlPlaneTaskHistory(req.params.taskId);
+    if (!task) throw Object.assign(new Error('Task-ul nu a fost găsit.'), { status: 404 });
+    const context = await taskHistoryContext(store);
+    const events = (await store.listControlPlaneTaskEvents(task.task_id)).map((event) => ({ type: String(event.event_type || ''), occurredAt: isoDate(event.occurred_at) }));
+    return { task: mapHistoryTask(task, context.agents, context.profiles), events };
+  })()));
   router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
   router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));
@@ -160,4 +221,4 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   return router;
 }
 
-module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, createCloudDashboardReadRouter, mapAgentStatus, mapDevice, mapDeviceProfile, listDevices, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };
+module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, TASK_HISTORY_DEFAULT_LIMIT, TASK_HISTORY_MAX_LIMIT, createCloudDashboardReadRouter, mapAgentStatus, mapDevice, mapDeviceProfile, listDevices, mapHistoryTask, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };

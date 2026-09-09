@@ -44,6 +44,15 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
   async getActiveControlPlaneTaskForProfile(profileId) { return (await this.request(`/rest/v1/tasks?profile_id=eq.${encodeURIComponent(profileId)}&status=in.(CLAIMED,RUNNING)&select=task_id&limit=1`))[0] || null; }
   async createControlPlaneTask(task) { return (await this.request('/rest/v1/tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(task) }))[0]; }
   async getControlPlaneTask(taskId) { return (await this.request(`/rest/v1/tasks?task_id=eq.${encodeURIComponent(taskId)}&select=task_id,agent_id,profile_id,task_type,status,created_at,claimed_at,started_at,completed_at,result&limit=1`))[0] || null; }
+  async getControlPlaneTaskHistory(taskId) { return (await this.request(`/rest/v1/tasks?task_id=eq.${encodeURIComponent(taskId)}&select=task_id,agent_id,profile_id,task_type,status,created_at,claimed_at,started_at,completed_at,attempt,result,error&limit=1`))[0] || null; }
+  listControlPlaneTasks({ limit, deviceId, profileId, status } = {}) {
+    const clauses = ['select=task_id,agent_id,profile_id,task_type,status,created_at,claimed_at,started_at,completed_at,attempt,result,error', 'order=created_at.desc', `limit=${Number(limit)}`];
+    if (deviceId) clauses.push(`agent_id=eq.${encodeURIComponent(deviceId)}`);
+    if (profileId) clauses.push(`profile_id=eq.${encodeURIComponent(profileId)}`);
+    if (status === 'ACTIVE') clauses.push('status=in.(CLAIMED,RUNNING)');
+    else if (status) clauses.push(`status=eq.${encodeURIComponent(status)}`);
+    return this.request(`/rest/v1/tasks?${clauses.join('&')}`);
+  }
   listControlPlaneTaskEvents(taskId) { return this.request(`/rest/v1/task_events?task_id=eq.${encodeURIComponent(taskId)}&select=event_type,occurred_at&order=occurred_at.asc`); }
   listMedia() { return this.request('/rest/v1/app_media_objects?select=media_id,original_name,mime_type,byte_size,state,created_at,app_post_media(post_id)&state=neq.DELETED&order=created_at.desc'); }
   saveSchedule({ schedule, campaignIds, expectedRevision = 0, requestId = uuid() }) { requireValue(schedule?.legacy_id, 'schedule.legacy_id'); requireValue(schedule?.name, 'schedule.name'); if (!Array.isArray(campaignIds)) throw appError('campaignIds must be an array.'); return this.rpc('rx_app_write_schedule_with_campaigns', { p_schedule: schedule, p_campaign_ids: campaignIds, p_expected_revision: expectedRevision, p_request_id: requestId, p_request_hash: hash({ schedule, campaignIds, expectedRevision }) }); }

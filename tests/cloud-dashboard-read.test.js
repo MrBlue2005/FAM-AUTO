@@ -19,6 +19,11 @@ function fixtureStore() {
   const campaignFolders = [{ folder_id: 'campaign-folder', legacy_id: 'FOLDER_1', name: 'Campaign folder', created_at: '2026-09-08T00:00:00Z' }];
   const scheduleFolders = [{ folder_id: 'schedule-folder', legacy_id: 'SCHEDULE_FOLDER_1', name: 'Schedule folder', created_at: '2026-09-08T00:00:00Z' }];
   const schedules = [{ schedule_id: 'schedule-1', legacy_id: 'SCHEDULE_1', name: 'Synthetic schedule', enabled: true, folder_id: 'schedule-folder', profile_id: 'profile-main', schedule: { daysOfWeek: [1, 3], time: '09:00', campaignCategory: 'property', publishEnabled: false }, revision: 5, app_schedule_campaigns: [{ ordinal: 0, app_campaigns: { campaign_id: 'campaign-property', legacy_id: 'PROPERTY_1', kind: 'property' } }] }];
+  const tasks = [
+    { task_id: 'task-completed', agent_id: 'agent-office', profile_id: 'profile-office-ready', task_type: 'CAMPAIGN_PREFLIGHT', status: 'COMPLETED', created_at: '2026-09-09T00:00:00Z', completed_at: '2026-09-09T00:01:00Z', attempt: 1, result: { preflight_passed: true, publishEnabled: false, media_count: 2, media_verified: true, blockers: [] }, payload: { credential: 'never-returned' }, lease_id: 'never-returned' },
+    { task_id: 'task-unknown', agent_id: 'agent-home', profile_id: 'profile-home-busy', task_type: 'CAMPAIGN_PREFLIGHT', status: 'OUTCOME_UNKNOWN', created_at: '2026-09-09T01:00:00Z', attempt: 1, error: { code: 'secret-internal-code', message: 'never-returned' }, payload: { path: 'never-returned' } },
+    { task_id: 'task-orphan', agent_id: 'agent-missing', profile_id: 'profile-missing', task_type: 'DRY_RUN', status: 'FAILED', created_at: '2026-09-09T02:00:00Z', attempt: 2, error: { code: 'DEVICE_OFFLINE' } },
+  ];
   return {
     listCampaigns: async (kind) => kind === 'property' ? [property] : [job], listTargets: async () => [{ target_id: 'target-1', legacy_id: 'GROUP_1', display_name: 'Synthetic group', target_url: 'https://example.test/group', active: true, category: 'Romania', data: { category: 'real_estate', favorite: true, secret: 'nope' }, revision: 8 }],
     listCampaignFolders: async () => campaignFolders, listScheduleFolders: async () => scheduleFolders, listSchedules: async () => schedules,
@@ -34,6 +39,9 @@ function fixtureStore() {
       { profile_id: 'profile-home-busy', agent_id: 'agent-home', display_name: 'Profil acasă', status: 'BUSY', last_seen_at: new Date().toISOString(), cookie: 'must-not-leak' },
       { profile_id: 'profile-orphan', agent_id: 'agent-unknown', display_name: 'Profil orfan', status: 'READY', last_seen_at: new Date().toISOString() },
     ],
+    listControlPlaneTasks: async ({ limit, deviceId, profileId, status }) => tasks.filter((task) => (!deviceId || task.agent_id === deviceId) && (!profileId || task.profile_id === profileId) && (!status || (status === 'ACTIVE' ? ['CLAIMED', 'RUNNING'].includes(task.status) : task.status === status))).slice(0, limit),
+    getControlPlaneTaskHistory: async (taskId) => tasks.find((task) => task.task_id === taskId) || null,
+    listControlPlaneTaskEvents: async (taskId) => taskId === 'task-completed' ? [{ event_type: 'TASK_CLAIMED', occurred_at: '2026-09-09T00:00:01Z', metadata: { secret: 'never-returned' } }, { event_type: 'TASK_COMPLETED', occurred_at: '2026-09-09T00:01:00Z' }] : [],
   };
 }
 
@@ -104,6 +112,24 @@ test('USER sessions retain normal cloud access but cannot read administrator dev
     assert.equal(login.response.status, 200); assert.equal(login.body.role, 'USER');
     const normal = await request('/api/cloud-read/properties', { cookie: login.cookie }); assert.equal(normal.response.status, 200);
     const devices = await request('/api/cloud-read/devices', { cookie: login.cookie }); assert.equal(devices.response.status, 403);
+  });
+});
+
+test('ADMIN task history is bounded, filterable, event-safe, and unavailable to USER', async () => {
+  await withBff(async (request) => {
+    const admin = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password } });
+    const user = await request('/api/auth/login', { method: 'POST', body: { username: 'user', password } });
+    assert.equal((await request('/api/cloud-read/tasks', { cookie: user.cookie })).response.status, 403);
+    const defaults = await request('/api/cloud-read/tasks', { cookie: admin.cookie }); assert.equal(defaults.body.limit, 25);
+    const list = await request('/api/cloud-read/tasks?limit=999&deviceId=agent-office', { cookie: admin.cookie });
+    assert.equal(list.response.status, 200); assert.equal(list.body.limit, 50); assert.equal(list.body.tasks.length, 1);
+    assert.equal(list.body.tasks[0].deviceDisplayName, 'PC Birou'); assert.equal(list.body.tasks[0].mediaCount, 2); assert.equal(list.body.tasks[0].preflightPassed, true);
+    const cross = await request('/api/cloud-read/tasks?deviceId=agent-office&profileId=profile-home-busy', { cookie: admin.cookie }); assert.deepEqual(cross.body.tasks, []);
+    const profile = await request('/api/cloud-read/tasks?profileId=profile-office-ready', { cookie: admin.cookie }); assert.equal(profile.body.tasks[0].profileId, 'profile-office-ready');
+    const unknown = await request('/api/cloud-read/tasks?status=OUTCOME_UNKNOWN', { cookie: admin.cookie }); assert.equal(unknown.body.tasks[0].outcomeUnknown, true); assert.equal(unknown.body.tasks[0].errorCode, 'OUTCOME_UNKNOWN');
+    const detail = await request('/api/cloud-read/tasks/task-completed', { cookie: admin.cookie }); assert.equal(detail.response.status, 200); assert.deepEqual(detail.body.events.map((event) => event.type), ['TASK_CLAIMED', 'TASK_COMPLETED']);
+    const orphan = await request('/api/cloud-read/tasks/task-orphan', { cookie: admin.cookie }); assert.equal(orphan.body.task.deviceDisplayName, 'Dispozitiv necunoscut'); assert.equal(orphan.body.task.profileDisplayName, 'Profil necunoscut');
+    assert.ok(!JSON.stringify([list.body, detail.body, orphan.body]).match(/credential|lease|payload|metadata|secret|never-returned|path/i));
   });
 });
 

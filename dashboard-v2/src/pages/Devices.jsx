@@ -28,6 +28,7 @@ function HostedDevices() {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [taskSummary, setTaskSummary] = useState([]);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [adminMessage, setAdminMessage] = useState('');
@@ -44,8 +45,9 @@ function HostedDevices() {
   async function load() {
     setLoading(true);
     try {
-      const result = await api.getDevices();
+      const [result, history] = await Promise.all([api.getDevices(), api.getCloudTasks({ limit: 50 })]);
       setDevices(result.devices || []);
+      setTaskSummary(history.tasks || []);
       setError('');
     } catch (loadError) {
       setError(loadError.message || 'Dispozitivele nu au putut fi încărcate.');
@@ -63,8 +65,8 @@ function HostedDevices() {
 
   useEffect(() => {
     let ignore = false;
-    api.getDevices()
-      .then((result) => { if (!ignore) { setDevices(result.devices || []); setError(''); } })
+    Promise.all([api.getDevices(), api.getCloudTasks({ limit: 50 })])
+      .then(([result, history]) => { if (!ignore) { setDevices(result.devices || []); setTaskSummary(history.tasks || []); setError(''); } })
       .catch((loadError) => { if (!ignore) setError(loadError.message || 'Dispozitivele nu au putut fi încărcate.'); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
@@ -165,6 +167,7 @@ function HostedDevices() {
           <div className="panel-title-row"><div><h2>{device.displayName}</h2><p className="muted-text">ID: {device.deviceId} · Ultimul heartbeat: {formatLastSeen(device.lastSeenAt)}</p></div><span className={`status-pill ${tone(device.reportedStatus)}`}>{device.online ? device.reportedStatus : 'OFFLINE'}</span></div>
           {renamingId === device.deviceId ? <div className="button-row"><input value={renameValue} maxLength="80" onChange={(event) => setRenameValue(event.target.value)} /><button className="primary-button" onClick={() => rename(device.deviceId)}>Salvează</button><button className="ghost-button" onClick={() => setRenamingId(null)}>Renunță</button></div> : <button className="secondary-button" onClick={() => { setRenamingId(device.deviceId); setRenameValue(device.displayName); }}>Redenumește</button>}
           <p className="muted-text">Execuție locală: {device.capabilities.localExecution ? 'disponibilă' : 'indisponibilă'} · Automatizare Facebook: {device.capabilities.facebookAutomation ? 'disponibilă' : 'nedisponibilă'}</p>
+          <p className="muted-text">Taskuri active: {taskSummary.filter((task) => task.deviceId === device.deviceId && ['QUEUED', 'CLAIMED', 'RUNNING'].includes(task.status)).length} · Ultimul task: {taskSummary.find((task) => task.deviceId === device.deviceId)?.status || '—'}</p>
           <p className="muted-text">Credentialele dispozitivului sunt administrate local și nu sunt afișate. Revocare și rotație credential: deferred.</p>
           <div className="schedule-list">
             {device.profiles.map((profile) => <article className="schedule-card" key={profile.profileId}><div className="schedule-card-main"><div className="schedule-card-title"><span className={`schedule-state ${tone(profile.status)}`}><MonitorSmartphone size={15} />{profile.status}</span><h3>{profile.displayName}</h3></div><p>Readiness: {profile.ready ? 'pregătit' : 'indisponibil'} · Ultimul heartbeat: {formatLastSeen(profile.lastSeenAt)}</p></div></article>)}
