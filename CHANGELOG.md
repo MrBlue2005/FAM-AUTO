@@ -1,5 +1,7 @@
 # Changelog
 
+- Added B4.2 Admin Users credential handoff UX: browser-cryptographic generated passwords, show/hide and copy controls, and a one-time ephemeral post-create/reset handoff panel. No password is persisted or recoverable after dismissal/reload.
+
 - Added Phase B4 hosted managed USER administration: a private RLS-protected `hosted_users` table, server-side Scrypt creation/reset, normalized case-insensitive usernames, session-version invalidation on disable/reset, ADMIN-only Users API/UI, and safe account DTOs. Bootstrap ADMIN remains environment-backed; legacy environment USER login is temporary compatibility only. `USER_DELETE = DEFERRED`.
 
 - Closed Phase B3 Device Admin control-plane validation: deterministic coverage verifies ADMIN-only Devices UI/API access, exact trimmed display-name rename with CSRF/Origin enforcement, one-time 900-second enrollment issuance through the server-only operator boundary, ephemeral token dismissal/reload behavior, safe Device DTOs, and Phase B/C selection regressions. Revoke and credential rotation remain deferred.
