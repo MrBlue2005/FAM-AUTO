@@ -1,0 +1,19 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict'); const crypto = require('node:crypto'); const http = require('node:http');
+const { createHostedBffApp, createHostedBffConfig } = require('../server/hosted-bff');
+const origin = 'http://127.0.0.1:5173';
+const encoded = (password, saltByte) => { const salt = Buffer.alloc(16, saltByte); return `scrypt$16384$8$1$${salt.toString('hex')}$${crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }).toString('hex')}`; };
+const env = { NODE_ENV: 'test', AUTH_ENABLED: 'true', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD_SCRYPT: encoded('admin-password', 1), USER_USERNAME: 'user', USER_PASSWORD_SCRYPT: encoded('user-password', 2), RX_BFF_SESSION_SIGNING_SECRET: 'rbac-test-signing-secret-that-is-long-enough', RX_BFF_ALLOWED_ORIGINS: origin };
+test('hosted auth issues only server-assigned ADMIN or USER roles', async () => {
+  const server = http.createServer(createHostedBffApp({ env })); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve)); const base = `http://127.0.0.1:${server.address().port}`;
+  const login = async (body) => { const response = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body) }); return { response, body: await response.json(), cookie: (response.headers.getSetCookie?.()[0] || response.headers.get('set-cookie') || '').split(';')[0] }; };
+  try {
+    const admin = await login({ username: 'admin', password: 'admin-password', role: 'USER' }); const user = await login({ username: 'user', password: 'user-password', role: 'ADMIN' });
+    assert.equal(admin.body.role, 'ADMIN'); assert.equal(user.body.role, 'USER');
+    assert.equal((await login({ username: 'user', password: 'admin-password' })).response.status, 401);
+    assert.equal((await login({ username: 'admin', password: 'user-password' })).response.status, 401);
+    const status = await fetch(`${base}/api/auth/status`, { headers: { cookie: user.cookie } }); assert.equal((await status.json()).role, 'USER');
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+test('RBAC config rejects ambiguous env-backed usernames', () => { assert.throws(() => createHostedBffConfig({ ...env, USER_USERNAME: 'admin' }), /must be distinct/); });
+test('hosted dashboard exposes Devices only to ADMIN and renders direct USER denial', () => { const fs = require('node:fs'); const path = require('node:path'); const root = path.join(__dirname, '..', 'dashboard-v2', 'src'); const sidebar = fs.readFileSync(path.join(root, 'layout', 'Sidebar.jsx'), 'utf8'); const devices = fs.readFileSync(path.join(root, 'pages', 'Devices.jsx'), 'utf8'); assert.match(sidebar, /cloudReadOnly && isAdmin/); assert.match(devices, /Dispozitivele sunt disponibile numai administratorilor/); });

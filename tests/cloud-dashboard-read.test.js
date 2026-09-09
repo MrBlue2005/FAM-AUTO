@@ -11,7 +11,7 @@ const origin = 'http://127.0.0.1:5173';
 const password = 'correct horse battery staple';
 const salt = Buffer.alloc(16, 9);
 const passwordHash = `scrypt$16384$8$1$${salt.toString('hex')}$${crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }).toString('hex')}`;
-const env = () => ({ NODE_ENV: 'test', AUTH_ENABLED: 'true', ADMIN_PASSWORD_SCRYPT: passwordHash, RX_BFF_SESSION_SIGNING_SECRET: 'cloud-read-test-signing-secret-that-is-long-enough', RX_BFF_ALLOWED_ORIGINS: origin });
+const env = () => ({ NODE_ENV: 'test', AUTH_ENABLED: 'true', ADMIN_PASSWORD_SCRYPT: passwordHash, USER_USERNAME: 'user', USER_PASSWORD_SCRYPT: passwordHash, RX_BFF_SESSION_SIGNING_SECRET: 'cloud-read-test-signing-secret-that-is-long-enough', RX_BFF_ALLOWED_ORIGINS: origin });
 
 function fixtureStore() {
   const property = { campaign_id: 'campaign-property', legacy_id: 'PROPERTY_1', kind: 'property', title: 'Synthetic property', active: true, folder_id: 'campaign-folder', profile_id: 'profile-main', revision: 99, data: { transactionType: 'rent', secret: 'not-for-browser' }, app_campaign_posts: [{ post_id: 'post-property', day: 1, text: 'Property post', active: true, data: { title: 'Ziua 1', internal: 'nope' }, app_post_media: [{ ordinal: 0, app_media_objects: { media_id: 'media-1', original_name: 'home.png', mime_type: 'image/png', byte_size: 12, state: 'READY', object_key: 'private' } }] }] };
@@ -95,6 +95,15 @@ test('authenticated devices read groups safe profiles by device and marks stale 
     assert.equal(home.reportedStatus, 'BUSY'); assert.equal(home.online, true); assert.equal(home.profiles[0].profileId, 'profile-home-busy');
     assert.equal(stale.online, false); assert.equal(stale.reportedStatus, 'OFFLINE'); assert.deepEqual(stale.profiles, []);
     assert.ok(!JSON.stringify(devices.body).match(/credential|enrollment|lease|payload|profile_path|cookie|secret|agent-unknown/i));
+  });
+});
+
+test('USER sessions retain normal cloud access but cannot read administrator devices', async () => {
+  await withBff(async (request) => {
+    const login = await request('/api/auth/login', { method: 'POST', body: { username: 'user', password } });
+    assert.equal(login.response.status, 200); assert.equal(login.body.role, 'USER');
+    const normal = await request('/api/cloud-read/properties', { cookie: login.cookie }); assert.equal(normal.response.status, 200);
+    const devices = await request('/api/cloud-read/devices', { cookie: login.cookie }); assert.equal(devices.response.status, 403);
   });
 });
 

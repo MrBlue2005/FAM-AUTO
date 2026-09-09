@@ -46,6 +46,7 @@ const hostedItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartph
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
   const cloudReadOnly = api.isCloudReadOnly();
+  const isAdmin = auth?.user?.role === 'ADMIN';
   const [expanded, setExpanded] = useState(() => {
     try {
       return window.localStorage.getItem('rx-windowed-sidebar-expanded') === 'true';
@@ -134,7 +135,7 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
 
         {primaryItems.map(renderItem)}
 
-        {cloudReadOnly && <><div className="sidebar-separator" />{hostedItems.map(renderItem)}</>}
+        {cloudReadOnly && isAdmin && <><div className="sidebar-separator" />{hostedItems.map(renderItem)}</>}
 
         <div className="sidebar-separator" />
 

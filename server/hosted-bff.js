@@ -9,6 +9,7 @@ const { createCloudApplicationMutationRouter } = require('./cloud-application-mu
 const { createCloudDashboardReadRouter } = require('./cloud-dashboard-read-api');
 const { createCloudMediaUploadRouter } = require('./cloud-media-upload-api');
 const { createCloudRemoteTaskRouter } = require('./cloud-remote-task-api');
+const { ROLES, PERMISSIONS, requirePermission } = require('./hosted-rbac');
 
 const SESSION_COOKIE = 'rx_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -99,7 +100,10 @@ function createHostedBffConfig(env = process.env) {
   if (production && !authEnabled) errors.push('AUTH_ENABLED=true is required in production.');
   if (authEnabled && !env.ADMIN_PASSWORD_SCRYPT) errors.push('ADMIN_PASSWORD_SCRYPT is required when hosted BFF authentication is enabled.');
   if (env.ADMIN_PASSWORD_SCRYPT && !parseScryptEncoding(env.ADMIN_PASSWORD_SCRYPT)) errors.push('ADMIN_PASSWORD_SCRYPT must be a valid Scrypt encoding.');
-  if (env.OPERATOR_PASSWORD_SCRYPT && !parseScryptEncoding(env.OPERATOR_PASSWORD_SCRYPT)) errors.push('OPERATOR_PASSWORD_SCRYPT must be a valid Scrypt encoding.');
+  const userConfigured = Boolean(env.USER_USERNAME || env.USER_PASSWORD_SCRYPT);
+  if (userConfigured && (!env.USER_USERNAME || !env.USER_PASSWORD_SCRYPT)) errors.push('USER_USERNAME and USER_PASSWORD_SCRYPT must be configured together.');
+  if (env.USER_PASSWORD_SCRYPT && !parseScryptEncoding(env.USER_PASSWORD_SCRYPT)) errors.push('USER_PASSWORD_SCRYPT must be a valid Scrypt encoding.');
+  if (userConfigured && env.USER_USERNAME === (env.ADMIN_USERNAME || 'admin')) errors.push('ADMIN_USERNAME and USER_USERNAME must be distinct.');
   if (authEnabled && String(env.RX_BFF_SESSION_SIGNING_SECRET || '').length < 32) errors.push('RX_BFF_SESSION_SIGNING_SECRET must be at least 32 characters.');
   if (production && !publicOrigin) errors.push('RX_BFF_PUBLIC_ORIGIN is required in production.');
   if (production && (!env.RX_APP_SUPABASE_URL || !env.RX_APP_SUPABASE_SERVICE_ROLE_KEY)) errors.push('Hosted application Supabase URL and service-role credentials are required in production.');
@@ -139,7 +143,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
 
   const sessionFor = (req) => verifyPayload(parseCookies(req.get('cookie'))[SESSION_COOKIE], config.signingSecret, now());
   const requireSession = (req, res, next) => {
-    if (!config.authEnabled) { req.user = { username: 'admin', role: 'admin' }; return next(); }
+    if (!config.authEnabled) { req.user = { username: 'admin', role: ROLES.ADMIN }; return next(); }
     const session = sessionFor(req);
     if (!session) return res.status(401).json({ error: 'Session is invalid or expired.' });
     req.user = session;
@@ -153,7 +157,6 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   };
   const requireCloudAccess = (req, res, next) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'This action requires administrator access.' });
     return requireMutationTrust(req, res, next);
   };
   const issueSession = (user) => {
@@ -163,8 +166,8 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   };
   const authenticate = (username, password) => {
     const candidates = [
-      { username: config.env.ADMIN_USERNAME || 'admin', scrypt: config.env.ADMIN_PASSWORD_SCRYPT, role: 'admin' },
-      { username: config.env.OPERATOR_USERNAME || 'operator', scrypt: config.env.OPERATOR_PASSWORD_SCRYPT, role: 'operator' },
+      { username: config.env.ADMIN_USERNAME || 'admin', scrypt: config.env.ADMIN_PASSWORD_SCRYPT, role: ROLES.ADMIN },
+      ...(config.env.USER_USERNAME && config.env.USER_PASSWORD_SCRYPT ? [{ username: config.env.USER_USERNAME, scrypt: config.env.USER_PASSWORD_SCRYPT, role: ROLES.USER }] : []),
     ];
     const user = candidates.find((candidate) => candidate.username === username);
     return user && secureScryptMatch(password, user.scrypt) ? user : null;
@@ -172,7 +175,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
 
   app.get('/api/bff/healthz', (req, res) => res.json({ ok: true, status: 'ready' }));
   app.get('/api/auth/status', (req, res) => {
-    const session = config.authEnabled ? sessionFor(req) : { username: 'admin', role: 'admin', csrf: null };
+    const session = config.authEnabled ? sessionFor(req) : { username: 'admin', role: ROLES.ADMIN, csrf: null };
     res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, csrfToken: session?.csrf || null });
   });
   app.post('/api/auth/login', (req, res) => {
@@ -197,12 +200,12 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     ? new SupabaseApplicationDataStore({ url: env.RX_APP_SUPABASE_URL, serviceRoleKey: env.RX_APP_SUPABASE_SERVICE_ROLE_KEY })
     : null);
   if (applicationStore) {
-    app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore));
-    if (env.RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED === 'true') app.use('/api/cloud-media', requireSession, requireCloudAccess, createCloudMediaUploadRouter(applicationStore));
+    app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore, { requirePermission }));
+    if (env.RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED === 'true') app.use('/api/cloud-media', requireSession, requirePermission(PERMISSIONS.MEDIA_WRITE), requireCloudAccess, createCloudMediaUploadRouter(applicationStore));
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.
-    if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
-    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, facebookSessionPreflightEnabled: config.facebookSessionPreflightEnabled, facebookSessionAgentId: config.facebookSessionAgentId, facebookSessionProfileId: config.facebookSessionProfileId, now }));
+    if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requirePermission(PERMISSIONS.CAMPAIGNS_WRITE), requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
+    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requirePermission(PERMISSIONS.EXECUTION_PREFLIGHT), requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, facebookSessionPreflightEnabled: config.facebookSessionPreflightEnabled, facebookSessionAgentId: config.facebookSessionAgentId, facebookSessionProfileId: config.facebookSessionProfileId, now }));
   }
   return app;
 }

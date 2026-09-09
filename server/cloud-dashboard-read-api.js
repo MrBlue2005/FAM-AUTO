@@ -126,7 +126,7 @@ async function listDevices(store, nowMs = Date.now()) {
   return { devices };
 }
 
-function createCloudDashboardReadRouter(store) {
+function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
   const campaignFolders = async () => (await store.listCampaignFolders()).map(mapFolder);
@@ -149,7 +149,7 @@ function createCloudDashboardReadRouter(store) {
     return media.map((row) => mapMedia(row, campaignByPostId));
   })));
   router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
-  router.get('/devices', (req, res) => send(res, listDevices(store)));
+  router.get('/devices', requirePermission ? requirePermission('devices.read') : (req, res, next) => next(), (req, res) => send(res, listDevices(store)));
   router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
   router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));

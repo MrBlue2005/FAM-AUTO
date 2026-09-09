@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { api } from '../services/api';
 import LoginPage from './LoginPage';
+import { canHostedPermission } from '../services/hostedPermissions';
 
 const copywriterOrigin = new URL(import.meta.env.VITE_COPYWRITER_URL || 'http://127.0.0.1:3100').origin;
 
@@ -67,6 +68,6 @@ await api.login(credentials);
     return <LoginPage connectionError={state.connectionError} error={error} loading={submitting} onLogin={login} />;
   }
 
-  const auth = { authRequired: state.required, logout, user: state.user };
+  const auth = { authRequired: state.required, logout, user: state.user, role: state.user?.role || null, isAdmin: state.user?.role === 'ADMIN', can: (permission) => canHostedPermission(state.user?.role, permission) };
   return typeof children === 'function' ? children(auth) : children;
 }

@@ -85,7 +85,8 @@ function HostedDevices() {
   );
 }
 
-export default function Devices() {
+export default function Devices({ isAdmin = false }) {
   if (!api.isCloudReadOnly()) return null;
+  if (!isAdmin) return <div className="management-page"><section className="editor-panel"><h1>Acces restricționat</h1><p>Dispozitivele sunt disponibile numai administratorilor.</p></section></div>;
   return <HostedDevices />;
 }

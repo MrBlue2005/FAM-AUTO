@@ -83,7 +83,7 @@ function DashboardApp({ auth }) {
     if (activePage === 'scheduler') return <Scheduler />;
     if (activePage === 'robot') return <Robot />;
     if (activePage === 'settings') return <Settings />;
-    if (activePage === 'devices') return <Devices />;
+    if (activePage === 'devices') return <Devices isAdmin={auth.isAdmin} />;
 
     return <Dashboard onChangePage={handleChangePage} />;
   }

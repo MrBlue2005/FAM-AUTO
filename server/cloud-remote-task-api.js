@@ -95,7 +95,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   });
 
   router.get('/synthetic-dry-run/availability', async (req, res) => {
-    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'This action requires administrator access.' });
+    if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'This action requires administrator access.' });
     try {
       return res.json((await readTarget()).availability);
     } catch (error) { return sendError(res, error); }

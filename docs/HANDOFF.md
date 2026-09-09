@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Hosted RBAC supports independent env-backed `ADMIN_USERNAME`/`ADMIN_PASSWORD_SCRYPT` and optional `USER_USERNAME`/`USER_PASSWORD_SCRYPT` credentials, generated with the existing `npm run auth:hash` workflow. Roles are server-issued in signed sessions; Devices and remote preflight routes are ADMIN-only, while normal cloud application reads/writes remain available to USER. `RX_OPERATOR_API_TOKEN` remains separate control-plane authentication.
+
 - Phase C provides explicit hosted `deviceId` + `profileId` selection state derived only from the Devices read model. It is memory-only UI intent, not execution authorization, has no automatic fallback, and leaves Facebook sessions machine-local. Any future BFF execution endpoint must independently revalidate device existence, profile ownership, heartbeat freshness, capability, READY state, conflicting work, and authorization; Local Studio remains separate.
 
 - Phase B adds an authenticated, read-only hosted Devices model using existing control-plane agents/profiles. It supports multiple devices and groups safe profile readiness by owner, but intentionally has no execution routing, preferred device, profile picker, or automatic fallback. Facebook sessions remain machine-local and Local Studio remains responsible for local profile administration.

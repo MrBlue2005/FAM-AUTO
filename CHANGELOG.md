@@ -1,5 +1,7 @@
 # Changelog
 
+- Added hosted ADMIN/USER RBAC foundation with independent env-backed Scrypt credentials, signed server-issued roles, central permissions, server-enforced Devices/execution restrictions, and role-aware hosted navigation. Operator control-plane tokens remain separate from dashboard login.
+
 - Added Phase C explicit hosted device/profile selection context. It is memory-only UI intent derived exclusively from the Devices read model, has no execution authority or automatic fallback, and requires future BFF task endpoints to revalidate ownership and readiness server-side.
 
 - Added Phase B read-only multi-device visibility: authenticated hosted clients can read browser-safe Local Agent/device status with profiles grouped by owner. It adds no execution routing, preferred device, profile picker, or automatic fallback; Facebook sessions and local profile administration remain machine-local.
