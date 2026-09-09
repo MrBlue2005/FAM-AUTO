@@ -71,6 +71,11 @@ export default function Dashboard({ onChangePage }) {
   const [syntheticTask, setSyntheticTask] = useState(null);
   const [syntheticError, setSyntheticError] = useState('');
   const [syntheticBusy, setSyntheticBusy] = useState(false);
+  const [preflightSources, setPreflightSources] = useState({ campaigns: [], targets: [] });
+  const [preflightSelection, setPreflightSelection] = useState({ kind: 'property', campaignId: '', day: '', targetId: '' });
+  const [campaignPreflightTask, setCampaignPreflightTask] = useState(null);
+  const [campaignPreflightError, setCampaignPreflightError] = useState('');
+  const [campaignPreflightBusy, setCampaignPreflightBusy] = useState(false);
   const cloudReadOnly = api.isCloudReadOnly();
   const remoteTaskEnabled = api.isCloudRemoteTasksEnabled();
   const refreshDelay = data.robot?.robotStatus === 'running' ? 5000 : 20000;
@@ -115,6 +120,19 @@ export default function Dashboard({ onChangePage }) {
     };
   }, [cloudReadOnly, loadData, refreshDelay]);
 
+  useEffect(() => {
+    if (!remoteTaskEnabled) return undefined;
+    let active = true;
+    Promise.all([api.getProperties(), api.getJobs(), api.getGroups()]).then(([properties, jobs, targets]) => {
+      if (!active) return;
+      const campaigns = [...properties.map((item) => ({ ...item, kind: 'property' })), ...jobs.map((item) => ({ ...item, kind: 'job' }))].filter((item) => item.active !== false);
+      setPreflightSources({ campaigns, targets: targets.filter((item) => item.active !== false) });
+      const first = campaigns[0]; const firstTarget = targets.find((item) => item.active !== false);
+      if (first) setPreflightSelection({ kind: first.kind, campaignId: first.id, day: String(first.posts?.[0]?.day || ''), targetId: firstTarget?.id || '' });
+    }).catch((loadError) => { if (active) setCampaignPreflightError(loadError.message); });
+    return () => { active = false; };
+  }, [remoteTaskEnabled]);
+
   const robotStatus = data.robot?.robotStatus || 'idle';
   const robotProgress = Number(data.robot?.totalCampaignProgress || 0);
   const robotTotal = Number(data.robot?.totalCampaignGroups || 0);
@@ -131,6 +149,18 @@ export default function Dashboard({ onChangePage }) {
     if (!syntheticTask?.taskId) return;
     try { setSyntheticTask((await api.getSyntheticDryRunTask(syntheticTask.taskId)).task); setSyntheticError(''); }
     catch (error) { setSyntheticError(error.message); }
+  }
+  const selectedCampaign = preflightSources.campaigns.find((item) => item.kind === preflightSelection.kind && item.id === preflightSelection.campaignId);
+  async function createCampaignPreflight() {
+    setCampaignPreflightBusy(true); setCampaignPreflightError('');
+    try { setCampaignPreflightTask((await api.createCampaignPreflightTask({ ...preflightSelection, day: Number(preflightSelection.day) })).task); }
+    catch (error) { setCampaignPreflightError(error.message); }
+    finally { setCampaignPreflightBusy(false); }
+  }
+  async function refreshCampaignPreflight() {
+    if (!campaignPreflightTask?.taskId) return;
+    try { setCampaignPreflightTask((await api.getCampaignPreflightTask(campaignPreflightTask.taskId)).task); setCampaignPreflightError(''); }
+    catch (error) { setCampaignPreflightError(error.message); }
   }
 
   if (loading) {
@@ -170,6 +200,7 @@ export default function Dashboard({ onChangePage }) {
       )}
 
       {remoteTaskEnabled && (
+        <>
         <section className="dashboard-operation-card attention-card ready" aria-label="Synthetic remote task validation">
           <header><span className="operation-icon"><Bot size={20} /></span><div><p>Validare synthetică</p><h2>Remote DRY_RUN</h2></div></header>
           <p className="mission-message">Numai agentul synthetic configurat server-side poate executa un singur DRY_RUN. Facebook și publicarea rămân dezactivate.</p>
@@ -177,6 +208,21 @@ export default function Dashboard({ onChangePage }) {
           {syntheticError && <p className="mission-message">{syntheticError}</p>}
           <div className="button-row"><button className="secondary-button" disabled={syntheticBusy || Boolean(syntheticTask)} onClick={createSyntheticTask}>Creează validarea</button>{syntheticTask && <button className="ghost-button" onClick={refreshSyntheticTask}>Actualizează status</button>}</div>
         </section>
+        <section className="dashboard-operation-card attention-card ready" aria-label="Cloud campaign preflight">
+          <header><span className="operation-icon"><ShieldAlert size={20} /></span><div><p>PREVIEW / DRY_RUN / PREFLIGHT</p><h2>Preflight campanie cloud</h2></div></header>
+          <p className="mission-message">Nu se publică nicio postare Facebook. Agentul validează numai snapshot-ul cloud și media verificată.</p>
+          <div className="form-grid">
+            <label>Tip campanie<select value={preflightSelection.kind} onChange={(event) => { const kind = event.target.value; const campaign = preflightSources.campaigns.find((item) => item.kind === kind); setPreflightSelection((current) => ({ ...current, kind, campaignId: campaign?.id || '', day: String(campaign?.posts?.[0]?.day || '') })); }}><option value="property">Proprietate</option><option value="job">Job</option></select></label>
+            <label>Campanie<select value={preflightSelection.campaignId} onChange={(event) => { const campaign = preflightSources.campaigns.find((item) => item.kind === preflightSelection.kind && item.id === event.target.value); setPreflightSelection((current) => ({ ...current, campaignId: event.target.value, day: String(campaign?.posts?.[0]?.day || '') })); }}><option value="">Selectează</option>{preflightSources.campaigns.filter((item) => item.kind === preflightSelection.kind).map((item) => <option key={item.id} value={item.id}>{item.name || item.title || item.id}</option>)}</select></label>
+            <label>Zi postare<select value={preflightSelection.day} onChange={(event) => setPreflightSelection((current) => ({ ...current, day: event.target.value }))}><option value="">Selectează</option>{(selectedCampaign?.posts || []).filter((post) => post.active !== false).map((post) => <option key={post.day} value={post.day}>Ziua {post.day}</option>)}</select></label>
+            <label>Target<select value={preflightSelection.targetId} onChange={(event) => setPreflightSelection((current) => ({ ...current, targetId: event.target.value }))}><option value="">Selectează</option>{preflightSources.targets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          </div>
+          {campaignPreflightTask && <p className="mission-message"><strong>{campaignPreflightTask.status}</strong> · {campaignPreflightTask.result?.preflightPassed ? 'Preflight finalizat' : campaignPreflightTask.taskId}</p>}
+          {campaignPreflightTask?.result && <p className="mission-message">Media: {campaignPreflightTask.result.mediaCount} · verificată: {campaignPreflightTask.result.mediaVerified ? 'da' : 'nu'} · blocaje: {campaignPreflightTask.result.blockers.length}</p>}
+          {campaignPreflightError && <p className="mission-message">{campaignPreflightError}</p>}
+          <div className="button-row"><button className="secondary-button" disabled={campaignPreflightBusy || Boolean(campaignPreflightTask) || !preflightSelection.campaignId || !preflightSelection.day || !preflightSelection.targetId} onClick={createCampaignPreflight}>Rulează preflight</button>{campaignPreflightTask && <button className="ghost-button" onClick={refreshCampaignPreflight}>Actualizează status</button>}</div>
+        </section>
+        </>
       )}
 
       <section className="stats-v2-grid dashboard-stats-grid">

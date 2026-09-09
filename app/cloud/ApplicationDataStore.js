@@ -3,6 +3,7 @@
 // Compatibility seam only. DataManager and server/server.js remain unchanged in Phase 4B-A.
 class ApplicationDataStore {
   async listCampaigns() { throw new Error('ApplicationDataStore.listCampaigns is not implemented'); }
+  async getCampaignPreflightSource(_selection) { throw new Error('ApplicationDataStore.getCampaignPreflightSource is not implemented'); }
   async saveCampaign(_campaign) { throw new Error('ApplicationDataStore.saveCampaign is not implemented'); }
   async listPosts(_campaignId) { throw new Error('ApplicationDataStore.listPosts is not implemented'); }
   async savePost(_post) { throw new Error('ApplicationDataStore.savePost is not implemented'); }

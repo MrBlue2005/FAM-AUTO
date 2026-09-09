@@ -5,6 +5,7 @@ const { HttpAgentTransport } = require('../app/local-agent/HttpAgentTransport');
 const { CloudAgentService } = require('../app/local-agent/CloudAgentService');
 const { AgentConnectionManager } = require('../app/local-agent/AgentConnectionManager');
 const { createCloudFacebookTaskExecutor } = require('../app/local-agent/CloudFacebookTaskExecutor');
+const { createCampaignPreflightExecutor } = require('../app/local-agent/CampaignPreflightExecutor');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
 
 const agentConfig = validateHttpAgentConfig();
@@ -12,9 +13,11 @@ const registry = new LocalAgentRegistry(); const runtimeProfiles = () => DataMan
 const agent = registry.load(runtimeProfiles()).agent; const credentials = new LocalAgentCredentials().ensure(agent.agentId);
 const transport = new HttpAgentTransport({ baseUrl: agentConfig.cloudUrl, agentId: agent.agentId, agentSecret: credentials.agent_secret, allowInsecureHttp: agentConfig.allowInsecureHttp });
 const dryRun = process.env.RX_AGENT_DRY_RUN === 'true';
+const campaignPreflight = createCampaignPreflightExecutor(registry, runtimeProfiles);
 const executeTask = dryRun
   ? async (task) => {
-    if (task.task_type !== 'DRY_RUN') throw Object.assign(new Error('Dry-run agent accepts only DRY_RUN tasks.'), { code: 'UNSUPPORTED_TASK_TYPE' });
+    if (task.task_type === 'CAMPAIGN_PREFLIGHT') return campaignPreflight(task);
+    if (task.task_type !== 'DRY_RUN') throw Object.assign(new Error('Dry-run agent accepts only reviewed dry-run task types.'), { code: 'UNSUPPORTED_TASK_TYPE' });
     await new Promise((resolve) => setTimeout(resolve, Number(process.env.RX_AGENT_DRY_RUN_DELAY_MS || 0)));
     return { dry_run: true, publishEnabled: false };
   }

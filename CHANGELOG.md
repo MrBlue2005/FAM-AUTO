@@ -1,5 +1,7 @@
 # Changelog
 
+- Added a gated cloud campaign Local Agent preflight path. The hosted BFF snapshots a selected cloud campaign post, target, revisions, and ordered immutable READY-media metadata into a `CAMPAIGN_PREFLIGHT` task with publishing hard-disabled. The Local Agent validates its assigned profile and verified media without launching Chromium or contacting Facebook, then returns a safe preflight-only result. Browser callers cannot provide an agent, profile, task type, payload, or publish setting.
+
 - Added a read-only hosted Dashboard ↔ Local Agent status bridge. In `CLOUD_READ_ONLY`, the authenticated same-origin BFF reports safe heartbeat-derived Local Agent availability separately from cloud BFF availability; localhost health is not used. Remote execution is not implemented and Facebook publishing remains disabled.
 - Added root Vercel Preview configuration: Vite builds to `dashboard-v2/dist`, Vercel filesystem routing retains the `/api/[...path]` BFF function, and the SPA fallback supports dashboard deep links. No Vercel project was linked or deployed.
 - Fixed the first-save cloud campaign flow: an enabled cloud-media dashboard may save a text-complete property/job snapshot before media exists, then attach READY media to its durable post. Local campaign validation still requires media, and cloud drafts still require post text.
