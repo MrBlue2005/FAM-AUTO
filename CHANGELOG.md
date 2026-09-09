@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase F read-only hosted Device workload/readiness. Devices now derive `ONLINE != READY` from heartbeat freshness, reported state, active control-plane work, and READY/free profiles. The existing explicit routing remains unchanged; no fallback or task mutation was added, and the Local Agent's atomic claim/profile lock remains final race authority.
+
 - Added Phase E hosted ADMIN-only execution history. The same-origin cloud read model provides bounded, filter-validated multi-device task lists and safe detail/event timelines without payloads, leases, credentials, paths, or Local Agent logs. Devices now show read-only recent-task summaries; `OUTCOME_UNKNOWN` remains distinct and requires manual review. No task mutation controls were added.
 
 - Added Phase D2 hosted Devices UI for ADMIN-only routed campaign preflight. The existing explicit device/profile selection is submitted only with reviewed campaign identifiers; the BFF remains authoritative for target validation and snapshot construction. The UI shows only safe task/readback status, maps safe availability errors, clears stale selections for explicit recovery, has no fallback, and permanently requests preflight with publishing disabled.

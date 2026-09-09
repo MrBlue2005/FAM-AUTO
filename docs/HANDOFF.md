@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Phase F extends the ADMIN-only Devices DTO with safe workload and readiness derived from control-plane agents, profiles, and the bounded active task query. `READY` means a fresh eligible agent has a free READY profile; it is distinct from `ONLINE`. Profile `BUSY` reflects CLAIMED/RUNNING task visibility while QUEUED work is reported separately; the Local Agent's atomic claim/profile lock remains the final race authority. This is advisory only: device/profile routing stays explicitly selected by the administrator, with no fallback or automatic routing.
+
 - Phase E adds a hosted ADMIN-only Execution page backed by the existing control-plane `tasks` and `task_events` records. Its bounded same-origin read API safely joins current device/profile display metadata, supports device/profile/status filters, and exposes only safe lifecycle/result/event fields. It has no task creation, retry, cancellation, deletion, reassignment, publishing, or raw Local Agent log access. `OUTCOME_UNKNOWN` is an explicit manual-review state. Local mode remains unchanged.
 
 - Phase D2 connects the existing ADMIN Devices-page explicit `deviceId` + `profileId` selection to the hosted campaign-preflight request. The browser submits only reviewed identifiers and optional revision guards; the BFF revalidates device status/freshness, READY ownership, and server-builds the immutable `PREFLIGHT` snapshot with `publishEnabled=false`. Safe status/result DTOs are displayed, safe rejection codes are translated for the UI, stale selections require explicit reselection, and no device/profile fallback exists. USER cannot see or invoke this routed preflight.

@@ -99,7 +99,8 @@ test('authenticated devices read groups safe profiles by device and marks stale 
     const office = devices.body.devices.find((item) => item.deviceId === 'agent-office');
     const home = devices.body.devices.find((item) => item.deviceId === 'agent-home');
     const stale = devices.body.devices.find((item) => item.deviceId === 'agent-stale');
-    assert.deepEqual(office.profiles, [{ profileId: 'profile-office-ready', displayName: 'Profil birou', status: 'READY', lastSeenAt: office.profiles[0].lastSeenAt, ready: true }]);
+    assert.equal(office.profiles[0].profileId, 'profile-office-ready'); assert.equal(office.profiles[0].ready, true); assert.equal(office.profiles[0].busy, false); assert.equal(office.profiles[0].readinessState, 'READY');
+    assert.deepEqual(office.workload, { activeTaskCount: 0, queuedTaskCount: 0, claimedTaskCount: 0, runningTaskCount: 0, busyProfileCount: 0 }); assert.equal(office.readiness.state, 'READY'); assert.equal(office.readiness.canAcceptPreflight, true);
     assert.equal(home.reportedStatus, 'BUSY'); assert.equal(home.online, true); assert.equal(home.profiles[0].profileId, 'profile-home-busy');
     assert.equal(stale.online, false); assert.equal(stale.reportedStatus, 'OFFLINE'); assert.deepEqual(stale.profiles, []);
     assert.ok(!JSON.stringify(devices.body).match(/credential|enrollment|lease|payload|profile_path|cookie|secret|agent-unknown/i));

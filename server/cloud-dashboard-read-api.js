@@ -4,6 +4,7 @@ const express = require('express');
 const { safeResult } = require('./cloud-remote-task-api');
 
 const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
+const ACTIVE_TASK_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING']);
 const TASK_HISTORY_DEFAULT_LIMIT = 25;
 const TASK_HISTORY_MAX_LIMIT = 50;
 const TASK_HISTORY_STATUSES = new Set(['QUEUED', 'ACTIVE', 'COMPLETED', 'FAILED', 'OUTCOME_UNKNOWN']);
@@ -93,42 +94,81 @@ function isoDate(value) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
-function mapDevice(row, nowMs = Date.now()) {
+function deviceCapabilities() {
+  // The current agent protocol authoritatively establishes local task execution,
+  // but does not report per-agent feature/version capability flags yet.
+  return { localExecution: true, facebookAutomation: false };
+}
+
+function activeWorkload(tasks = []) {
+  const relevant = tasks.filter((task) => ACTIVE_TASK_STATUSES.has(String(task.status || '').toUpperCase()));
+  const count = (status) => relevant.filter((task) => String(task.status || '').toUpperCase() === status).length;
+  return { activeTaskCount: relevant.length, queuedTaskCount: count('QUEUED'), claimedTaskCount: count('CLAIMED'), runningTaskCount: count('RUNNING') };
+}
+
+function mapDeviceProfile(row, tasks = []) {
+  const status = String(row.status || 'UNAVAILABLE').toUpperCase();
+  const workload = activeWorkload(tasks);
+  const busy = workload.claimedTaskCount + workload.runningTaskCount > 0;
+  const ready = status === 'READY';
+  const active = tasks.find((task) => ['CLAIMED', 'RUNNING'].includes(String(task.status || '').toUpperCase()));
+  return {
+    profileId: String(row.profile_id), displayName: String(row.display_name || row.profile_id), status,
+    lastSeenAt: isoDate(row.last_seen_at), ready, busy, workload,
+    activeTaskType: active?.task_type ? String(active.task_type) : null,
+    readinessState: !ready ? 'PROFILE_NOT_READY' : busy ? 'PROFILE_BUSY' : 'READY',
+    reasonCodes: !ready ? ['PROFILE_NOT_READY'] : busy ? ['PROFILE_BUSY'] : [],
+  };
+}
+
+function deviceReadiness(row, profiles, workload, nowMs) {
+  const reportedStatus = String(row.reported_status || 'OFFLINE').toUpperCase();
+  const seen = Date.parse(row.last_seen_at || '');
+  const fresh = Number.isFinite(seen) && nowMs - seen <= AGENT_HEARTBEAT_FRESHNESS_MS;
+  const accepted = ['ONLINE', 'BUSY', 'DEGRADED'].includes(reportedStatus);
+  const freeReadyProfiles = profiles.filter((profile) => profile.ready && !profile.busy);
+  if (!accepted) return { state: 'OFFLINE', canAcceptPreflight: false, reasonCodes: ['DEVICE_OFFLINE'] };
+  if (!fresh) return { state: 'STALE', canAcceptPreflight: false, reasonCodes: ['DEVICE_STALE'] };
+  if (reportedStatus === 'DEGRADED') return { state: 'DEGRADED', canAcceptPreflight: false, reasonCodes: ['DEVICE_DEGRADED'] };
+  if (!deviceCapabilities().localExecution) return { state: 'CAPABILITY_UNAVAILABLE', canAcceptPreflight: false, reasonCodes: ['CAPABILITY_UNAVAILABLE'] };
+  if (reportedStatus === 'BUSY' || workload.claimedTaskCount + workload.runningTaskCount > 0 && !freeReadyProfiles.length) return { state: 'BUSY', canAcceptPreflight: false, reasonCodes: ['PROFILE_BUSY'] };
+  if (!freeReadyProfiles.length) return { state: 'NO_READY_PROFILE', canAcceptPreflight: false, reasonCodes: profiles.some((profile) => profile.busy) ? ['PROFILE_BUSY'] : ['NO_READY_PROFILE'] };
+  return { state: 'READY', canAcceptPreflight: true, reasonCodes: [] };
+}
+
+function mapDevice(row, nowMs = Date.now(), profiles = [], tasks = []) {
   const reportedStatus = String(row.reported_status || 'OFFLINE').toUpperCase();
   const lastSeenAt = isoDate(row.last_seen_at);
   const fresh = lastSeenAt && nowMs - Date.parse(lastSeenAt) <= AGENT_HEARTBEAT_FRESHNESS_MS;
   const accepted = ['ONLINE', 'BUSY', 'DEGRADED'].includes(reportedStatus);
+  const mappedProfiles = profiles.map((profile) => mapDeviceProfile(profile.row, profile.tasks));
+  const workload = { ...activeWorkload(tasks), busyProfileCount: mappedProfiles.filter((profile) => profile.busy).length };
   return {
     deviceId: String(row.agent_id),
     displayName: String(row.display_name || 'RX Local Agent'),
     online: Boolean(fresh && accepted),
     reportedStatus: fresh && accepted ? reportedStatus : 'OFFLINE',
     lastSeenAt,
-    capabilities: { localExecution: true, facebookAutomation: false },
-    profiles: [],
-  };
-}
-
-function mapDeviceProfile(row) {
-  const status = String(row.status || 'UNAVAILABLE').toUpperCase();
-  return {
-    profileId: String(row.profile_id),
-    displayName: String(row.display_name || row.profile_id),
-    status,
-    lastSeenAt: isoDate(row.last_seen_at),
-    ready: status === 'READY',
+    capabilities: deviceCapabilities(), workload,
+    readiness: deviceReadiness(row, mappedProfiles, workload, nowMs), profiles: mappedProfiles,
   };
 }
 
 async function listDevices(store, nowMs = Date.now()) {
-  const [agents, profiles] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles()]);
-  const devices = agents.map((agent) => mapDevice(agent, nowMs));
-  const byId = new Map(devices.map((device) => [device.deviceId, device]));
-  for (const profile of profiles) {
-    const device = byId.get(String(profile.agent_id));
-    if (device) device.profiles.push(mapDeviceProfile(profile));
+  const [agents, profiles, activeTasks] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles(), typeof store.listActiveControlPlaneTasks === 'function' ? store.listActiveControlPlaneTasks() : []]);
+  const tasksByAgent = new Map(); const tasksByProfile = new Map();
+  for (const task of activeTasks) {
+    const agentId = String(task.agent_id || ''); const profileId = String(task.profile_id || '');
+    if (!tasksByAgent.has(agentId)) tasksByAgent.set(agentId, []); tasksByAgent.get(agentId).push(task);
+    if (!tasksByProfile.has(profileId)) tasksByProfile.set(profileId, []); tasksByProfile.get(profileId).push(task);
   }
-  return { devices };
+  const profilesByAgent = new Map();
+  for (const profile of profiles) {
+    const agentId = String(profile.agent_id || '');
+    if (!profilesByAgent.has(agentId)) profilesByAgent.set(agentId, []);
+    profilesByAgent.get(agentId).push({ row: profile, tasks: (tasksByProfile.get(String(profile.profile_id)) || []).filter((task) => String(task.agent_id) === agentId) });
+  }
+  return { devices: agents.map((agent) => mapDevice(agent, nowMs, profilesByAgent.get(String(agent.agent_id)) || [], tasksByAgent.get(String(agent.agent_id)) || [])) };
 }
 
 function historyLimit(value) {

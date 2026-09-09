@@ -6,6 +6,7 @@ class ApplicationDataStore {
   async getCampaignPreflightSource(_selection) { throw new Error('ApplicationDataStore.getCampaignPreflightSource is not implemented'); }
   async getActiveControlPlaneTaskForProfile(_profileId) { throw new Error('ApplicationDataStore.getActiveControlPlaneTaskForProfile is not implemented'); }
   async listControlPlaneTasks(_filters) { throw new Error('ApplicationDataStore.listControlPlaneTasks is not implemented'); }
+  async listActiveControlPlaneTasks() { throw new Error('ApplicationDataStore.listActiveControlPlaneTasks is not implemented'); }
   async getControlPlaneTaskHistory(_taskId) { throw new Error('ApplicationDataStore.getControlPlaneTaskHistory is not implemented'); }
   async saveCampaign(_campaign) { throw new Error('ApplicationDataStore.saveCampaign is not implemented'); }
   async listPosts(_campaignId) { throw new Error('ApplicationDataStore.listPosts is not implemented'); }

@@ -53,6 +53,7 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
     else if (status) clauses.push(`status=eq.${encodeURIComponent(status)}`);
     return this.request(`/rest/v1/tasks?${clauses.join('&')}`);
   }
+  listActiveControlPlaneTasks() { return this.request('/rest/v1/tasks?status=in.(QUEUED,CLAIMED,RUNNING)&select=task_id,agent_id,profile_id,task_type,status&order=created_at.asc&limit=200'); }
   listControlPlaneTaskEvents(taskId) { return this.request(`/rest/v1/task_events?task_id=eq.${encodeURIComponent(taskId)}&select=event_type,occurred_at&order=occurred_at.asc`); }
   listMedia() { return this.request('/rest/v1/app_media_objects?select=media_id,original_name,mime_type,byte_size,state,created_at,app_post_media(post_id)&state=neq.DELETED&order=created_at.desc'); }
   saveSchedule({ schedule, campaignIds, expectedRevision = 0, requestId = uuid() }) { requireValue(schedule?.legacy_id, 'schedule.legacy_id'); requireValue(schedule?.name, 'schedule.name'); if (!Array.isArray(campaignIds)) throw appError('campaignIds must be an array.'); return this.rpc('rx_app_write_schedule_with_campaigns', { p_schedule: schedule, p_campaign_ids: campaignIds, p_expected_revision: expectedRevision, p_request_id: requestId, p_request_hash: hash({ schedule, campaignIds, expectedRevision }) }); }
