@@ -102,7 +102,7 @@ async function request(endpoint, options = {}) {
   const enabledCloudMutation = cloudApplicationMutations && endpoint.startsWith('/cloud-mutations/');
   const enabledRemoteTask = cloudRemoteTasks && endpoint.startsWith('/cloud-remote-tasks/');
   if (!(cloudMediaUpload && endpoint.startsWith('/cloud-media/')) && !enabledCloudMutation && !enabledRemoteTask) assertCloudReadOnlyRequest(dashboardDataMode, method, endpoint);
-  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/cloud-mutations/') && !endpoint.startsWith('/cloud-remote-tasks/') && !endpoint.startsWith('/auth/')) {
+  if (cloudReadOnly && !endpoint.startsWith('/cloud-read/') && !endpoint.startsWith('/cloud-media/') && !endpoint.startsWith('/cloud-mutations/') && !endpoint.startsWith('/cloud-remote-tasks/') && !endpoint.startsWith('/admin/') && !endpoint.startsWith('/auth/')) {
     throw new Error('This dashboard feature is unavailable in CLOUD_READ_ONLY; no local read fallback is available.');
   }
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -142,6 +142,8 @@ export const api = {
   },
   getAgentStatus: () => cloudRead('/agent-status'),
   getDevices: () => cloudRead('/devices'),
+  renameDevice: (deviceId, displayName) => request(`/admin/devices/${encodeURIComponent(deviceId)}`, { method: 'PATCH', body: JSON.stringify({ displayName }) }),
+  createEnrollmentToken: () => request('/admin/devices/enrollment-tokens', { method: 'POST', body: '{}' }),
   createCampaignPreflightTask: ({ kind, campaignId, day, targetId, campaignRevision, postRevision }) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify({ kind, campaignId, day, targetId, campaignRevision, postRevision }) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),

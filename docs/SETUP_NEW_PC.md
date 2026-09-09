@@ -12,7 +12,7 @@ RX_AGENT_CLOUD_URL=https://rccefdsmvtsnpsaouzba.supabase.co/functions/v1/agent-p
 RX_AGENT_REFERENCE_ALLOW_HTTP=false
 ```
 
-Nu pune in `.env` tokenul de enrollment, secretul agentului, service-role, tokenul operatorului sau parole. `npm.cmd run agent:http` valideaza configuratia inainte sa faca orice apel cloud si refuza modul Local, URL-ul lipsa sau HTTP necriptat (cu exceptia backend-ului local de referinta activat explicit). Tokenul unic este furnizat separat de operator si exista numai in procesul de prima pornire; runnerul il elimina din propriul mediu imediat dupa enrollment reusit. Terminalul PowerShell trebuie curatat si el dupa aceea:
+Nu pune in `.env` tokenul de enrollment, secretul agentului, service-role, tokenul operatorului sau parole. Administratorul poate crea un token unic din Hosted Admin → Dispozitive → Adaugă dispozitiv; acesta este afișat o singură dată și expiră rapid. `npm.cmd run agent:http` valideaza configuratia inainte sa faca orice apel cloud si refuza modul Local, URL-ul lipsa sau HTTP necriptat (cu exceptia backend-ului local de referinta activat explicit). Tokenul unic exista numai in procesul de prima pornire; runnerul il elimina din propriul mediu imediat dupa enrollment reusit. Terminalul PowerShell trebuie curatat si el dupa aceea:
 
 ```powershell
 $env:RX_AGENT_ENROLLMENT_TOKEN = '<token-unic-primit-separat>'
