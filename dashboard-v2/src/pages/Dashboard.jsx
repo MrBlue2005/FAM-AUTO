@@ -68,9 +68,6 @@ export default function Dashboard({ onChangePage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [syntheticTask, setSyntheticTask] = useState(null);
-  const [syntheticError, setSyntheticError] = useState('');
-  const [syntheticBusy, setSyntheticBusy] = useState(false);
   const [preflightSources, setPreflightSources] = useState({ campaigns: [], targets: [] });
   const [preflightSelection, setPreflightSelection] = useState({ kind: 'property', campaignId: '', day: '', targetId: '' });
   const [campaignPreflightTask, setCampaignPreflightTask] = useState(null);
@@ -139,17 +136,6 @@ export default function Dashboard({ onChangePage }) {
   const robotPercent = robotTotal ? Math.min(Math.round((robotProgress / robotTotal) * 100), 100) : 0;
   const preflightErrors = data.preflight?.summary?.errors || 0;
 
-  async function createSyntheticTask() {
-    setSyntheticBusy(true); setSyntheticError('');
-    try { setSyntheticTask((await api.createSyntheticDryRunTask()).task); }
-    catch (error) { setSyntheticError(error.message); }
-    finally { setSyntheticBusy(false); }
-  }
-  async function refreshSyntheticTask() {
-    if (!syntheticTask?.taskId) return;
-    try { setSyntheticTask((await api.getSyntheticDryRunTask(syntheticTask.taskId)).task); setSyntheticError(''); }
-    catch (error) { setSyntheticError(error.message); }
-  }
   const selectedCampaign = preflightSources.campaigns.find((item) => item.kind === preflightSelection.kind && item.id === preflightSelection.campaignId);
   async function createCampaignPreflight() {
     setCampaignPreflightBusy(true); setCampaignPreflightError('');
@@ -201,13 +187,6 @@ export default function Dashboard({ onChangePage }) {
 
       {remoteTaskEnabled && (
         <>
-        <section className="dashboard-operation-card attention-card ready" aria-label="Synthetic remote task validation">
-          <header><span className="operation-icon"><Bot size={20} /></span><div><p>Validare synthetică</p><h2>Remote DRY_RUN</h2></div></header>
-          <p className="mission-message">Numai agentul synthetic configurat server-side poate executa un singur DRY_RUN. Facebook și publicarea rămân dezactivate.</p>
-          {syntheticTask && <p className="mission-message"><strong>{syntheticTask.status}</strong> · {syntheticTask.result?.dryRun ? 'DRY_RUN finalizat' : syntheticTask.taskId}</p>}
-          {syntheticError && <p className="mission-message">{syntheticError}</p>}
-          <div className="button-row"><button className="secondary-button" disabled={syntheticBusy || Boolean(syntheticTask)} onClick={createSyntheticTask}>Creează validarea</button>{syntheticTask && <button className="ghost-button" onClick={refreshSyntheticTask}>Actualizează status</button>}</div>
-        </section>
         <section className="dashboard-operation-card attention-card ready" aria-label="Cloud campaign preflight">
           <header><span className="operation-icon"><ShieldAlert size={20} /></span><div><p>PREVIEW / DRY_RUN / PREFLIGHT</p><h2>Preflight campanie cloud</h2></div></header>
           <p className="mission-message">Nu se publică nicio postare Facebook. Agentul validează numai snapshot-ul cloud și media verificată.</p>

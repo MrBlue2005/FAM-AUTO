@@ -137,8 +137,6 @@ export const api = {
     return cloudMediaPreviewCache.resolve(typeof media === 'string' ? media : media?.mediaId || media?.id);
   },
   getAgentStatus: () => cloudRead('/agent-status'),
-  createSyntheticDryRunTask: () => request('/cloud-remote-tasks/synthetic-dry-run', { method: 'POST', body: '{}' }),
-  getSyntheticDryRunTask: (taskId) => request(`/cloud-remote-tasks/synthetic-dry-run/${encodeURIComponent(taskId)}`),
   createCampaignPreflightTask: ({ kind, campaignId, day, targetId, campaignRevision, postRevision }) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify({ kind, campaignId, day, targetId, campaignRevision, postRevision }) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   refreshMediaPreviewUrl: (media) => {
