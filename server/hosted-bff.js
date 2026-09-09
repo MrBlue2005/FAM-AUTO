@@ -79,10 +79,16 @@ function normalizeOrigins(value) {
   return String(value || '').split(',').map((origin) => origin.trim()).filter(Boolean);
 }
 
+function normalizedSyntheticTargetId(value) {
+  return String(value || '').trim();
+}
+
 function createHostedBffConfig(env = process.env) {
   const production = env.NODE_ENV === 'production';
   const authEnabled = env.AUTH_ENABLED !== 'false';
   const publicOrigin = String(env.RX_BFF_PUBLIC_ORIGIN || '').replace(/\/$/, '');
+  const syntheticAgentId = normalizedSyntheticTargetId(env.RX_BFF_SYNTHETIC_AGENT_ID);
+  const syntheticProfileId = normalizedSyntheticTargetId(env.RX_BFF_SYNTHETIC_PROFILE_ID);
   const developmentOrigins = normalizeOrigins(env.RX_BFF_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:3000,http://localhost:3000');
   const allowedOrigins = production ? [publicOrigin] : [...new Set([publicOrigin, ...developmentOrigins].filter(Boolean))];
   const errors = [];
@@ -93,9 +99,9 @@ function createHostedBffConfig(env = process.env) {
   if (authEnabled && String(env.RX_BFF_SESSION_SIGNING_SECRET || '').length < 32) errors.push('RX_BFF_SESSION_SIGNING_SECRET must be at least 32 characters.');
   if (production && !publicOrigin) errors.push('RX_BFF_PUBLIC_ORIGIN is required in production.');
   if (production && (!env.RX_APP_SUPABASE_URL || !env.RX_APP_SUPABASE_SERVICE_ROLE_KEY)) errors.push('Hosted application Supabase URL and service-role credentials are required in production.');
-  if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true' && (!env.RX_BFF_SYNTHETIC_AGENT_ID || !env.RX_BFF_SYNTHETIC_PROFILE_ID)) errors.push('Synthetic Local Agent and profile IDs are required when hosted remote tasks are enabled.');
+  if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true' && (!syntheticAgentId || !syntheticProfileId)) errors.push('Synthetic Local Agent and profile IDs are required when hosted remote tasks are enabled.');
   if (errors.length) throw new Error(`Hosted BFF configuration is invalid: ${errors.join(' ')}`);
-  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, env };
+  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, env };
 }
 
 function cookieValue(token, production, maxAge) {
@@ -192,7 +198,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.
     if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
-    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: env.RX_BFF_SYNTHETIC_AGENT_ID, profileId: env.RX_BFF_SYNTHETIC_PROFILE_ID, now }));
+    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, now }));
   }
   return app;
 }
