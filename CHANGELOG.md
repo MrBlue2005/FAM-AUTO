@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase C explicit hosted device/profile selection context. It is memory-only UI intent derived exclusively from the Devices read model, has no execution authority or automatic fallback, and requires future BFF task endpoints to revalidate ownership and readiness server-side.
+
 - Added Phase B read-only multi-device visibility: authenticated hosted clients can read browser-safe Local Agent/device status with profiles grouped by owner. It adds no execution routing, preferred device, profile picker, or automatic fallback; Facebook sessions and local profile administration remain machine-local.
 
 - Completed hosted Dashboard cloud-native refactor Phase A: hosted navigation and global status now distinguish Cloud BFF from the temporary Local Agent bridge, machine-local tools are visibly marked Local Studio-only, and hosted Dashboard/Schedules no longer imply local runtime ownership. Multi-device/profile routing is deferred to Phase B/C; Local Studio remains unchanged.

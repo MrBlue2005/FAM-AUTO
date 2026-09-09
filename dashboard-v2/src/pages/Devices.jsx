@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MonitorSmartphone, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+import { DEVICE_PROFILE_READINESS, useHostedDeviceProfileSelection } from '../services/hostedDeviceSelection';
 
 function formatLastSeen(value) {
   if (!value) return 'Fără heartbeat';
@@ -13,10 +14,19 @@ function tone(value) {
   return 'inactive';
 }
 
+const readinessCopy = {
+  [DEVICE_PROFILE_READINESS.NO_DEVICE]: 'Selectează un dispozitiv pentru a vedea profilurile sale.',
+  [DEVICE_PROFILE_READINESS.DEVICE_OFFLINE]: 'Dispozitivul selectat este offline sau are heartbeat expirat.',
+  [DEVICE_PROFILE_READINESS.NO_PROFILE]: 'Selectează un profil deținut de dispozitivul ales.',
+  [DEVICE_PROFILE_READINESS.PROFILE_NOT_READY]: 'Profilul selectat nu este pregătit pentru un preflight viitor.',
+  [DEVICE_PROFILE_READINESS.READY_FOR_PREFLIGHT]: 'Perechea este structural pregătită pentru un preflight viitor; aceasta nu autorizează publicarea sau execuția.',
+};
+
 function HostedDevices() {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const selection = useHostedDeviceProfileSelection(devices);
 
   async function load() {
     setLoading(true);
@@ -50,6 +60,13 @@ function HostedDevices() {
       <section className="editor-panel">
         <p className="muted-text">Această pagină nu selectează dispozitive sau profiluri pentru execuție. Rutarea, fallback-ul automat și administrarea locală de profiluri rămân pentru etape viitoare și Local Studio.</p>
       </section>
+
+      {!loading && !error && devices.length > 0 && <section className="editor-panel">
+        <div className="panel-title-row"><div><h2>Selecție explicită pentru viitor</h2><p className="muted-text">Selecția este intenție UI read-only, nu autorizare de execuție.</p></div>{selection.selectedDeviceId && <button className="ghost-button" onClick={selection.clearSelection}>Șterge selecția</button>}</div>
+        <div className="button-row">{devices.map((device) => <button className={selection.selectedDeviceId === device.deviceId ? 'primary-button' : 'secondary-button'} key={device.deviceId} onClick={() => selection.selectDevice(device.deviceId)}>{device.displayName} · {device.online ? device.reportedStatus : 'OFFLINE'}</button>)}</div>
+        {selection.selectedDevice && <div className="schedule-list"><div className="schedule-empty">Profiluri pentru {selection.selectedDevice.displayName}</div>{selection.selectedDevice.profiles.map((profile) => <button className={selection.selectedProfileId === profile.profileId ? 'primary-button' : 'secondary-button'} key={profile.profileId} onClick={() => selection.selectProfile(profile.profileId)}>{profile.displayName} · {profile.status}</button>)}{!selection.selectedDevice.profiles.length && <div className="schedule-empty">Dispozitivul selectat nu are profiluri înregistrate.</div>}</div>}
+        <p className="mission-message"><strong>{selection.readiness}</strong> · {readinessCopy[selection.readiness]}</p>
+      </section>}
 
       {error && <section className="editor-panel"><p className="save-message">{error}</p></section>}
       {loading && <section className="editor-panel"><p>Se încarcă dispozitivele…</p></section>}

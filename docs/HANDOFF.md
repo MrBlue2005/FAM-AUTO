@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Phase C provides explicit hosted `deviceId` + `profileId` selection state derived only from the Devices read model. It is memory-only UI intent, not execution authorization, has no automatic fallback, and leaves Facebook sessions machine-local. Any future BFF execution endpoint must independently revalidate device existence, profile ownership, heartbeat freshness, capability, READY state, conflicting work, and authorization; Local Studio remains separate.
+
 - Phase B adds an authenticated, read-only hosted Devices model using existing control-plane agents/profiles. It supports multiple devices and groups safe profile readiness by owner, but intentionally has no execution routing, preferred device, profile picker, or automatic fallback. Facebook sessions remain machine-local and Local Studio remains responsible for local profile administration.
 
 - Hosted Dashboard cloud-native refactor Phase A is complete. `CLOUD_READ_ONLY` represents cloud application data, the hosted BFF/control plane, a safe temporary Local Agent availability bridge, and explicit Local Studio boundaries for machine-local administration. Multi-device Devices/Profile UI and global hosted profile selection are deferred to Phase B/C; Local Studio behavior remains intact.
