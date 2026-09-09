@@ -35,11 +35,7 @@ function isOnline(agent, now = Date.now()) {
     && Number.isFinite(seen) && now - seen <= FRESHNESS_MS;
 }
 
-function targetIdFingerprint(value) {
-  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 16);
-}
-
-function targetAvailability(agent, profile, agentId, profileId, now = Date.now()) {
+function targetAvailability(agent, profile, agentId, now = Date.now()) {
   const seen = Date.parse(agent?.last_seen_at || '');
   const agentStatusAccepted = ['ONLINE', 'BUSY', 'DEGRADED'].includes(String(agent?.reported_status || '').toUpperCase());
   return {
@@ -49,10 +45,6 @@ function targetAvailability(agent, profile, agentId, profileId, now = Date.now()
     profileReady: Boolean(profile) && String(profile.status || '').toUpperCase() === 'READY',
     agentStatusAccepted,
     heartbeatFresh: Boolean(agent) && Number.isFinite(seen) && now - seen <= FRESHNESS_MS,
-    configuredAgentIdLength: agentId.length,
-    configuredAgentIdFingerprint: targetIdFingerprint(agentId),
-    configuredProfileIdLength: profileId.length,
-    configuredProfileIdFingerprint: targetIdFingerprint(profileId),
   };
 }
 
@@ -64,7 +56,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, now = () => Da
   const router = express.Router();
   const readTarget = async () => {
     const [agent, profile] = await Promise.all([store.getControlPlaneAgent(agentId), store.getControlPlaneProfile(profileId)]);
-    return { agent, profile, availability: targetAvailability(agent, profile, agentId, profileId, now()) };
+    return { agent, profile, availability: targetAvailability(agent, profile, agentId, now()) };
   };
   const verifyTarget = async () => {
     const { agent, profile, availability } = await readTarget();
@@ -113,4 +105,4 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, now = () => Da
   return router;
 }
 
-module.exports = { FRESHNESS_MS, TASK_PREFIX, AVAILABILITY_CODES, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability, targetIdFingerprint };
+module.exports = { FRESHNESS_MS, TASK_PREFIX, AVAILABILITY_CODES, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };
