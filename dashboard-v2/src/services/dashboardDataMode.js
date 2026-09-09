@@ -8,11 +8,11 @@ export function normalizeDashboardDataMode(value) {
 }
 
 export function assertCloudReadOnlyRequest(mode, method, endpoint) {
-  if (mode === DASHBOARD_DATA_MODES.CLOUD_READ_ONLY
-    && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || 'GET').toUpperCase())
-    && !['/auth/login', '/auth/logout'].includes(endpoint)) {
-    throw new Error('CLOUD_READ_ONLY does not permit dashboard mutations; no local write fallback is available.');
-  }
+  if (mode !== DASHBOARD_DATA_MODES.CLOUD_READ_ONLY) return;
+  const path = String(endpoint || ''); const verb = String(method || 'GET').toUpperCase();
+  const hosted = path.startsWith('/cloud-read/') || path.startsWith('/cloud-mutations/') || path.startsWith('/cloud-media/') || path.startsWith('/cloud-remote-tasks/') || ['/auth/login', '/auth/logout', '/auth/status'].includes(path);
+  if (!hosted) throw new Error('CLOUD_READ_ONLY does not permit machine-local API access; no local write fallback or localhost fallback is available.');
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(verb) && !path.startsWith('/cloud-mutations/') && !path.startsWith('/cloud-media/') && !path.startsWith('/cloud-remote-tasks/') && !['/auth/login', '/auth/logout'].includes(path)) throw new Error('CLOUD_READ_ONLY does not permit dashboard mutations; no local write fallback is available.');
 }
 
 export function dashboardCapabilities(mode) {

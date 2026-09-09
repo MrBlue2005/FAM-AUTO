@@ -91,4 +91,6 @@ test('dashboard mode gate selects LOCAL by default and rejects cloud-read-only w
   assert.equal(mode.normalizeDashboardDataMode(), mode.DASHBOARD_DATA_MODES.LOCAL); assert.equal(mode.normalizeDashboardDataMode('cloud_read_only'), mode.DASHBOARD_DATA_MODES.CLOUD_READ_ONLY);
   assert.throws(() => mode.assertCloudReadOnlyRequest(mode.DASHBOARD_DATA_MODES.CLOUD_READ_ONLY, 'POST', '/properties'), /no local write fallback/);
   assert.doesNotThrow(() => mode.assertCloudReadOnlyRequest(mode.DASHBOARD_DATA_MODES.CLOUD_READ_ONLY, 'GET', '/cloud-read/properties'));
+  for (const endpoint of ['/health', '/runtime-config', '/facebook-profiles', '/robot/status', '/queue/plan', '/history', '/runs', '/reports/latest', '/live-feed', '/diagnostics']) assert.throws(() => mode.assertCloudReadOnlyRequest(mode.DASHBOARD_DATA_MODES.CLOUD_READ_ONLY, 'GET', endpoint), /machine-local API access/);
+  assert.doesNotThrow(() => mode.assertCloudReadOnlyRequest(mode.DASHBOARD_DATA_MODES.LOCAL, 'GET', '/runtime-config'));
 });
