@@ -59,6 +59,7 @@ function freshJob() {
 }
 
 export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChangePage }) {
+  const cloudReadOnly = api.isCloudReadOnly();
   const [jobs, setJobs] = useState([]);
   const [form, setForm] = useState(() => loadFormDraft(DRAFT_KEY, freshJob));
   const [editingId, setEditingId] = useState(null);
@@ -460,7 +461,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
             />
           </label>
 
-          <label>
+          {!cloudReadOnly && <label>
             Profil Facebook postare
             <select
               value={form.facebookProfileId || ''}
@@ -473,7 +474,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
 
           <label>
             Numar zile postari
@@ -510,7 +511,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
               </label>
               <FacebookPostPreview
                 post={post}
-                profileLabel={facebookProfiles.find((profile) => profile.id === form.facebookProfileId)?.label || 'Profil Facebook default'}
+                profileLabel={cloudReadOnly ? 'Previzualizare campanie' : facebookProfiles.find((profile) => profile.id === form.facebookProfileId)?.label || 'Profil Facebook default'}
               />
 
               <label>
@@ -550,9 +551,9 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
           <button className="primary-button" onClick={() => handleSave('stay')}>
             {editingId ? 'Actualizeaza job' : 'Salveaza job'}
           </button>
-          <button className="secondary-button" onClick={() => handleSave('queue')}>
+          {!cloudReadOnly && <button className="secondary-button" onClick={() => handleSave('queue')}>
             Salveaza si mergi la Queue
-          </button>
+          </button>}
 
           {editingId && (
             <button className="secondary-button" onClick={handleCancelEdit}>
@@ -634,7 +635,7 @@ export default function Jobs({ editRequest, onEditHandled, onDirtyChange, onChan
         <CampaignPreviewDrawer
           campaign={previewJob}
           fallbackPosts={[firstPost]}
-          profileLabel={facebookProfiles.find((profile) => profile.id === previewJob.facebookProfileId)?.label || 'Profil Facebook default'}
+          profileLabel={cloudReadOnly ? 'Previzualizare campanie' : facebookProfiles.find((profile) => profile.id === previewJob.facebookProfileId)?.label || 'Profil Facebook default'}
           onClose={() => setPreviewJob(null)}
         />
       )}

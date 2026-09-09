@@ -63,7 +63,7 @@ function statusLabel(status) {
   return labels[status] || status || 'Eveniment';
 }
 
-export default function Dashboard({ onChangePage }) {
+function LocalDashboard({ onChangePage }) {
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,7 +76,7 @@ export default function Dashboard({ onChangePage }) {
   const [chromiumTask, setChromiumTask] = useState(null);
   const [chromiumError, setChromiumError] = useState('');
   const [chromiumBusy, setChromiumBusy] = useState(false);
-  const cloudReadOnly = api.isCloudReadOnly();
+  const cloudReadOnly = false;
   const remoteTaskEnabled = api.isCloudRemoteTasksEnabled();
   const chromiumPreflightEnabled = api.isCloudChromiumPreflightEnabled();
   const facebookSessionPreflightEnabled = api.isCloudFacebookSessionPreflightEnabled();
@@ -341,4 +341,74 @@ export default function Dashboard({ onChangePage }) {
       </section>
     </div>
   );
+}
+
+function HostedDashboard({ onChangePage }) {
+  const [summary, setSummary] = useState({ properties: [], jobs: [], groups: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [properties, jobs, groups] = await Promise.all([api.getProperties(), api.getJobs(), api.getGroups()]);
+      setSummary({ properties, jobs, groups });
+      setError('');
+    } catch (loadError) {
+      setError(loadError.message || 'Datele cloud nu au putut fi încărcate.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    Promise.all([api.getProperties(), api.getJobs(), api.getGroups()])
+      .then(([properties, jobs, groups]) => {
+        if (!ignore) {
+          setSummary({ properties, jobs, groups });
+          setError('');
+        }
+      })
+      .catch((loadError) => { if (!ignore) setError(loadError.message || 'Datele cloud nu au putut fi încărcate.'); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
+
+  const active = (items) => items.filter((item) => item.active !== false).length;
+  return (
+    <div className="dashboard-v2-grid dashboard-command-center">
+      <section className="dashboard-hero">
+        <div>
+          <span className="hero-eyebrow"><Activity size={14} /> CLOUD WORKSPACE</span>
+          <h1>{PROPULSE_NAME}</h1>
+          <p>Campaniile, media și grupurile sunt gestionate prin control plane-ul cloud.</p>
+        </div>
+        <div className="dashboard-hero-actions">
+          <button className="ghost-button" onClick={loadSummary} disabled={loading}>
+            <RefreshCw className={loading ? 'spin-icon' : ''} size={16} /> Actualizează
+          </button>
+        </div>
+      </section>
+
+      {error && <section className="dashboard-error" role="alert"><TriangleAlert size={18} /><span>{error}</span><button onClick={loadSummary}>Reîncearcă</button></section>}
+
+      <section className="stats-v2-grid dashboard-stats-grid">
+        <StatBox Icon={Building2} label="Proprietăți active" value={active(summary.properties)} />
+        <StatBox Icon={BriefcaseBusiness} label="Joburi active" value={active(summary.jobs)} />
+        <StatBox Icon={UsersRound} label="Grupuri active" value={active(summary.groups)} />
+      </section>
+
+      <section className="dashboard-operation-card attention-card ready">
+        <header><span className="operation-icon"><ShieldAlert size={20} /></span><div><p>HOSTED CONTROL PLANE</p><h2>Stare cloud și Local Agent</h2></div></header>
+        <p className="mission-message">Starea Cloud BFF și disponibilitatea Local Agent sunt afișate separat în bara de stare. Administrarea runtime-ului, a browserului și a profilurilor rămâne în Local Studio.</p>
+        <button className="card-link-button" onClick={() => onChangePage('campaigns')}>Deschide campaniile <ArrowRight size={16} /></button>
+      </section>
+    </div>
+  );
+}
+
+export default function Dashboard(props) {
+  if (api.isCloudReadOnly()) return <HostedDashboard {...props} />;
+  return <LocalDashboard {...props} />;
 }

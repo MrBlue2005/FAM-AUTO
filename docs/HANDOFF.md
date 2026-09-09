@@ -15,6 +15,8 @@ Always verify these values with `git status` and `git log`; this document descri
 
 ## What is implemented
 
+- Hosted Dashboard cloud-native refactor Phase A is complete. `CLOUD_READ_ONLY` represents cloud application data, the hosted BFF/control plane, a safe temporary Local Agent availability bridge, and explicit Local Studio boundaries for machine-local administration. Multi-device Devices/Profile UI and global hosted profile selection are deferred to Phase B/C; Local Studio behavior remains intact.
+
 - Hosted `CLOUD_READ_ONLY` renders intentional Local Studio-only boundaries for Robot, Queue, Settings, Diagnostics, Reports, Analytics, and Live Feed. Those pages do not mount their machine-local loaders while hosted; their existing Local Studio behavior is unchanged.
 
 - `FACEBOOK_SESSION_READINESS_PREFLIGHT` is a separately gated, read-only session check for the explicitly reviewed `Profil principal`; it uses fixed Facebook-root navigation and cannot post or automate login.

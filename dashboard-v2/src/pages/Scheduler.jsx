@@ -99,7 +99,7 @@ function compareSchedulesByTime(left, right) {
   return String(left.name || '').localeCompare(String(right.name || ''), 'ro');
 }
 
-export default function Scheduler() {
+function LocalScheduler() {
   const [schedules, setSchedules] = useState([]);
   const [folders, setFolders] = useState([]);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
@@ -537,4 +537,39 @@ export default function Scheduler() {
       </section>
     </div>
   );
+}
+
+function HostedScheduler() {
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let ignore = false;
+    api.getSchedules()
+      .then((data) => { if (!ignore) setSchedules(data.schedules || []); })
+      .catch((loadError) => { if (!ignore) setError(loadError.message || 'Programările cloud nu au putut fi încărcate.'); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, []);
+
+  return (
+    <div className="scheduler-page">
+      <header className="management-header"><div><h1>Programări cloud</h1><p>Definițiile de programare sunt păstrate în cloud. Rutarea către dispozitiv și execuția locală vor fi configurate într-o etapă viitoare.</p></div></header>
+      <section className="schedule-list-section">
+        <div className="panel-title-row"><div><h2>Definiții salvate</h2><p className="muted-text">Această pagină nu pornește schedulerul local și nu selectează un profil.</p></div><strong>{schedules.length}</strong></div>
+        {loading && <div className="schedule-empty large">Se încarcă programările cloud...</div>}
+        {error && <div className="schedule-empty large">{error}</div>}
+        {!loading && !error && <div className="schedule-list">
+          {schedules.map((schedule) => <article className={`schedule-card ${schedule.enabled ? '' : 'disabled'}`} key={schedule.id}><div className="schedule-card-main"><div className="schedule-card-title"><span className={`schedule-state ${schedule.enabled ? 'active' : ''}`}><CalendarClock size={15} />{schedule.enabled ? 'Activă' : 'Pauză'}</span><h3>{schedule.name}</h3></div><div className="schedule-when"><Clock3 size={16} /><strong>{schedule.time}</strong><span>{formatScheduledDays(schedule)}</span></div><p>{schedule.campaignIds?.length || 0} campanii · {schedule.groupListCategory || 'Romania'} · {schedule.publishEnabled ? 'LIVE configurat' : 'TEST configurat'}</p></div></article>)}
+          {!schedules.length && <div className="schedule-empty large">Nu există definiții de programare în cloud.</div>}
+        </div>}
+      </section>
+    </div>
+  );
+}
+
+export default function Scheduler() {
+  if (api.isCloudReadOnly()) return <HostedScheduler />;
+  return <LocalScheduler />;
 }

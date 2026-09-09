@@ -5,7 +5,7 @@ function sendNotification(title, body) {
   if (window.Notification?.permission === 'granted' && window.localStorage.getItem('rx-desktop-notifications') === 'true') new Notification(title, { body, icon: '/favicon.svg' });
 }
 
-export default function DesktopNotifications() {
+function LocalDesktopNotifications() {
   const previousRef = useRef(null);
   useEffect(() => {
     let stopped = false;
@@ -30,4 +30,9 @@ export default function DesktopNotifications() {
     return () => { stopped = true; window.clearTimeout(timer); };
   }, []);
   return null;
+}
+
+export default function DesktopNotifications() {
+  if (api.isCloudReadOnly()) return null;
+  return <LocalDesktopNotifications />;
 }

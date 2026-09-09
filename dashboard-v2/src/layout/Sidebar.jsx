@@ -20,6 +20,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { PROPULSE_MOTTO, PROPULSE_NAME } from '../config/brand';
+import { api } from '../services/api';
 
 const primaryItems = [
   { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard },
@@ -28,20 +29,21 @@ const primaryItems = [
   { id: 'jobs', label: 'Joburi', Icon: BriefcaseBusiness },
   { id: 'groups', label: 'Grupuri', Icon: UsersRound },
   { id: 'media', label: 'Media', Icon: GalleryHorizontalEnd },
-  { id: 'queue', label: 'Queue', Icon: ChartNoAxesCombined },
+  { id: 'queue', label: 'Queue', Icon: ChartNoAxesCombined, localOnly: true },
   { id: 'scheduler', label: 'Programari', Icon: CalendarClock },
-  { id: 'livefeed', label: 'Live Feed', Icon: Radio },
-  { id: 'analytics', label: 'Analytics', Icon: BarChart3 },
-  { id: 'reports', label: 'Rapoarte', Icon: FileSpreadsheet },
-  { id: 'diagnostics', label: 'Diagnostic', Icon: Stethoscope },
+  { id: 'livefeed', label: 'Live Feed', Icon: Radio, localOnly: true },
+  { id: 'analytics', label: 'Analytics', Icon: BarChart3, localOnly: true },
+  { id: 'reports', label: 'Rapoarte', Icon: FileSpreadsheet, localOnly: true },
+  { id: 'diagnostics', label: 'Diagnostic', Icon: Stethoscope, localOnly: true },
 ];
 
 const secondaryItems = [
-  { id: 'robot', label: 'Propulse Control', Icon: Bot },
-  { id: 'settings', label: 'Settings', Icon: Settings },
+  { id: 'robot', label: 'Propulse Control', Icon: Bot, localOnly: true },
+  { id: 'settings', label: 'Settings', Icon: Settings, localOnly: true },
 ];
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
+  const cloudReadOnly = api.isCloudReadOnly();
   const [expanded, setExpanded] = useState(() => {
     try {
       return window.localStorage.getItem('rx-windowed-sidebar-expanded') === 'true';
@@ -75,7 +77,7 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
         <span className="sidebar-icon">
           <Icon size={17} strokeWidth={2.35} />
         </span>
-        <strong>{item.label}</strong>
+        <strong>{item.label}{cloudReadOnly && item.localOnly && <small className="sidebar-local-badge">Local Studio</small>}</strong>
       </button>
     );
   }

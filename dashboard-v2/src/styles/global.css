@@ -513,6 +513,16 @@ textarea {
   transition: background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
 }
 
+.sidebar-local-badge {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-text, #8a94a6);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .sidebar-item.active .sidebar-icon,
 .sidebar-item:hover .sidebar-icon {
   background: rgba(239,68,68,.20);

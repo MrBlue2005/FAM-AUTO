@@ -13,6 +13,7 @@ function getCampaignTypeLabel(type) {
 }
 
 export default function Campaigns({ onChangePage, onEditCampaign }) {
+  const cloudReadOnly = api.isCloudReadOnly();
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -338,7 +339,7 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
 
       {message && <p className="save-message">{message}</p>}
 
-      <ProfileStartModal
+      {!cloudReadOnly && <ProfileStartModal
         open={startModalOpen}
         onClose={() => setStartModalOpen(false)}
         onConfirm={async (options) => {
@@ -348,7 +349,7 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
             ? `Robot pornit doar pentru ${pendingCampaignName}.`
             : result.lastMessage || 'Pornirea robotului a fost blocata.');
         }}
-      />
+      />}
 
       <section className="campaign-list-v2">
         {filteredCampaigns.map((campaign) => (
@@ -390,7 +391,7 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
                   <button onClick={() => handleToggleCampaign(campaign)}>
                     {campaign.active ? 'Dezactiveaza' : 'Activeaza'}
                   </button>
-                  <button onClick={() => handleRunCampaign(campaign)}>Ruleaza doar aceasta</button>
+                  {!cloudReadOnly && <button onClick={() => handleRunCampaign(campaign)}>Ruleaza doar aceasta</button>}
                   <button onClick={() => handleCloneCampaign(campaign)}>Cloneaza</button>
                   <label className="campaign-folder-select">
                     Folder

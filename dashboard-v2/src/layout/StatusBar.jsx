@@ -56,7 +56,7 @@ export default function StatusBar() {
       <footer className={`status-bar ${offline ? 'offline' : ''}`} aria-live="polite">
         <StatusItem label="Cloud BFF" value={offline ? 'offline' : 'online'} />
         <StatusItem label="Local Agent" value={offline ? 'checking' : agentView.value} />
-        <span className="status-bar-updated">{offline ? 'Cloud status unavailable' : agentView.message}</span>
+        <span className="status-bar-updated">{offline ? 'Starea Cloud BFF nu este disponibilă' : `${agentView.message} · bridge temporar pentru un singur agent`}</span>
       </footer>
     );
   }

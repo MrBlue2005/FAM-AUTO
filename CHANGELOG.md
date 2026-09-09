@@ -1,5 +1,7 @@
 # Changelog
 
+- Completed hosted Dashboard cloud-native refactor Phase A: hosted navigation and global status now distinguish Cloud BFF from the temporary Local Agent bridge, machine-local tools are visibly marked Local Studio-only, and hosted Dashboard/Schedules no longer imply local runtime ownership. Multi-device/profile routing is deferred to Phase B/C; Local Studio remains unchanged.
+
 - A2 makes machine-local administration surfaces explicit Local Studio-only boundaries in hosted `CLOUD_READ_ONLY` mode. Robot, Queue, Settings, Diagnostics, Reports, Analytics, and Live Feed no longer mount their local runtime loaders when hosted; local mode is unchanged.
 
 - Added a separately gated, read-only Facebook session-readiness preflight foundation. It uses a reviewed configured profile and fixed Facebook root navigation only; it has no posting or interaction path.

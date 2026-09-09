@@ -53,7 +53,7 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-export default function Topbar({ activePage, onChangePage }) {
+function LocalTopbar({ activePage, onChangePage }) {
   const [openPanel, setOpenPanel] = useState(null);
   const [overlayOpening, setOverlayOpening] = useState(false);
   const [query, setQuery] = useState('');
@@ -266,4 +266,22 @@ export default function Topbar({ activePage, onChangePage }) {
       </div>
     </header>
   );
+}
+
+function HostedTopbar({ activePage }) {
+  return (
+    <header className="topbar">
+      <div>
+        <h2>{titles[activePage] || 'RX PROPULSE TOOL'}</h2>
+      </div>
+      <div className="topbar-actions">
+        <span className="muted-text">Cloud workspace</span>
+      </div>
+    </header>
+  );
+}
+
+export default function Topbar(props) {
+  if (api.isCloudReadOnly()) return <HostedTopbar {...props} />;
+  return <LocalTopbar {...props} />;
 }

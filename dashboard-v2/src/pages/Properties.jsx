@@ -42,6 +42,7 @@ function freshForm() {
 }
 
 export default function Properties({ editRequest, onEditHandled, onDirtyChange, onChangePage }) {
+  const cloudReadOnly = api.isCloudReadOnly();
   const [properties, setProperties] = useState([]);
   const [propertyLogs, setPropertyLogs] = useState([]);
   const [form, setForm] = useState(() => loadFormDraft(DRAFT_KEY, freshForm));
@@ -536,7 +537,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
             </select>
           </label>
 
-          <label>
+          {!cloudReadOnly && <label>
             Profil Facebook postare
             <select
               value={form.facebookProfileId || ''}
@@ -549,7 +550,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
         </div>
 
         <div className="posts-editor">
@@ -566,17 +567,17 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               </label>
               <FacebookPostPreview
                 post={post}
-                profileLabel={facebookProfiles.find((profile) => profile.id === form.facebookProfileId)?.label || 'Profil Facebook default'}
+                profileLabel={cloudReadOnly ? 'Previzualizare campanie' : facebookProfiles.find((profile) => profile.id === form.facebookProfileId)?.label || 'Profil Facebook default'}
               />
 
-              <label>
+              {!cloudReadOnly && <label>
                 Cale media
                 <input
                   value={post.imagePath}
                   onChange={(event) => updatePost(index, 'imagePath', event.target.value)}
                   placeholder="C:\\Users\\admin\\Desktop\\folder\\cover1.jpg"
                 />
-              </label>
+              </label>}
 
               <MediaDropzone
                 campaignKind="property"
@@ -612,9 +613,9 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
           <button className="primary-button" onClick={() => handleSave('stay')}>
             {editingId ? 'Actualizeaza proprietatea' : 'Salveaza proprietatea'}
           </button>
-          <button className="secondary-button" onClick={() => handleSave('queue')}>
+          {!cloudReadOnly && <button className="secondary-button" onClick={() => handleSave('queue')}>
             Salveaza si mergi la Queue
-          </button>
+          </button>}
 
           {editingId && (
             <button className="secondary-button" onClick={handleCancelEdit}>
@@ -625,7 +626,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
 
         {message && <p className="save-message">{message}</p>}
 
-        <ProfileStartModal
+        {!cloudReadOnly && <ProfileStartModal
           open={startModalOpen}
           onClose={() => setStartModalOpen(false)}
           onConfirm={async (options) => {
@@ -635,7 +636,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
               ? `Robot pornit doar pentru ${pendingPropertyName}.`
               : result.lastMessage || 'Pornirea robotului a fost blocata.');
           }}
-        />
+        />}
       </section>
 
       <section className="entity-list">
@@ -787,7 +788,7 @@ export default function Properties({ editRequest, onEditHandled, onDirtyChange, 
         <CampaignPreviewDrawer
           campaign={previewProperty}
           fallbackPosts={defaultPosts}
-          profileLabel={facebookProfiles.find((profile) => profile.id === previewProperty.facebookProfileId)?.label || 'Profil Facebook default'}
+          profileLabel={cloudReadOnly ? 'Previzualizare campanie' : facebookProfiles.find((profile) => profile.id === previewProperty.facebookProfileId)?.label || 'Profil Facebook default'}
           onClose={() => setPreviewProperty(null)}
         />
       )}
