@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Archive, Download, ExternalLink, RefreshCw, RotateCcw, TriangleAlert, UserRound, X } from 'lucide-react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 
 const statusLabels = {
   running: 'In desfasurare',
@@ -114,7 +115,7 @@ function summarizeErrorGroups(history, groups) {
     .sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
 }
 
-export default function Reports({ onChangePage }) {
+function LocalReports({ onChangePage }) {
   const [runs, setRuns] = useState([]);
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState('all');
@@ -489,4 +490,11 @@ export default function Reports({ onChangePage }) {
       </section>
     </div>
   );
+}
+
+export default function Reports(props) {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Rapoarte" description="Istoricul rulărilor și rapoartele locale sunt disponibile numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalReports {...props} />;
 }

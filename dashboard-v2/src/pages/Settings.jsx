@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 
 const defaultConfig = {
   campaignDay: 1,
@@ -77,7 +78,7 @@ function generateProfileId(label, profiles) {
   return candidate;
 }
 
-export default function Settings() {
+function LocalSettings() {
   const fileInputRef = useRef(null);
   const backupInputRef = useRef(null);
   const [config, setConfig] = useState(defaultConfig);
@@ -409,4 +410,11 @@ export default function Settings() {
 
     </div>
   );
+}
+
+export default function Settings() {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Setări" description="Configurarea runtime-ului, a browserului și a profilurilor este disponibilă numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalSettings />;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 
 function percent(value, total) {
   if (!total) return 0;
@@ -15,7 +16,7 @@ function groupBy(items, key) {
   }, {});
 }
 
-export default function Analytics() {
+function LocalAnalytics() {
   const [history, setHistory] = useState([]);
   const [logs, setLogs] = useState([]);
   const [properties, setProperties] = useState([]);
@@ -254,4 +255,11 @@ export default function Analytics() {
       </section>
     </div>
   );
+}
+
+export default function Analytics() {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Analiză" description="Analiza istoricului și a datelor runtime este disponibilă numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalAnalytics />;
 }

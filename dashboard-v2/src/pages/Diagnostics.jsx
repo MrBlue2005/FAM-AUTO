@@ -9,6 +9,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 import './Diagnostics.css';
 
 const filterLabels = {
@@ -50,7 +51,7 @@ function statusCopy(data) {
   };
 }
 
-export default function Diagnostics({ onChangePage }) {
+function LocalDiagnostics({ onChangePage }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -213,4 +214,11 @@ export default function Diagnostics({ onChangePage }) {
       )}
     </div>
   );
+}
+
+export default function Diagnostics(props) {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Diagnostic" description="Diagnosticele runtime-ului, jurnalul local și verificările browserului sunt disponibile numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalDiagnostics {...props} />;
 }

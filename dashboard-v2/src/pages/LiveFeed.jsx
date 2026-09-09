@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -16,7 +17,7 @@ function statusType(status) {
   return 'info';
 }
 
-export default function LiveFeed() {
+function LocalLiveFeed() {
   const [robot, setRobot] = useState(null);
   const [history, setHistory] = useState([]);
   const [filter, setFilter] = useState('all');
@@ -129,4 +130,11 @@ export default function LiveFeed() {
       </section>
     </div>
   );
+}
+
+export default function LiveFeed() {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Feed live" description="Evenimentele live și jurnalul runtime sunt disponibile numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalLiveFeed />;
 }

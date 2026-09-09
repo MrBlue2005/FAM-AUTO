@@ -1,5 +1,7 @@
 # Changelog
 
+- A2 makes machine-local administration surfaces explicit Local Studio-only boundaries in hosted `CLOUD_READ_ONLY` mode. Robot, Queue, Settings, Diagnostics, Reports, Analytics, and Live Feed no longer mount their local runtime loaders when hosted; local mode is unchanged.
+
 - Added a separately gated, read-only Facebook session-readiness preflight foundation. It uses a reviewed configured profile and fixed Facebook root navigation only; it has no posting or interaction path.
 
 - Added `CHROMIUM_SAFE_PREFLIGHT`: a separately dual-gated, server-selected synthetic Local Agent task that launches real Playwright Chromium only with an isolated registered profile, opens only `about:blank`, then closes and releases the existing profile lock before returning a safe result DTO. A real local smoke validation confirmed launch/page/close with no orphan Chromium process, Facebook/Meta navigation, publishing, or operational profile access.

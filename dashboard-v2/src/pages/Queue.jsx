@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import LocalStudioBoundary from '../components/LocalStudioBoundary';
 
 const defaultConfig = {
   campaignDay: 1,
@@ -101,7 +102,7 @@ function isRunning(status) {
   return status === 'running' || status === 'paused';
 }
 
-export default function Queue({ onChangePage }) {
+function LocalQueue({ onChangePage }) {
   const [config, setConfig] = useState(defaultConfig);
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -648,4 +649,11 @@ export default function Queue({ onChangePage }) {
 
     </div>
   );
+}
+
+export default function Queue(props) {
+  if (api.isCloudReadOnly()) {
+    return <LocalStudioBoundary title="Queue" description="Planul de coadă, profilurile locale și starea de execuție sunt disponibile numai în Local Studio pe dispozitiv." />;
+  }
+  return <LocalQueue {...props} />;
 }
