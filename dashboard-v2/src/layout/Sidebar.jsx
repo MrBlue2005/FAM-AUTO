@@ -42,7 +42,7 @@ const secondaryItems = [
   { id: 'robot', label: 'Propulse Control', Icon: Bot, localOnly: true },
   { id: 'settings', label: 'Settings', Icon: Settings, localOnly: true },
 ];
-const hostedItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartphone }];
+const hostedItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartphone }, { id: 'users', label: 'Utilizatori', Icon: UsersRound }];
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
   const cloudReadOnly = api.isCloudReadOnly();

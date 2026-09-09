@@ -64,3 +64,12 @@ test('Phase 4B-B transactional RPC foundation is scoped to compound application 
   assert.match(sql, /grant execute on function[\s\S]*to service_role/g);
   assert.doesNotMatch(sql, /rx_cp_|security definer/i);
 });
+
+test('hosted managed users are private, RLS-protected, and session-versioned', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase', 'migrations', '202609090001_hosted_managed_users.sql'), 'utf8');
+  assert.match(sql, /create table if not exists public\.hosted_users/);
+  for (const field of ['password_scrypt', 'username_normalized', 'session_version', 'enabled', 'last_login_at']) assert.match(sql, new RegExp(field));
+  assert.match(sql, /alter table public\.hosted_users enable row level security/);
+  assert.match(sql, /revoke all on table public\.hosted_users from public, anon, authenticated/);
+  assert.match(sql, /grant select, insert, update, delete on table public\.hosted_users to service_role/);
+});

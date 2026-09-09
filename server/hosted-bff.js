@@ -11,6 +11,7 @@ const { createCloudMediaUploadRouter } = require('./cloud-media-upload-api');
 const { createCloudRemoteTaskRouter } = require('./cloud-remote-task-api');
 const { ROLES, PERMISSIONS, requirePermission } = require('./hosted-rbac');
 const { createDeviceAdminRouter } = require('./device-admin-api');
+const { createUserAdminRouter } = require('./user-admin-api');
 
 const SESSION_COOKIE = 'rx_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -142,10 +143,22 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     return next();
   });
 
-  const sessionFor = (req) => verifyPayload(parseCookies(req.get('cookie'))[SESSION_COOKIE], config.signingSecret, now());
-  const requireSession = (req, res, next) => {
+  const applicationStore = store || (env.RX_APP_SUPABASE_URL && env.RX_APP_SUPABASE_SERVICE_ROLE_KEY
+    ? new SupabaseApplicationDataStore({ url: env.RX_APP_SUPABASE_URL, serviceRoleKey: env.RX_APP_SUPABASE_SERVICE_ROLE_KEY })
+    : null);
+
+  const sessionFor = async (req) => {
+    const session = verifyPayload(parseCookies(req.get('cookie'))[SESSION_COOKIE], config.signingSecret, now());
+    if (!session || !session.managedUserId) return session;
+    if (!applicationStore?.getManagedUserById) return null;
+    try {
+      const user = await applicationStore.getManagedUserById(session.managedUserId);
+      return user?.enabled !== false && Number(user.session_version) === Number(session.sessionVersion) && user.role === ROLES.USER ? session : null;
+    } catch { return null; }
+  };
+  const requireSession = async (req, res, next) => {
     if (!config.authEnabled) { req.user = { username: 'admin', role: ROLES.ADMIN }; return next(); }
-    const session = sessionFor(req);
+    const session = await sessionFor(req);
     if (!session) return res.status(401).json({ error: 'Session is invalid or expired.' });
     req.user = session;
     return next();
@@ -162,28 +175,37 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   };
   const issueSession = (user) => {
     const issuedAt = Math.floor(now() / 1000);
-    const payload = { v: 1, username: user.username, role: user.role, csrf: crypto.randomBytes(32).toString('base64url'), iat: issuedAt, exp: issuedAt + SESSION_TTL_SECONDS };
+    const payload = { v: 1, username: user.username, role: user.role, csrf: crypto.randomBytes(32).toString('base64url'), iat: issuedAt, exp: issuedAt + SESSION_TTL_SECONDS, ...(user.managedUserId ? { managedUserId: user.managedUserId, sessionVersion: user.sessionVersion } : {}) };
     return { payload, token: signPayload(payload, config.signingSecret) };
   };
-  const authenticate = (username, password) => {
+  const authenticate = async (username, password) => {
     const candidates = [
       { username: config.env.ADMIN_USERNAME || 'admin', scrypt: config.env.ADMIN_PASSWORD_SCRYPT, role: ROLES.ADMIN },
-      ...(config.env.USER_USERNAME && config.env.USER_PASSWORD_SCRYPT ? [{ username: config.env.USER_USERNAME, scrypt: config.env.USER_PASSWORD_SCRYPT, role: ROLES.USER }] : []),
     ];
     const user = candidates.find((candidate) => candidate.username === username);
-    return user && secureScryptMatch(password, user.scrypt) ? user : null;
+    if (user) return secureScryptMatch(password, user.scrypt) ? user : null;
+    if (applicationStore?.getManagedUserByUsername) {
+      const managed = await applicationStore.getManagedUserByUsername(String(username || '').trim().toLowerCase());
+      if (managed) {
+        if (managed.enabled === false || managed.role !== ROLES.USER || !secureScryptMatch(password, managed.password_scrypt)) return null;
+        await applicationStore.recordManagedUserLogin?.(managed.user_id);
+        return { username: managed.username, role: ROLES.USER, managedUserId: managed.user_id, sessionVersion: managed.session_version };
+      }
+    }
+    const legacy = config.env.USER_USERNAME && config.env.USER_PASSWORD_SCRYPT && config.env.USER_USERNAME === username ? { username: config.env.USER_USERNAME, scrypt: config.env.USER_PASSWORD_SCRYPT, role: ROLES.USER } : null;
+    return legacy && secureScryptMatch(password, legacy.scrypt) ? legacy : null;
   };
 
   app.get('/api/bff/healthz', (req, res) => res.json({ ok: true, status: 'ready' }));
-  app.get('/api/auth/status', (req, res) => {
-    const session = config.authEnabled ? sessionFor(req) : { username: 'admin', role: ROLES.ADMIN, csrf: null };
+  app.get('/api/auth/status', async (req, res) => {
+    const session = config.authEnabled ? await sessionFor(req) : { username: 'admin', role: ROLES.ADMIN, csrf: null };
     res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, csrfToken: session?.csrf || null });
   });
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const origin = req.get('origin');
     if (origin && !config.allowedOrigins.includes(origin)) return res.status(403).json({ error: 'Origin is not allowed.' });
     if (!config.authEnabled) return res.json({ enabled: false, username: 'admin', role: 'admin' });
-    const user = authenticate(String(req.body?.username || ''), req.body?.password);
+    const user = await authenticate(String(req.body?.username || ''), req.body?.password);
     if (!user) return res.status(401).json({ error: 'Invalid username or password.' });
     const session = issueSession(user);
     res.setHeader('Set-Cookie', cookieValue(session.token, config.production, SESSION_TTL_SECONDS));
@@ -195,14 +217,10 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   });
   app.post('/api/bff/csrf-probe', requireSession, requireMutationTrust, (req, res) => res.json({ ok: true }));
 
-  // The existing server-only application-data router is mounted unchanged. No dashboard
-  // callers are moved in this task; this is only the hostable same-origin seam.
-  const applicationStore = store || (env.RX_APP_SUPABASE_URL && env.RX_APP_SUPABASE_SERVICE_ROLE_KEY
-    ? new SupabaseApplicationDataStore({ url: env.RX_APP_SUPABASE_URL, serviceRoleKey: env.RX_APP_SUPABASE_SERVICE_ROLE_KEY })
-    : null);
   if (applicationStore) {
     app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore, { requirePermission }));
     app.use('/api/admin/devices', requireSession, requireCloudAccess, createDeviceAdminRouter({ store: applicationStore, env, requirePermission }));
+    app.use('/api/admin/users', requireSession, requireCloudAccess, createUserAdminRouter({ store: applicationStore, env, requirePermission }));
     if (env.RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED === 'true') app.use('/api/cloud-media', requireSession, requirePermission(PERMISSIONS.MEDIA_WRITE), requireCloudAccess, createCloudMediaUploadRouter(applicationStore));
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.

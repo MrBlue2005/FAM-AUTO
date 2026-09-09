@@ -29,5 +29,11 @@ class ApplicationDataStore {
   async setPostMedia(_relation) { throw new Error('ApplicationDataStore.setPostMedia is not implemented'); }
   async createExecutionRun(_run) { throw new Error('ApplicationDataStore.createExecutionRun is not implemented'); }
   async recordPostingResult(_result) { throw new Error('ApplicationDataStore.recordPostingResult is not implemented'); }
+  async listManagedUsers() { throw new Error('ApplicationDataStore.listManagedUsers is not implemented'); }
+  async getManagedUserByUsername(_username) { throw new Error('ApplicationDataStore.getManagedUserByUsername is not implemented'); }
+  async getManagedUserById(_userId) { throw new Error('ApplicationDataStore.getManagedUserById is not implemented'); }
+  async createManagedUser(_user) { throw new Error('ApplicationDataStore.createManagedUser is not implemented'); }
+  async updateManagedUser(_userId, _change) { throw new Error('ApplicationDataStore.updateManagedUser is not implemented'); }
+  async recordManagedUserLogin(_userId) { throw new Error('ApplicationDataStore.recordManagedUserLogin is not implemented'); }
 }
 module.exports = { ApplicationDataStore };
