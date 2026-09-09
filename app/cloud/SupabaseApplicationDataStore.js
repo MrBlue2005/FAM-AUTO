@@ -32,6 +32,7 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
   async getAgentStatus() { return (await this.request('/rest/v1/agents?select=agent_id,display_name,reported_status,last_seen_at,created_at&order=last_seen_at.desc.nullslast,created_at.desc&limit=1'))[0] || null; }
   listControlPlaneAgents() { return this.request('/rest/v1/agents?select=agent_id,display_name,reported_status,last_seen_at,created_at&order=display_name.asc,agent_id.asc'); }
   listControlPlaneProfiles() { return this.request('/rest/v1/profiles?select=profile_id,agent_id,display_name,status,last_seen_at&order=display_name.asc,profile_id.asc'); }
+  async renameControlPlaneAgent(agentId, displayName) { const rows = await this.request(`/rest/v1/agents?agent_id=eq.${encodeURIComponent(agentId)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ display_name: displayName, updated_at: new Date().toISOString() }) }); return rows[0] || null; }
   async getControlPlaneAgent(agentId) { return (await this.request(`/rest/v1/agents?agent_id=eq.${encodeURIComponent(agentId)}&select=agent_id,reported_status,last_seen_at&limit=1`))[0] || null; }
   async getControlPlaneProfile(profileId) { return (await this.request(`/rest/v1/profiles?profile_id=eq.${encodeURIComponent(profileId)}&select=profile_id,agent_id,status&limit=1`))[0] || null; }
   async createControlPlaneTask(task) { return (await this.request('/rest/v1/tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(task) }))[0]; }

@@ -10,6 +10,7 @@ const { createCloudDashboardReadRouter } = require('./cloud-dashboard-read-api')
 const { createCloudMediaUploadRouter } = require('./cloud-media-upload-api');
 const { createCloudRemoteTaskRouter } = require('./cloud-remote-task-api');
 const { ROLES, PERMISSIONS, requirePermission } = require('./hosted-rbac');
+const { createDeviceAdminRouter } = require('./device-admin-api');
 
 const SESSION_COOKIE = 'rx_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -201,6 +202,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     : null);
   if (applicationStore) {
     app.use('/api/cloud-read', requireSession, createCloudDashboardReadRouter(applicationStore, { requirePermission }));
+    app.use('/api/admin/devices', requireSession, requireCloudAccess, createDeviceAdminRouter({ store: applicationStore, env, requirePermission }));
     if (env.RX_BFF_CLOUD_MEDIA_UPLOAD_ENABLED === 'true') app.use('/api/cloud-media', requireSession, requirePermission(PERMISSIONS.MEDIA_WRITE), requireCloudAccess, createCloudMediaUploadRouter(applicationStore));
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.
