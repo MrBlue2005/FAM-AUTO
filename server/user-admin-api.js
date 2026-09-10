@@ -39,6 +39,10 @@ function createUserAdminRouter({ store, env, requirePermission }) {
     if (typeof req.body?.controlledExecutionEnabled !== 'boolean') return res.status(400).json({ error: 'controlledExecutionEnabled must be boolean.' });
     try { const user = await store.updateManagedUser(req.params.userId, { controlledExecutionEnabled: req.body.controlledExecutionEnabled }); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); return res.json({ user: safeUser(user) }); } catch { return res.status(400).json({ error: 'Controlled execution policy could not be updated.' }); }
   });
+  router.patch('/:userId/live-execution-policy', async (req, res) => {
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean.' });
+    try { const user = await store.updateManagedUser(req.params.userId, { liveExecutionEnabled: req.body.enabled }); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); return res.json({ user: safeUser(user) }); } catch { return res.status(400).json({ error: 'Live execution policy could not be updated.' }); }
+  });
   router.post('/:userId/reset-password', async (req, res) => {
     const password = validatePassword(req.body?.password); if (!password) return res.status(400).json({ error: 'Provide a valid replacement password.' });
     try { const user = await store.updateManagedUser(req.params.userId, { passwordScrypt: hashPassword(password), invalidateSessions: true }); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); return res.json({ user: safeUser(user) }); } catch { return res.status(400).json({ error: 'Password could not be reset.' }); }

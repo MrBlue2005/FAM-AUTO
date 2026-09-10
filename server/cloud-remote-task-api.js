@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
 const { CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE, buildControlledExecutionSnapshot, safeControlledExecutionResult } = require('./cloud-controlled-execution');
+const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
@@ -100,7 +101,7 @@ function controlledExecutionTaskId(deviceId, profileId, payload, ownerUserId = n
   return `${CONTROLLED_EXECUTION_PREFIX}${fingerprint}`;
 }
 
-function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, now = () => Date.now() }) {
+function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, now = () => Date.now() }) {
   const router = express.Router();
   const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
   const syntheticTargetConfigured = Boolean(agentId && profileId);
@@ -236,6 +237,30 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
         if (belongsToControlledExecution(concurrent)) return res.json({ task: safeTask(concurrent) });
         throw error;
       }
+    } catch (error) { return sendError(res, error); }
+  });
+
+  router.post('/live-campaign-execution', async (req, res) => {
+    try {
+      if (!liveExecutionEnabled) throw Object.assign(new Error('Live execution is disabled.'), { status: 404, code: 'LIVE_EXECUTION_DISABLED' });
+      const ownerUserId = managedTaskOwnerId(req.user);
+      if (req.user?.role === 'USER') {
+        const managed = ownerUserId && await store.getManagedUserById(ownerUserId);
+        if (!managed || managed.enabled === false || managed.live_execution_enabled !== true) throw Object.assign(new Error('Live execution is not enabled for this user.'), { status: 403 });
+        const requestedDeviceId = normalizedRequestedId(req.body?.deviceId); const requestedProfileId = normalizedRequestedId(req.body?.profileId);
+        const assignments = await store.listManagedUserExecutionTargets(ownerUserId, { enabledOnly: true });
+        if (!assignments.some((item) => item.device_id === requestedDeviceId && item.profile_id === requestedProfileId)) throw Object.assign(new Error('The selected execution target is not authorized.'), { status: 403, code: 'EXECUTION_TARGET_NOT_AUTHORIZED' });
+      } else if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Live execution requires execution.run permission.'), { status: 403 });
+      const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
+      const kind = String(req.body?.kind || ''); if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
+      const source = await store.getCampaignPreflightSource({ kind, campaignId: canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID'), targetId: canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID') });
+      const preflight = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
+      const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true }), publishEnabled: true });
+      const taskId = `live_execution_${crypto.createHash('sha256').update(JSON.stringify({ deviceId, requestedProfileId, payload, ownerUserId })).digest('hex').slice(0, 32)}`;
+      const existing = await store.getControlPlaneTask(taskId); if (existing) return res.json({ task: safeTask(existing) });
+      if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(requestedProfileId)) throw requestedTargetError('CONFLICTING_WORK');
+      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, payload }, req.user));
+      return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
 
