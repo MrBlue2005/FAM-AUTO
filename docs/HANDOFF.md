@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.3 real Facebook adapter safety boundary
+
+`RealFacebookPublisherAdapter` reuses the local browser launcher, `openGroup`, `createPost`, and publish-button discovery, but it is enabled only by both `RX_AGENT_LIVE_EXECUTION_ENABLED=true` and `RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED=true`. No hosted configuration enables either gate, and no browser live-creation route or USER publishing UI exists.
+
+`prepare()` launches the exact local profile, validates an authenticated/non-challenge session, navigates and confirms the exact immutable target, then prepares immutable text and verified materialized media. `verifyReady()` rechecks session, target, composer, content/media consistency, and an actionable button; neither method can submit. The only publish side effect is `publishButton.click()` in `submit()`. `ATTEMPT_STARTED` remains outside the adapter in the executor. `verifyOutcome()` requires both a closed composer and explicit acknowledgement; all other outcomes are ambiguous and become `OUTCOME_UNKNOWN`, with no automatic re-submit.
+
 ## G5.2 mocked live executor seam
 
 `LIVE_CAMPAIGN_EXECUTION` now has a Local Agent seam, still default-deny behind `RX_AGENT_LIVE_EXECUTION_ENABLED=true`. The launcher injects no publisher adapter, so enabling that flag alone fails closed with `LIVE_EXECUTION_NOT_IMPLEMENTED`; no Facebook, Chromium, or legacy campaign publisher is reachable from this path.

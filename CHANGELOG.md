@@ -1,5 +1,11 @@
 # Changelog
 
+## G5.3 — real Facebook publisher adapter boundary
+
+- Added `RealFacebookPublisherAdapter`, a narrow wrapper around the existing local browser, target navigation, composer preparation, publish-button discovery, and verified-media workflow. It is wired only when both Local Agent live gates are explicitly true; no hosted/UI route was added.
+- `prepare()` and `verifyReady()` cannot publish. The sole dangerous operation is the explicit `publishButton.click()` inside `submit()`, after the executor has persisted `ATTEMPT_STARTED`.
+- Added strict live outcome verification: the composer must close and a Facebook acknowledgement must appear. Any weak, negative, timeout, or unexpected signal is `AMBIGUOUS` and becomes `OUTCOME_UNKNOWN`; no automatic re-submit exists.
+
 ## G5.2 — mocked live executor seam
 
 - Added a default-deny `LIVE_CAMPAIGN_EXECUTION` Local Agent seam with an explicitly injected publisher adapter only. No Facebook, Chromium, Playwright, or existing campaign publisher is wired.

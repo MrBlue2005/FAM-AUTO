@@ -42,38 +42,44 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
     if (task.side_effect_state === 'VERIFIED_SUCCESS') return { liveExecution: true, publishEnabled: true, sideEffectState: 'VERIFIED_SUCCESS', recoveredVerifiedSuccess: true, manualReviewRequired: false, blockers: [] };
 
     const adapter = requirePublisher(publisher);
-    const transport = context.transport;
-    const trace = typeof context.trace === 'function' ? context.trace : () => {};
-    const cancellationRequested = typeof context.isCancellationRequested === 'function' ? context.isCancellationRequested : async () => false;
-    requireLiveSnapshot(task, registry, runtimeProfiles, transport);
-    if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
-    await adapter.prepare(task);
-    trace('PREPARE_COMPLETE');
-    const readiness = await adapter.verifyReady(task);
-    if (!readinessAccepted(readiness)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready.');
-    trace('PUBLISHER_READY');
-    if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
-    if (!transport || typeof transport.renewLease !== 'function' || typeof transport.markSideEffectAttemptStarted !== 'function' || typeof transport.markSideEffectVerifiedSuccess !== 'function') throw failure('LIVE_TRANSPORT_UNAVAILABLE', 'Live control-plane transport is unavailable.');
+    try {
+      const transport = context.transport;
+      const trace = typeof context.trace === 'function' ? context.trace : () => {};
+      const cancellationRequested = typeof context.isCancellationRequested === 'function' ? context.isCancellationRequested : async () => false;
+      requireLiveSnapshot(task, registry, runtimeProfiles, transport);
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      await adapter.prepare(task);
+      trace('PREPARE_COMPLETE');
+      const readiness = await adapter.verifyReady(task);
+      if (!readinessAccepted(readiness)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready.');
+      trace('PUBLISHER_READY');
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      if (!transport || typeof transport.renewLease !== 'function' || typeof transport.markSideEffectAttemptStarted !== 'function' || typeof transport.markSideEffectVerifiedSuccess !== 'function') throw failure('LIVE_TRANSPORT_UNAVAILABLE', 'Live control-plane transport is unavailable.');
 
-    // The final server-side lease validation is deliberately adjacent to the
-    // durable marker; no publisher method may run before both have succeeded.
-    await transport.renewLease(task);
-    trace('LEASE_VALID');
-    await transport.markSideEffectAttemptStarted(task);
-    trace('ATTEMPT_STARTED_PERSISTED');
-    if (await cancellationRequested()) throw uncertain('CANCELLED_AFTER_ATTEMPT_STARTED', 'Cancellation arrived after live publication authorization.');
-    try { trace('SUBMIT_CALLED'); await adapter.submit(task); }
-    catch (error) { throw uncertain('SUBMIT_UNCERTAIN', 'Live publish submission may have reached the publisher.'); }
+      // The final server-side lease validation is deliberately adjacent to the
+      // durable marker; no publisher method may run before both have succeeded.
+      await transport.renewLease(task);
+      trace('LEASE_VALID');
+      await transport.markSideEffectAttemptStarted(task);
+      trace('ATTEMPT_STARTED_PERSISTED');
+      if (await cancellationRequested()) throw uncertain('CANCELLED_AFTER_ATTEMPT_STARTED', 'Cancellation arrived after live publication authorization.');
+      try { trace('SUBMIT_CALLED'); await adapter.submit(task); }
+      catch (error) { throw uncertain('SUBMIT_UNCERTAIN', 'Live publish submission may have reached the publisher.'); }
 
-    let outcome;
-    try { outcome = await adapter.verifyOutcome(task); }
-    catch (error) { throw uncertain('VERIFY_UNCERTAIN', 'Live publish outcome could not be verified.'); }
-    if (outcome !== true && outcome?.verified !== true) throw uncertain('VERIFY_NEGATIVE_OR_UNCERTAIN', 'No authoritative proof of publication was recorded.');
-    trace('VERIFY_SUCCESS');
-    try { await transport.markSideEffectVerifiedSuccess(task); }
-    catch (error) { throw uncertain('VERIFIED_SUCCESS_PERSISTENCE_FAILED', 'Verified publication could not be durably recorded.'); }
-    trace('VERIFIED_SUCCESS_PERSISTED');
-    return { liveExecution: true, publishEnabled: true, sideEffectState: 'VERIFIED_SUCCESS', outcomeVerified: true, manualReviewRequired: false, blockers: [] };
+      let outcome;
+      try { outcome = await adapter.verifyOutcome(task); }
+      catch (error) { throw uncertain('VERIFY_UNCERTAIN', 'Live publish outcome could not be verified.'); }
+      if (outcome !== true && outcome?.verified !== true) throw uncertain('VERIFY_NEGATIVE_OR_UNCERTAIN', 'No authoritative proof of publication was recorded.');
+      trace('VERIFY_SUCCESS');
+      try { await transport.markSideEffectVerifiedSuccess(task); }
+      catch (error) { throw uncertain('VERIFIED_SUCCESS_PERSISTENCE_FAILED', 'Verified publication could not be durably recorded.'); }
+      trace('VERIFIED_SUCCESS_PERSISTED');
+      return { liveExecution: true, publishEnabled: true, sideEffectState: 'VERIFIED_SUCCESS', outcomeVerified: true, manualReviewRequired: false, blockers: [] };
+    } finally {
+      // Browser ownership remains inside the profile lock; cleanup never alters
+      // the durable side-effect state and cannot authorize a retry.
+      if (typeof adapter.cleanup === 'function') await adapter.cleanup();
+    }
   };
 }
 

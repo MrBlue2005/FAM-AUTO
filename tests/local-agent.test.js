@@ -17,6 +17,8 @@ const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
+const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
+const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -476,4 +478,61 @@ test('verified-success completion acknowledgement failure is outcome-unknown and
   });
   await assert.rejects(service.runOnce(), { code: 'EXECUTION_OUTCOME_UNKNOWN' });
   assert.deepEqual(events, ['OUTCOME_UNKNOWN']); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+});
+
+function fakeFacebookPublisher(options = {}) {
+  const calls = []; let clicks = 0; let closed = 0;
+  const composer = { waitFor: async () => {}, textContent: async () => 'immutable snapshot', locator: () => ({ count: async () => 0 }) };
+  const page = {
+    content: async () => options.sessionHtml || '<button aria-label="Account menu">Facebook menu</button>',
+    url: () => options.actualUrl || 'https://www.facebook.com/groups/exact',
+    getByRole: () => ({ last: () => composer }),
+    getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
+  };
+  const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile' }) }, () => [], {
+    openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context: { close: async () => { closed += 1; calls.push('CLOSE_FAKE'); } } }; },
+    openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => calls.push('PREPARE_POST'), findPublishButton: async () => button,
+    inspectContent: async () => options.content || { textPresent: true, mediaReady: true }, verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
+  });
+  return { adapter, calls, clicks: () => clicks, closed: () => closed };
+}
+
+test('real Facebook publisher adapter uses existing browser/navigation/composer seams but only submit can click', async () => {
+  const fake = fakeFacebookPublisher(); const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  await fake.adapter.prepare(task); await fake.adapter.verifyReady(task);
+  assert.equal(fake.clicks(), 0); assert.deepEqual(fake.calls.slice(0, 3), ['OPEN_FAKE', 'NAVIGATE_FAKE', 'PREPARE_POST']);
+  await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
+  assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
+  await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
+});
+
+test('real Facebook adapter blocks challenge, wrong target, incomplete composer, and weak outcome without a real click', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  let fake = fakeFacebookPublisher({ sessionHtml: 'checkpoint' }); await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ actualUrl: 'https://www.facebook.com/groups/wrong' }); await assert.rejects(fake.adapter.prepare(task), { code: 'TARGET_MISMATCH' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ content: { textPresent: false, mediaReady: true } }); await fake.adapter.prepare(task); await assert.rejects(fake.adapter.verifyReady(task), { code: 'CONTENT_MISMATCH' }); assert.equal(fake.clicks(), 0); await fake.adapter.cleanup();
+  fake = fakeFacebookPublisher({ verified: false }); await fake.adapter.prepare(task); await fake.adapter.verifyReady(task); await fake.adapter.submit(task); assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: false, state: 'AMBIGUOUS' }); assert.equal(fake.clicks(), 1); await fake.adapter.cleanup();
+});
+
+test('real adapter remains outside marker persistence and is ordered by the live executor without real browser primitives', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const fake = fakeFacebookPublisher(); const calls = []; let markerPersisted = false; const originalSubmit = fake.adapter.submit;
+  fake.adapter.submit = async (liveTask) => { assert.equal(markerPersisted, true); calls.push('REAL_ADAPTER_SUBMIT'); return originalSubmit(liveTask); };
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  const transport = { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => { markerPersisted = true; calls.push('MARK_ATTEMPT'); }, markSideEffectVerifiedSuccess: async () => calls.push('MARK_VERIFIED') };
+  await execute(task, { transport, trace: (event) => calls.push(event) });
+  assert.ok(calls.indexOf('ATTEMPT_STARTED_PERSISTED') < calls.indexOf('REAL_ADAPTER_SUBMIT'));
+  assert.equal(fake.clicks(), 1); assert.equal(fake.closed(), 1);
+  const markerFailure = fakeFacebookPublisher(); const blocked = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: markerFailure.adapter });
+  await assert.rejects(blocked(task, { transport: { ...transport, markSideEffectAttemptStarted: async () => { throw Object.assign(new Error('marker down'), { code: 'MARKER_FAILED' }); } } }), { code: 'MARKER_FAILED' }); assert.equal(markerFailure.clicks(), 0);
+});
+
+test('strict live publication verification requires both acknowledgement and a closed composer', async () => {
+  const wait = (ok) => async () => { if (!ok) throw new Error('not observed'); };
+  const page = { getByText: () => ({ first: () => ({ waitFor: wait(true) }) }) };
+  assert.equal(await verifyLivePostPublished(page, { waitFor: wait(true) }, 1), true);
+  assert.equal(await verifyLivePostPublished(page, { waitFor: wait(false) }, 1), false);
+  const noAcknowledgement = { getByText: () => ({ first: () => ({ waitFor: wait(false) }) }) };
+  assert.equal(await verifyLivePostPublished(noAcknowledgement, { waitFor: wait(true) }, 1), false);
 });

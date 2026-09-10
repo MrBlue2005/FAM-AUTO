@@ -11,6 +11,7 @@ const { createControlledCampaignExecutionExecutor } = require('../app/local-agen
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { createFacebookSessionReadinessExecutor } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
+const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
 const { uploadsPath } = require('../app/config/storagePaths');
 
@@ -23,9 +24,11 @@ const campaignPreflight = createCampaignPreflightExecutor(registry, runtimeProfi
 const controlledExecution = createControlledCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CONTROLLED_EXECUTION_ENABLED === 'true' });
 const chromiumSafePreflight = createChromiumSafePreflightExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CHROMIUM_PREFLIGHT_ENABLED === 'true' });
 const facebookSessionReadiness = createFacebookSessionReadinessExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true' });
-// G5.2 deliberately wires no real publisher. With the explicit gate enabled,
-// this remains LIVE_EXECUTION_NOT_IMPLEMENTED until a reviewed later adapter.
-const liveExecution = createLiveCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_LIVE_EXECUTION_ENABLED === 'true' });
+const liveExecutionEnabled = process.env.RX_AGENT_LIVE_EXECUTION_ENABLED === 'true';
+const realLivePublisherEnabled = process.env.RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED === 'true';
+// Both gates are required. Browser startup remains deferred until adapter.prepare.
+const livePublisher = liveExecutionEnabled && realLivePublisherEnabled ? createRealFacebookPublisherAdapter(registry, runtimeProfiles) : null;
+const liveExecution = createLiveCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: liveExecutionEnabled, publisher: livePublisher });
 const legacyCloudExecution = createCloudFacebookTaskExecutor(registry, runtimeProfiles);
 const executeTask = dryRun
   ? async (task, _isCancellationRequested, context) => {

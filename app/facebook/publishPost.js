@@ -45,5 +45,6 @@ async function publishPost(page, executionConfig = null) {
 }
 
 module.exports = {
+  findPublishButton,
   publishPost,
 };
