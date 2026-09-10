@@ -206,6 +206,8 @@ function mapHistoryTask(task, agents = new Map(), profiles = new Map()) {
     mediaCount: Number.isInteger(result?.mediaCount) ? result.mediaCount : 0,
     mediaVerified: result?.mediaVerified === true,
     preflightPassed: result?.preflightPassed === true,
+    executionValidated: result?.executionValidated === true,
+    readyForFutureLiveExecution: result?.readyForFutureLiveExecution === true,
     blockers: Array.isArray(result?.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [],
     errorCode: safeErrorCode(task.error, task.status),
     outcomeUnknown: String(task.status || '').toUpperCase() === 'OUTCOME_UNKNOWN',

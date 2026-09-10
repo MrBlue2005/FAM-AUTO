@@ -3,13 +3,16 @@
 const crypto = require('crypto');
 const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
+const { CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE, buildControlledExecutionSnapshot, safeControlledExecutionResult } = require('./cloud-controlled-execution');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
+const { PERMISSIONS, hasPermission } = require('./hosted-rbac');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
 const CAMPAIGN_PREFLIGHT_PREFIX = 'campaign_preflight_';
+const CONTROLLED_EXECUTION_PREFIX = 'controlled_execution_';
 const CHROMIUM_SAFE_PREFLIGHT_PREFIX = 'chromium_safe_preflight_';
 const FACEBOOK_SESSION_READINESS_PREFIX = 'facebook_session_readiness_';
 const AVAILABILITY_CODES = new Set([
@@ -34,6 +37,7 @@ function safeResult(result, taskType) {
   if (taskType === CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE) return safeChromiumPreflightResult(result);
   if (taskType === FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE) return safeFacebookSessionResult(result);
   if (taskType === CAMPAIGN_PREFLIGHT_TASK_TYPE) return safeCampaignPreflightResult(result);
+  if (taskType === CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE) return safeControlledExecutionResult(result);
   return null;
 }
 
@@ -91,7 +95,12 @@ function campaignPreflightTaskId(deviceId, profileId, payload, ownerUserId = nul
   return `${CAMPAIGN_PREFLIGHT_PREFIX}${fingerprint}`;
 }
 
-function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', now = () => Date.now() }) {
+function controlledExecutionTaskId(deviceId, profileId, payload, ownerUserId = null) {
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ version: 1, type: CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE, deviceId, profileId, payload, ownerUserId })).digest('hex').slice(0, 32);
+  return `${CONTROLLED_EXECUTION_PREFIX}${fingerprint}`;
+}
+
+function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, now = () => Date.now() }) {
   const router = express.Router();
   const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
   const syntheticTargetConfigured = Boolean(agentId && profileId);
@@ -110,6 +119,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   };
   const belongsToSyntheticTarget = (task, taskType, prefix) => task && task.agent_id === agentId && task.profile_id === profileId && task.task_type === taskType && String(task.task_id || '').startsWith(prefix);
   const belongsToCampaignPreflight = (task) => task && task.task_type === CAMPAIGN_PREFLIGHT_TASK_TYPE && String(task.task_id || '').startsWith(CAMPAIGN_PREFLIGHT_PREFIX);
+  const belongsToControlledExecution = (task) => task && task.task_type === CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE && String(task.task_id || '').startsWith(CONTROLLED_EXECUTION_PREFIX);
   const verifyRequestedTarget = async (body) => {
     const deviceId = normalizedRequestedId(body?.deviceId);
     const requestedProfileId = normalizedRequestedId(body?.profileId);
@@ -195,6 +205,34 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     } catch (error) { return sendError(res, error); }
   });
 
+  router.post('/controlled-execution', async (req, res) => {
+    try {
+      // There is intentionally no per-managed-user execution.run policy relation yet.
+      // Fail closed rather than treating a preflight assignment as publishing authority.
+      if (!controlledExecutionEnabled) throw Object.assign(new Error('Controlled execution is disabled.'), { status: 404, code: 'CONTROLLED_EXECUTION_DISABLED' });
+      if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Controlled execution requires execution.run permission.'), { status: 403 });
+      const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
+      const kind = String(req.body?.kind || '');
+      if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
+      const campaignId = canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID');
+      const targetId = canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID');
+      const source = await store.getCampaignPreflightSource({ kind, campaignId, targetId });
+      const payload = buildControlledExecutionSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
+      const ownerUserId = managedTaskOwnerId(req.user); const taskId = controlledExecutionTaskId(deviceId, requestedProfileId, payload, ownerUserId);
+      const existing = await store.getControlPlaneTask(taskId);
+      if (belongsToControlledExecution(existing) && existing.agent_id === deviceId && existing.profile_id === requestedProfileId && (existing.owner_user_id || null) === ownerUserId) return res.json({ task: safeTask(existing) });
+      if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(requestedProfileId)) throw requestedTargetError('CONFLICTING_WORK');
+      try {
+        const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE, payload }, req.user));
+        return res.status(201).json({ task: safeTask(task) });
+      } catch (error) {
+        const concurrent = await store.getControlPlaneTask(taskId);
+        if (belongsToControlledExecution(concurrent)) return res.json({ task: safeTask(concurrent) });
+        throw error;
+      }
+    } catch (error) { return sendError(res, error); }
+  });
+
   router.post('/chromium-safe-preflight', adminOnly, async (req, res) => {
     try {
       if (!chromiumPreflightEnabled) throw Object.assign(new Error('Chromium safe preflight is disabled.'), { status: 404, code: 'CHROMIUM_PREFLIGHT_DISABLED' });
@@ -222,6 +260,15 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       return res.json({ task: safeTask(task), events });
     } catch (error) { return sendError(res, error); }
   });
+  router.get('/controlled-execution/:taskId', async (req, res) => {
+    try {
+      if (!String(req.params.taskId || '').startsWith(CONTROLLED_EXECUTION_PREFIX)) return res.status(404).json({ error: 'Controlled execution task was not found.' });
+      const task = await store.getControlPlaneTask(req.params.taskId);
+      if (!belongsToControlledExecution(task) || (req.user?.role === 'USER' && task.owner_user_id !== managedTaskOwnerId(req.user))) return res.status(404).json({ error: 'Controlled execution task was not found.' });
+      const events = (await store.listControlPlaneTaskEvents(task.task_id)).map((event) => ({ type: event.event_type, occurredAt: event.occurred_at }));
+      return res.json({ task: safeTask(task), events });
+    } catch (error) { return sendError(res, error); }
+  });
 
   router.get('/chromium-safe-preflight/:taskId', adminOnly, async (req, res) => {
     try {
@@ -245,4 +292,4 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
   return router;
 }
 
-module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, FACEBOOK_SESSION_READINESS_PREFIX, AVAILABILITY_CODES, campaignPreflightTaskId, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };
+module.exports = { FRESHNESS_MS, TASK_PREFIX, CAMPAIGN_PREFLIGHT_PREFIX, CONTROLLED_EXECUTION_PREFIX, CHROMIUM_SAFE_PREFLIGHT_PREFIX, FACEBOOK_SESSION_READINESS_PREFIX, AVAILABILITY_CODES, campaignPreflightTaskId, controlledExecutionTaskId, createCloudRemoteTaskRouter, safeTask, safeResult, isOnline, targetAvailability };

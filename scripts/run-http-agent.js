@@ -7,6 +7,7 @@ const { createTaskMediaMaterializerForUploads } = require('../app/local-agent/Ta
 const { AgentConnectionManager } = require('../app/local-agent/AgentConnectionManager');
 const { createCloudFacebookTaskExecutor } = require('../app/local-agent/CloudFacebookTaskExecutor');
 const { createCampaignPreflightExecutor } = require('../app/local-agent/CampaignPreflightExecutor');
+const { createControlledCampaignExecutionExecutor } = require('../app/local-agent/ControlledCampaignExecutionExecutor');
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { createFacebookSessionReadinessExecutor } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
@@ -18,11 +19,13 @@ const agent = registry.load(runtimeProfiles()).agent; const credentials = new Lo
 const transport = new HttpAgentTransport({ baseUrl: agentConfig.cloudUrl, agentId: agent.agentId, agentSecret: credentials.agent_secret, allowInsecureHttp: agentConfig.allowInsecureHttp });
 const dryRun = process.env.RX_AGENT_DRY_RUN === 'true';
 const campaignPreflight = createCampaignPreflightExecutor(registry, runtimeProfiles);
+const controlledExecution = createControlledCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CONTROLLED_EXECUTION_ENABLED === 'true' });
 const chromiumSafePreflight = createChromiumSafePreflightExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CHROMIUM_PREFLIGHT_ENABLED === 'true' });
 const facebookSessionReadiness = createFacebookSessionReadinessExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true' });
 const executeTask = dryRun
   ? async (task) => {
     if (task.task_type === 'CAMPAIGN_PREFLIGHT') return campaignPreflight(task);
+    if (task.task_type === 'CONTROLLED_CAMPAIGN_EXECUTION') return controlledExecution(task);
     if (task.task_type === 'CHROMIUM_SAFE_PREFLIGHT') return chromiumSafePreflight(task);
     if (task.task_type === 'FACEBOOK_SESSION_READINESS_PREFLIGHT') return facebookSessionReadiness(task);
     if (task.task_type !== 'DRY_RUN') throw Object.assign(new Error('Dry-run agent accepts only reviewed dry-run task types.'), { code: 'UNSUPPORTED_TASK_TYPE' });

@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Phase G4 controlled-execution plumbing: `CONTROLLED_CAMPAIGN_EXECUTION` is a distinct, opt-in task type with server-owned `CONTROLLED_DRY_EXECUTION` snapshots and hard-coded `publishEnabled=false`. Its Local Agent executor has no Facebook, Chromium, or publisher dependency; it uses the existing verified-media and profile-lock wrapper. `execution.run` remains ADMIN-only because no per-managed-user execution-policy relation exists yet.
+
 - Hosted campaign preflight now uses canonical cloud UUIDs (`app_campaigns.campaign_id` and `app_targets.target_id`) at the BFF/browser boundary. Legacy IDs remain Local Studio/import compatibility metadata; the hosted preflight source resolver does not fall back between contracts.
 
 - Added Phase G1 durable task-ownership foundation. The additive, not-yet-hosted migration adds nullable write-once `tasks.owner_user_id` with an audit-preserving hosted-user FK and bounded per-owner index. Existing/bootstrap/synthetic tasks remain NULL-owned with no backfill. The hosted BFF stamps only a stable managed USER session ID at the internal creation boundary; USER history remains disabled pending G2.

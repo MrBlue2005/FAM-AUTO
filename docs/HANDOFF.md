@@ -4,7 +4,9 @@
 
 Hosted `CAMPAIGN_PREFLIGHT` requests use canonical cloud UUIDs: `campaignId` is `app_campaigns.campaign_id`, `targetId` is `app_targets.target_id`, and `day` selects the authoritative related post. The BFF resolves those exact columns and builds the immutable snapshot itself. `legacy_id` remains only for Local Studio/import compatibility and is rejected by the hosted preflight contract.
 
-Last updated: 2026-09-09 (hosted Local Agent status bridge added)
+`CONTROLLED_CAMPAIGN_EXECUTION` is Phase G4 plumbing only. Its independent BFF/browser/Local-Agent gates default false; its server-owned `CONTROLLED_DRY_EXECUTION` snapshot hard-codes `publishEnabled=false`. The Local Agent executor has no Chromium, Facebook, or publisher dependency. Managed USER `execution.run` remains denied until a later explicit per-user policy relation exists.
+
+Last updated: 2026-09-10 (Phase G4 controlled execution foundation)
 
 ## Repository state
 

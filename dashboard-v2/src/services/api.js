@@ -12,6 +12,7 @@ const cloudApplicationMutations = cloudApplicationMutationsEnabled(dashboardData
 const cloudRemoteTasks = cloudReadOnly && import.meta.env.VITE_CLOUD_REMOTE_TASKS_ENABLED === 'true';
 const cloudChromiumPreflight = cloudRemoteTasks && import.meta.env.VITE_CHROMIUM_PREFLIGHT_ENABLED === 'true';
 const cloudFacebookSessionPreflight = cloudRemoteTasks && import.meta.env.VITE_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true';
+const controlledExecution = cloudRemoteTasks && import.meta.env.VITE_CONTROLLED_EXECUTION_ENABLED === 'true';
 let hostedCsrfToken = '';
 const cloudRevisions = new Map();
 async function rememberCloudRevisions(kind, rows) {
@@ -137,6 +138,7 @@ export const api = {
   isCloudRemoteTasksEnabled: () => cloudRemoteTasks,
   isCloudChromiumPreflightEnabled: () => cloudChromiumPreflight,
   isCloudFacebookSessionPreflightEnabled: () => cloudFacebookSessionPreflight,
+  isControlledExecutionEnabled: () => controlledExecution,
   capabilities: () => ({ ...dashboardCapabilities(dashboardDataMode), applicationMutations: cloudApplicationMutations, mediaUpload: cloudMediaUpload, remoteTasks: cloudRemoteTasks, chromiumPreflight: cloudChromiumPreflight }),
   getMediaUrl,
   getMediaPreviewUrl: (media) => {
@@ -165,6 +167,7 @@ export const api = {
   createManagedUserExecutionTarget: (userId, { deviceId, profileId }) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets`, { method: 'POST', body: JSON.stringify({ deviceId, profileId }) }),
   updateManagedUserExecutionTarget: (userId, assignmentId, { enabled }) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets/${encodeURIComponent(assignmentId)}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   createCampaignPreflightTask: (intent) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify(campaignPreflightRequestBody(intent)) }),
+  createControlledExecutionTask: (intent) => request('/cloud-remote-tasks/controlled-execution', { method: 'POST', body: JSON.stringify(campaignPreflightRequestBody(intent)) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),
   getChromiumSafePreflightTask: (taskId) => request(`/cloud-remote-tasks/chromium-safe-preflight/${encodeURIComponent(taskId)}`),
