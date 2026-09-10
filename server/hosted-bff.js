@@ -95,6 +95,7 @@ function createHostedBffConfig(env = process.env) {
   const chromiumPreflightEnabled = env.RX_BFF_CHROMIUM_PREFLIGHT_ENABLED === 'true';
   const facebookSessionPreflightEnabled = env.RX_BFF_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true';
   const controlledExecutionEnabled = env.RX_BFF_CONTROLLED_EXECUTION_ENABLED === 'true';
+  const liveExecutionEnabled = env.RX_BFF_LIVE_EXECUTION_ENABLED === 'true';
   const facebookSessionAgentId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_AGENT_ID);
   const facebookSessionProfileId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_PROFILE_ID);
   const developmentOrigins = normalizeOrigins(env.RX_BFF_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:3000,http://localhost:3000');
@@ -111,7 +112,7 @@ function createHostedBffConfig(env = process.env) {
   if (production && !publicOrigin) errors.push('RX_BFF_PUBLIC_ORIGIN is required in production.');
   if (production && (!env.RX_APP_SUPABASE_URL || !env.RX_APP_SUPABASE_SERVICE_ROLE_KEY)) errors.push('Hosted application Supabase URL and service-role credentials are required in production.');
   if (errors.length) throw new Error(`Hosted BFF configuration is invalid: ${errors.join(' ')}`);
-  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, chromiumPreflightEnabled, facebookSessionPreflightEnabled, facebookSessionAgentId, facebookSessionProfileId, controlledExecutionEnabled, env };
+  return { production, authEnabled, publicOrigin, allowedOrigins, signingSecret: env.RX_BFF_SESSION_SIGNING_SECRET, syntheticAgentId, syntheticProfileId, chromiumPreflightEnabled, facebookSessionPreflightEnabled, facebookSessionAgentId, facebookSessionProfileId, controlledExecutionEnabled, liveExecutionEnabled, env };
 }
 
 function cookieValue(token, production, maxAge) {

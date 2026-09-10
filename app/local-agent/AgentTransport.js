@@ -2,6 +2,8 @@ class AgentTransport {
   register() { throw new Error('AgentTransport.register must be implemented.'); }
   heartbeat() { throw new Error('AgentTransport.heartbeat must be implemented.'); }
   publishProfiles() { throw new Error('AgentTransport.publishProfiles must be implemented.'); }
+  markSideEffectAttemptStarted() { throw new Error('AgentTransport.markSideEffectAttemptStarted must be implemented.'); }
+  markSideEffectVerifiedSuccess() { throw new Error('AgentTransport.markSideEffectVerifiedSuccess must be implemented.'); }
   claimNextTask() { throw new Error('AgentTransport.claimNextTask must be implemented.'); }
   acknowledgeTask() { throw new Error('AgentTransport.acknowledgeTask must be implemented.'); }
   reportRunning() { throw new Error('AgentTransport.reportRunning must be implemented.'); }

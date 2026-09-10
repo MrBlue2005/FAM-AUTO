@@ -25,6 +25,8 @@ class HttpAgentTransport extends AgentTransport {
   claimNextTask(requestId) { return this.request('POST', '/v1/agent/tasks/claim', {}, {}, requestId); }
   acknowledgeTask() { return Promise.resolve({ protocol_version: PROTOCOL_VERSION, acknowledged: true }); }
   reportRunning(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/running`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
+  markSideEffectAttemptStarted(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/side-effect-attempt-started`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
+  markSideEffectVerifiedSuccess(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/side-effect-verified-success`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
   renewLease(task, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/renew`, {}, { 'x-rx-lease-id': task.lease_id }, requestId); }
   reportProgress(task, progress, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/renew`, { progress }, { 'x-rx-lease-id': task.lease_id }, requestId); }
   reportCompletion(task, result, requestId) { return this.request('POST', `/v1/agent/tasks/${encodeURIComponent(task.task_id)}/completed`, { result }, { 'x-rx-lease-id': task.lease_id }, requestId); }

@@ -13,6 +13,8 @@ const cloudRemoteTasks = cloudReadOnly && import.meta.env.VITE_CLOUD_REMOTE_TASK
 const cloudChromiumPreflight = cloudRemoteTasks && import.meta.env.VITE_CHROMIUM_PREFLIGHT_ENABLED === 'true';
 const cloudFacebookSessionPreflight = cloudRemoteTasks && import.meta.env.VITE_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true';
 const controlledExecution = cloudRemoteTasks && import.meta.env.VITE_CONTROLLED_EXECUTION_ENABLED === 'true';
+// Reserved for the future live flow.  No UI or API call consumes it in G5.1.
+export const liveExecutionEnabled = cloudRemoteTasks && import.meta.env.VITE_LIVE_EXECUTION_ENABLED === 'true';
 let hostedCsrfToken = '';
 const cloudRevisions = new Map();
 async function rememberCloudRevisions(kind, rows) {

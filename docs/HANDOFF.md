@@ -215,6 +215,10 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
+### G5.1 future-live execution invariant (unapplied hosted migration)
+
+`202609110001_live_side_effect_state.sql` adds a service-role/agent-protocol-only durable marker. Before `ATTEMPT_STARTED`, a known failure may be `FAILED`; after it, ambiguity is terminal `OUTCOME_UNKNOWN`; only `VERIFIED_SUCCESS` may become `COMPLETED`. Attempted work is never requeued, reclaimed, or automatically retried after a lease loss, reconnect, or profile-lock release. Profile locking remains local execution exclusivity, not retry authority. The Local Agent recognizes `LIVE_CAMPAIGN_EXECUTION` only to fail closed with `LIVE_EXECUTION_NOT_IMPLEMENTED`; it has no Facebook or Chromium dependency. This migration is local/test-only until its dedicated hosted application checkpoint.
+
 - Phase G3 is local-only at `HOSTED_DASHBOARD_PHASE_G3_USER_EXECUTION_AUTHORIZATION`: ADMIN assigns explicit enabled device/profile pairs to managed USER accounts. Authorization is distinct from readiness; USER sees only assigned pairs and may request only a server-revalidated campaign PREFLIGHT with `publishEnabled=false`. There is no fallback, legacy environment USER cannot execute, task ownership is server-stamped, and owner identity participates in preflight idempotency. Migration `202609100002_hosted_user_execution_targets.sql` is additive and must be applied to Preview only with separate authorization.
 
 - A validation-only hosted remote-task seam is gated off by default. It requires both `RX_BFF_CLOUD_REMOTE_TASKS_ENABLED=true` on the BFF and `VITE_CLOUD_REMOTE_TASKS_ENABLED=true` in the Preview dashboard, plus server-only `RX_BFF_SYNTHETIC_AGENT_ID` and `RX_BFF_SYNTHETIC_PROFILE_ID`. It creates only a fixed `DRY_RUN` payload with `publishEnabled=false`, rejects an offline synthetic agent without queueing work, and returns only safe task lifecycle/result fields. Browser callers cannot select an agent, profile, task type, payload, media, or publish setting. Scheduler authority, operational execution, Facebook, and Chromium remain unchanged.

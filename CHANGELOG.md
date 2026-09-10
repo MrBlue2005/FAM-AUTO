@@ -1,5 +1,11 @@
 # Changelog
 
+## G5.1 — durable future-live side-effect state
+
+- Added the unapplied control-plane migration for `NOT_ATTEMPTED → ATTEMPT_STARTED → VERIFIED_SUCCESS`.
+- A future live task can only complete after durable verification; ambiguous post-attempt failures become `OUTCOME_UNKNOWN` and are never requeued or retried automatically.
+- Added the independent default-false `live_execution_enabled` policy and fail-closed Local Agent live dispatch. No publishing surface was enabled.
+
 - Added G4.1's additive `hosted_users.controlled_execution_enabled` policy. It defaults false, is ADMIN-managed only, and is required together with an enabled exact device/profile assignment for a managed USER to request a non-publishing controlled-dry execution. Policy changes affect new requests only; they preserve task ownership/history and do not grant live Facebook execution.
 
 - Added Phase G4 controlled-execution plumbing: `CONTROLLED_CAMPAIGN_EXECUTION` is a distinct, opt-in task type with server-owned `CONTROLLED_DRY_EXECUTION` snapshots and hard-coded `publishEnabled=false`. Its Local Agent executor has no Facebook, Chromium, or publisher dependency; it uses the existing verified-media and profile-lock wrapper. `execution.run` remains ADMIN-only because no per-managed-user execution-policy relation exists yet.

@@ -19,7 +19,7 @@ function hashPassword(password) {
   return `scrypt$${options.N}$${options.r}$${options.p}$${salt.toString('hex')}$${derived.toString('hex')}`;
 }
 function safeUser(user) {
-  return { userId: String(user.user_id), username: String(user.username), role: ROLES.USER, enabled: user.enabled !== false, controlledExecutionEnabled: user.controlled_execution_enabled === true, createdAt: user.created_at || null, updatedAt: user.updated_at || null, lastLoginAt: user.last_login_at || null };
+  return { userId: String(user.user_id), username: String(user.username), role: ROLES.USER, enabled: user.enabled !== false, controlledExecutionEnabled: user.controlled_execution_enabled === true, liveExecutionEnabled: user.live_execution_enabled === true, createdAt: user.created_at || null, updatedAt: user.updated_at || null, lastLoginAt: user.last_login_at || null };
 }
 function safeAssignment(row, agent, profile) { return { assignmentId: String(row.assignment_id), deviceId: String(row.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(row.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), enabled: row.enabled !== false, createdAt: row.created_at || null, updatedAt: row.updated_at || null }; }
 function createUserAdminRouter({ store, env, requirePermission }) {
