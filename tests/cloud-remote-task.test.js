@@ -37,6 +37,7 @@ function store({ online = true, agentExists = true, profileExists = true, owners
     target: { target_id: 'target-uuid', legacy_id: 'target-safe', display_name: 'Synthetic target', target_url: 'https://example.test/group', active: true },
   };
   return { creates: () => creates, task: () => [...tasks.values()][0],
+    listManagedUserExecutionTargets: async (userId, { enabledOnly } = {}) => userId === '11111111-1111-4111-8111-111111111111' ? [{ user_id: userId, device_id: 'agent_A', profile_id: 'profile_A', enabled: true }] : [],
     getControlPlaneAgent: async (requestedAgentId) => agents.get(requestedAgentId) || null,
     getControlPlaneProfile: async (requestedProfileId) => profiles.get(requestedProfileId) || null,
     getActiveControlPlaneTaskForProfile: async (requestedProfileId) => requestedProfileId === activeProfileId ? { task_id: 'active-task' } : null,

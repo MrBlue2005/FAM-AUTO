@@ -20,6 +20,6 @@ test('execution history UI gives managed users a scoped history without device i
   assert.match(page, /devicesFromTasks/); assert.match(page, /isAdmin \? await api\.getDevices\(\)/); assert.match(page, /Execuțiile mele/);
   assert.match(page, /api\.getCloudTasks/); assert.match(page, /api\.getCloudTask/); assert.match(page, /deviceOptionLabel/); assert.match(page, /profilesForDevice/); assert.match(source('dashboard-v2', 'src', 'services', 'executionHistory.js'), /OUTCOME_UNKNOWN/);
   assert.match(api, /getCloudTasks:/); assert.match(api, /cloudRead\(`\/tasks\?/); assert.match(api, /getCloudTask:/);
-  assert.doesNotMatch(page, /Retry|Cancel|Delete|Reassign|Publish|createCampaignPreflightTask|createChromiumSafePreflightTask/i);
+  assert.match(page, /getMyExecutionTargets/); assert.match(page, /createCampaignPreflightTask/); assert.doesNotMatch(page, /Retry|Cancel|Delete|Reassign|Publish|createChromiumSafePreflightTask/i);
   assert.doesNotMatch(page, /payload|lease|credential|secret|signed URL|profilePath/i);
 });

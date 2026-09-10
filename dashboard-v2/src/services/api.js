@@ -145,6 +145,7 @@ export const api = {
   },
   getAgentStatus: () => cloudRead('/agent-status'),
   getDevices: () => cloudRead('/devices'),
+  getMyExecutionTargets: () => cloudRead('/my-execution-targets'),
   getCloudTasks: ({ limit = 25, deviceId = '', profileId = '', status = '' } = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (deviceId) query.set('deviceId', deviceId);
@@ -159,6 +160,9 @@ export const api = {
   createManagedUser: ({ username, password }) => request('/admin/users', { method: 'POST', body: JSON.stringify({ username, password }) }),
   updateManagedUser: (userId, { enabled }) => request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   resetManagedUserPassword: (userId, { password }) => request(`/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
+  getManagedUserExecutionTargets: (userId) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets`),
+  createManagedUserExecutionTarget: (userId, { deviceId, profileId }) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets`, { method: 'POST', body: JSON.stringify({ deviceId, profileId }) }),
+  updateManagedUserExecutionTarget: (userId, assignmentId, { enabled }) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets/${encodeURIComponent(assignmentId)}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   createCampaignPreflightTask: (intent) => request('/cloud-remote-tasks/campaign-preflight', { method: 'POST', body: JSON.stringify(campaignPreflightRequestBody(intent)) }),
   getCampaignPreflightTask: (taskId) => request(`/cloud-remote-tasks/campaign-preflight/${encodeURIComponent(taskId)}`),
   createChromiumSafePreflightTask: () => request('/cloud-remote-tasks/chromium-safe-preflight', { method: 'POST', body: '{}' }),

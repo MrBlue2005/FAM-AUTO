@@ -185,3 +185,4 @@
 - Backup/restaurare, exporturi CSV și jurnal de audit.
 - Autentificare opțională cu roluri și configurare backend pentru hosting.
 - Notificări desktop și iconiță proprie pentru overlay.
+- Added Phase G3 managed-USER execution target allowlists: ADMIN-controlled device/profile assignments, safe USER target reads, owner-scoped campaign preflight authorization, owner-safe idempotency, and no publishing/fallback behavior. The additive migration remains unapplied.

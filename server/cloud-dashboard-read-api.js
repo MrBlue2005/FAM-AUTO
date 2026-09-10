@@ -209,6 +209,18 @@ async function taskHistoryContext(store) {
   return { agents: new Map(agents.map((agent) => [String(agent.agent_id), agent])), profiles: new Map(profiles.map((profile) => [String(profile.profile_id), profile])) };
 }
 
+async function managedExecutionTargets(store, userId) {
+  const assignments = await store.listManagedUserExecutionTargets(userId, { enabledOnly: true });
+  const [agents, profiles] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles()]);
+  const agentById = new Map(agents.map((agent) => [String(agent.agent_id), agent])); const profileById = new Map(profiles.map((profile) => [String(profile.profile_id), profile]));
+  return assignments.map((assignment) => {
+    const agent = agentById.get(String(assignment.device_id)); const profile = profileById.get(String(assignment.profile_id)); const seen = Date.parse(agent?.last_seen_at || '');
+    const online = ['ONLINE', 'BUSY', 'DEGRADED'].includes(String(agent?.reported_status || '').toUpperCase()) && Number.isFinite(seen) && Date.now() - seen <= AGENT_HEARTBEAT_FRESHNESS_MS;
+    const profileStatus = String(profile?.status || 'UNAVAILABLE').toUpperCase();
+    return { deviceId: String(assignment.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(assignment.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), online, profileStatus, canRequestPreflight: Boolean(agent && profile && profile.agent_id === assignment.device_id && online && profileStatus === 'READY') };
+  });
+}
+
 function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
@@ -233,6 +245,11 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   })));
   router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
   router.get('/devices', requirePermission ? requirePermission('devices.read') : (req, res, next) => next(), (req, res) => send(res, listDevices(store)));
+  router.get('/my-execution-targets', (req, res) => {
+    const userId = managedTaskOwnerId(req.user);
+    if (!userId) return res.status(403).json({ error: 'Execution targets are unavailable for this session.' });
+    return send(res, managedExecutionTargets(store, userId).then((targets) => ({ targets })));
+  });
   const taskHistoryAccess = (req, res, next) => {
     if (req.user?.role === 'ADMIN') { req.taskHistoryOwnerUserId = null; return next(); }
     const ownerUserId = managedTaskOwnerId(req.user);

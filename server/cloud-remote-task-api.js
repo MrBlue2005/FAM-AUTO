@@ -5,7 +5,7 @@ const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
-const { taskWithServerOwner } = require('./task-ownership');
+const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
@@ -24,6 +24,7 @@ const AVAILABILITY_CODES = new Set([
   'PROFILE_OWNERSHIP_MISMATCH',
   'CAPABILITY_UNAVAILABLE',
   'CONFLICTING_WORK',
+  'EXECUTION_TARGET_NOT_AUTHORIZED',
 ]);
 
 function safeResult(result, taskType) {
@@ -77,13 +78,14 @@ function normalizedRequestedId(value) {
   return String(value || '').trim();
 }
 
-function campaignPreflightTaskId(deviceId, profileId, payload) {
-  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ version: 1, deviceId, profileId, payload })).digest('hex').slice(0, 32);
+function campaignPreflightTaskId(deviceId, profileId, payload, ownerUserId = null) {
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ version: 2, deviceId, profileId, payload, ownerUserId })).digest('hex').slice(0, 32);
   return `${CAMPAIGN_PREFLIGHT_PREFIX}${fingerprint}`;
 }
 
 function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', now = () => Date.now() }) {
   const router = express.Router();
+  const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
   const syntheticTargetConfigured = Boolean(agentId && profileId);
   const readTarget = async () => {
     if (!syntheticTargetConfigured) return { agent: null, profile: null, availability: targetAvailability(null, null, agentId, now()) };
@@ -116,13 +118,13 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     if (String(profile.status || '').toUpperCase() !== 'READY') throw requestedTargetError('PROFILE_NOT_READY');
     return { deviceId, profileId: requestedProfileId };
   };
-  const existingCampaignTask = async (taskId, deviceId, requestedProfileId) => {
+  const existingCampaignTask = async (taskId, deviceId, requestedProfileId, ownerUserId) => {
     const task = await store.getControlPlaneTask(taskId);
-    return belongsToCampaignPreflight(task) && task.agent_id === deviceId && task.profile_id === requestedProfileId ? task : null;
+    return belongsToCampaignPreflight(task) && task.agent_id === deviceId && task.profile_id === requestedProfileId && (task.owner_user_id || null) === ownerUserId ? task : null;
   };
   const createCampaignPreflightTask = async ({ deviceId, requestedProfileId, payload, user }) => {
-    const taskId = campaignPreflightTaskId(deviceId, requestedProfileId, payload);
-    const existing = await existingCampaignTask(taskId, deviceId, requestedProfileId);
+    const ownerUserId = managedTaskOwnerId(user); const taskId = campaignPreflightTaskId(deviceId, requestedProfileId, payload, ownerUserId);
+    const existing = await existingCampaignTask(taskId, deviceId, requestedProfileId, ownerUserId);
     if (existing) return { task: existing, created: false };
     if (typeof store.getActiveControlPlaneTaskForProfile === 'function') {
       const active = await store.getActiveControlPlaneTaskForProfile(requestedProfileId);
@@ -132,7 +134,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: CAMPAIGN_PREFLIGHT_TASK_TYPE, payload }, user));
       return { task, created: true };
     } catch (error) {
-      const concurrent = await existingCampaignTask(taskId, deviceId, requestedProfileId);
+      const concurrent = await existingCampaignTask(taskId, deviceId, requestedProfileId, ownerUserId);
       if (concurrent) return { task: concurrent, created: false };
       throw error;
     }
@@ -143,7 +145,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     return res.status(error.status || 400).json(body);
   };
 
-  router.post('/synthetic-dry-run', async (req, res) => {
+  router.post('/synthetic-dry-run', adminOnly, async (req, res) => {
     try {
       await verifyTarget();
       const task = await store.createControlPlaneTask(taskWithServerOwner({
@@ -166,6 +168,13 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
 
   router.post('/campaign-preflight', async (req, res) => {
     try {
+      const managedOwnerId = managedTaskOwnerId(req.user);
+      if (req.user?.role === 'USER') {
+        if (!managedOwnerId || typeof store.listManagedUserExecutionTargets !== 'function') throw Object.assign(new Error('Managed USER execution is unavailable for this session.'), { status: 403 });
+        const requestedDeviceId = normalizedRequestedId(req.body?.deviceId); const requestedProfileId = normalizedRequestedId(req.body?.profileId);
+        const targets = await store.listManagedUserExecutionTargets(managedOwnerId, { enabledOnly: true });
+        if (!targets.some((target) => target.device_id === requestedDeviceId && target.profile_id === requestedProfileId)) throw Object.assign(new Error('The selected execution target is not authorized.'), { status: 403, code: 'EXECUTION_TARGET_NOT_AUTHORIZED' });
+      }
       const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
       const kind = String(req.body?.kind || '');
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
@@ -176,7 +185,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     } catch (error) { return sendError(res, error); }
   });
 
-  router.post('/chromium-safe-preflight', async (req, res) => {
+  router.post('/chromium-safe-preflight', adminOnly, async (req, res) => {
     try {
       if (!chromiumPreflightEnabled) throw Object.assign(new Error('Chromium safe preflight is disabled.'), { status: 404, code: 'CHROMIUM_PREFLIGHT_DISABLED' });
       await verifyTarget();
@@ -184,7 +193,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
-  router.post('/facebook-session-readiness', async (req, res) => {
+  router.post('/facebook-session-readiness', adminOnly, async (req, res) => {
     try {
       if (!facebookSessionPreflightEnabled || !facebookSessionAgentId || !facebookSessionProfileId) throw Object.assign(new Error('Facebook session readiness preflight is disabled.'), { status: 404 });
       const [agent, profile] = await Promise.all([store.getControlPlaneAgent(facebookSessionAgentId), store.getControlPlaneProfile(facebookSessionProfileId)]);
@@ -198,13 +207,13 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     try {
       if (!String(req.params.taskId || '').startsWith(CAMPAIGN_PREFLIGHT_PREFIX)) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
       const task = await store.getControlPlaneTask(req.params.taskId);
-      if (!belongsToCampaignPreflight(task)) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
+      if (!belongsToCampaignPreflight(task) || (req.user?.role === 'USER' && task.owner_user_id !== managedTaskOwnerId(req.user))) return res.status(404).json({ error: 'Campaign preflight task was not found.' });
       const events = (await store.listControlPlaneTaskEvents(task.task_id)).map((event) => ({ type: event.event_type, occurredAt: event.occurred_at }));
       return res.json({ task: safeTask(task), events });
     } catch (error) { return sendError(res, error); }
   });
 
-  router.get('/chromium-safe-preflight/:taskId', async (req, res) => {
+  router.get('/chromium-safe-preflight/:taskId', adminOnly, async (req, res) => {
     try {
       if (!String(req.params.taskId || '').startsWith(CHROMIUM_SAFE_PREFLIGHT_PREFIX)) return res.status(404).json({ error: 'Chromium safe preflight task was not found.' });
       const task = await store.getControlPlaneTask(req.params.taskId);
@@ -214,7 +223,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     } catch (error) { return sendError(res, error); }
   });
 
-  router.get('/synthetic-dry-run/:taskId', async (req, res) => {
+  router.get('/synthetic-dry-run/:taskId', adminOnly, async (req, res) => {
     try {
       if (!String(req.params.taskId || '').startsWith(TASK_PREFIX)) return res.status(404).json({ error: 'Synthetic task was not found.' });
       const task = await store.getControlPlaneTask(req.params.taskId);

@@ -224,7 +224,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     // General application/control-plane mutation routes are intentionally not hosted.
     // This reviewed route is opt-in and contains only dashboard metadata edits.
     if (env.RX_BFF_CLOUD_APP_MUTATIONS_ENABLED === 'true') app.use('/api/cloud-mutations', requireSession, requirePermission(PERMISSIONS.CAMPAIGNS_WRITE), requireCloudAccess, createCloudApplicationMutationRouter(applicationStore));
-    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requirePermission(PERMISSIONS.EXECUTION_PREFLIGHT), requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, facebookSessionPreflightEnabled: config.facebookSessionPreflightEnabled, facebookSessionAgentId: config.facebookSessionAgentId, facebookSessionProfileId: config.facebookSessionProfileId, now }));
+    if (env.RX_BFF_CLOUD_REMOTE_TASKS_ENABLED === 'true') app.use('/api/cloud-remote-tasks', requireSession, requireCloudAccess, createCloudRemoteTaskRouter({ store: applicationStore, agentId: config.syntheticAgentId, profileId: config.syntheticProfileId, chromiumPreflightEnabled: config.chromiumPreflightEnabled, facebookSessionPreflightEnabled: config.facebookSessionPreflightEnabled, facebookSessionAgentId: config.facebookSessionAgentId, facebookSessionProfileId: config.facebookSessionProfileId, now }));
   }
   return app;
 }
