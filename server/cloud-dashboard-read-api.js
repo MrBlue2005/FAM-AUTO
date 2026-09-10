@@ -49,6 +49,14 @@ function mapTarget(row) {
   };
 }
 
+function mapPreflightCampaign(row) {
+  return { campaignId: String(row.campaign_id), kind: String(row.kind), title: String(row.title || 'Campanie'), revision: Number.isInteger(row.revision) ? row.revision : undefined, posts: (Array.isArray(row.app_campaign_posts) ? row.app_campaign_posts : []).filter((post) => post.active !== false).sort((left, right) => Number(left.day) - Number(right.day)).map((post) => ({ day: Number(post.day), revision: Number.isInteger(post.revision) ? post.revision : undefined })) };
+}
+
+function mapPreflightTarget(row) {
+  return { targetId: String(row.target_id), name: String(row.display_name || 'Target') };
+}
+
 function mapFolder(row) {
   return { id: String(row.legacy_id), name: String(row.name), createdAt: row.created_at || null, updatedAt: row.updated_at || null };
 }
@@ -232,6 +240,7 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   router.get('/properties', (req, res) => send(res, campaigns('property')));
   router.get('/jobs', (req, res) => send(res, campaigns('job')));
   router.get('/groups', (req, res) => send(res, store.listTargets().then((rows) => rows.map(mapTarget))));
+  router.get('/preflight-sources', (req, res) => send(res, Promise.all([store.listCampaigns('property'), store.listCampaigns('job'), store.listTargets()]).then(([properties, jobs, targets]) => ({ campaigns: [...properties, ...jobs].filter((row) => row.active !== false).map(mapPreflightCampaign), targets: targets.filter((row) => row.active !== false).map(mapPreflightTarget) }))));
   router.get('/campaign-folders', (req, res) => send(res, campaignFolders()));
   router.get('/schedule-folders', (req, res) => send(res, store.listScheduleFolders().then((rows) => rows.map(mapFolder))));
   router.get('/schedules', (req, res) => send(res, Promise.all([store.listSchedules(), store.listScheduleFolders(), store.listCampaigns('property'), store.listCampaigns('job')]).then(([rows, folders, properties, jobs]) => {
@@ -285,4 +294,4 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   return router;
 }
 
-module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, TASK_HISTORY_DEFAULT_LIMIT, TASK_HISTORY_MAX_LIMIT, createCloudDashboardReadRouter, mapAgentStatus, mapDevice, mapDeviceProfile, listDevices, mapHistoryTask, mapCampaign, mapTarget, mapFolder, mapSchedule, mapMedia };
+module.exports = { AGENT_HEARTBEAT_FRESHNESS_MS, TASK_HISTORY_DEFAULT_LIMIT, TASK_HISTORY_MAX_LIMIT, createCloudDashboardReadRouter, mapAgentStatus, mapDevice, mapDeviceProfile, listDevices, mapHistoryTask, mapCampaign, mapTarget, mapPreflightCampaign, mapPreflightTarget, mapFolder, mapSchedule, mapMedia };

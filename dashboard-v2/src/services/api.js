@@ -146,6 +146,7 @@ export const api = {
   getAgentStatus: () => cloudRead('/agent-status'),
   getDevices: () => cloudRead('/devices'),
   getMyExecutionTargets: () => cloudRead('/my-execution-targets'),
+  getCampaignPreflightSources: () => cloudRead('/preflight-sources'),
   getCloudTasks: ({ limit = 25, deviceId = '', profileId = '', status = '' } = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (deviceId) query.set('deviceId', deviceId);

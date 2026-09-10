@@ -74,19 +74,13 @@ function HostedDevices() {
   useEffect(() => {
     if (!remoteTasksEnabled) return undefined;
     let ignore = false;
-    Promise.all([api.getProperties(), api.getJobs(), api.getGroups()])
-      .then(([properties, jobs, targets]) => {
-        if (ignore) return;
-        setPreflightSources({
-          campaigns: [...properties.map((item) => ({ ...item, kind: 'property' })), ...jobs.map((item) => ({ ...item, kind: 'job' }))].filter((item) => item.active !== false),
-          targets: targets.filter((item) => item.active !== false),
-        });
-      })
+    api.getCampaignPreflightSources()
+      .then((sources) => { if (!ignore) setPreflightSources(sources); })
       .catch((loadError) => { if (!ignore) setPreflightError(loadError.message || 'Datele necesare pentru preflight nu au putut fi încărcate.'); });
     return () => { ignore = true; };
   }, [remoteTasksEnabled]);
 
-  const selectedCampaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.id === preflightIntent.campaignId);
+  const selectedCampaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.campaignId === preflightIntent.campaignId);
   const selectedPost = (selectedCampaign?.posts || []).find((post) => Number(post.day) === Number(preflightIntent.day));
   const preflightReady = canRequestRoutedPreflight(selection, preflightIntent);
 
@@ -107,7 +101,7 @@ function HostedDevices() {
         profileName: selection.selectedProfile?.displayName || 'Profil selectat',
         campaignName: selectedCampaign?.name || selectedCampaign?.title || 'Campanie selectată',
         postDay: Number(preflightIntent.day),
-        targetName: preflightSources.targets.find((target) => target.id === preflightIntent.targetId)?.name || 'Target selectat',
+        targetName: preflightSources.targets.find((target) => target.targetId === preflightIntent.targetId)?.name || 'Target selectat',
       });
     } catch (issueError) {
       setPreflightError(routedPreflightErrorMessage(issueError));
@@ -145,9 +139,9 @@ function HostedDevices() {
         <div className="panel-title-row"><div><h2>Preflight campanie</h2><p className="muted-text">Verificare fără publicare pentru dispozitivul și profilul selectate explicit.</p></div></div>
         <div className="form-grid">
           <label>Tip campanie<select value={preflightIntent.kind} onChange={(event) => setPreflightIntent({ kind: event.target.value, campaignId: '', day: '', targetId: preflightIntent.targetId })}><option value="property">Proprietate</option><option value="job">Job</option></select></label>
-          <label>Campanie<select value={preflightIntent.campaignId} onChange={(event) => { const campaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.id === event.target.value); setPreflightIntent((current) => ({ ...current, campaignId: event.target.value, day: String(campaign?.posts?.find((post) => post.active !== false)?.day || '') })); }}><option value="">Selectează</option>{preflightSources.campaigns.filter((item) => item.kind === preflightIntent.kind).map((item) => <option key={item.id} value={item.id}>{item.name || item.title || item.id}</option>)}</select></label>
+          <label>Campanie<select value={preflightIntent.campaignId} onChange={(event) => { const campaign = preflightSources.campaigns.find((item) => item.kind === preflightIntent.kind && item.campaignId === event.target.value); setPreflightIntent((current) => ({ ...current, campaignId: event.target.value, day: String(campaign?.posts?.[0]?.day || '') })); }}><option value="">Selectează</option>{preflightSources.campaigns.filter((item) => item.kind === preflightIntent.kind).map((item) => <option key={item.campaignId} value={item.campaignId}>{item.title}</option>)}</select></label>
           <label>Zi postare<select value={preflightIntent.day} onChange={(event) => setPreflightIntent((current) => ({ ...current, day: event.target.value }))}><option value="">Selectează</option>{(selectedCampaign?.posts || []).filter((post) => post.active !== false).map((post) => <option key={post.day} value={post.day}>Ziua {post.day}</option>)}</select></label>
-          <label>Target<select value={preflightIntent.targetId} onChange={(event) => setPreflightIntent((current) => ({ ...current, targetId: event.target.value }))}><option value="">Selectează</option>{preflightSources.targets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>Target<select value={preflightIntent.targetId} onChange={(event) => setPreflightIntent((current) => ({ ...current, targetId: event.target.value }))}><option value="">Selectează</option>{preflightSources.targets.map((item) => <option key={item.targetId} value={item.targetId}>{item.name}</option>)}</select></label>
         </div>
         <p className="mission-message">Dispozitiv: <strong>{selection.selectedDevice?.displayName || 'nesetat'}</strong> · Profil: <strong>{selection.selectedProfile?.displayName || 'nesetat'}</strong> · Fără publicare</p>
         {preflightTask && <p className="mission-message"><strong>{preflightTask.status}</strong> · {preflightTarget?.deviceName} / {preflightTarget?.profileName} · {preflightTarget?.campaignName}, ziua {preflightTarget?.postDay} · {preflightTarget?.targetName}</p>}

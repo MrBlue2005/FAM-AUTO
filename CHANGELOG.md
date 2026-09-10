@@ -1,5 +1,7 @@
 # Changelog
 
+- Hosted campaign preflight now uses canonical cloud UUIDs (`app_campaigns.campaign_id` and `app_targets.target_id`) at the BFF/browser boundary. Legacy IDs remain Local Studio/import compatibility metadata; the hosted preflight source resolver does not fall back between contracts.
+
 - Added Phase G1 durable task-ownership foundation. The additive, not-yet-hosted migration adds nullable write-once `tasks.owner_user_id` with an audit-preserving hosted-user FK and bounded per-owner index. Existing/bootstrap/synthetic tasks remain NULL-owned with no backfill. The hosted BFF stamps only a stable managed USER session ID at the internal creation boundary; USER history remains disabled pending G2.
 
 - Added Phase F read-only hosted Device workload/readiness. Devices now derive `ONLINE != READY` from heartbeat freshness, reported state, active control-plane work, and READY/free profiles. The existing explicit routing remains unchanged; no fallback or task mutation was added, and the Local Agent's atomic claim/profile lock remains final race authority.

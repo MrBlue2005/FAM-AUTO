@@ -53,9 +53,10 @@ test('ADMIN Devices UI wires the existing selection hook to a pending-safe route
   assert.doesNotMatch(devices, /taskType:|publishEnabled:|payload:|profilePath:|operator token|signed URL/i);
 });
 
-test('USER remains excluded from Devices/preflight UI and the server keeps the ADMIN route guard', () => {
+test('USER remains excluded from Devices UI while the server routes USER preflight through assignment authorization', () => {
   const devices = source('dashboard-v2', 'src', 'pages', 'Devices.jsx');
-  const bff = source('server', 'hosted-bff.js');
+  const remote = source('server', 'cloud-remote-task-api.js');
   assert.match(devices, /if \(!isAdmin\) return/);
-  assert.match(bff, /requirePermission\(PERMISSIONS\.EXECUTION_PREFLIGHT\)/);
+  assert.match(remote, /listManagedUserExecutionTargets/);
+  assert.match(remote, /EXECUTION_TARGET_NOT_AUTHORIZED/);
 });

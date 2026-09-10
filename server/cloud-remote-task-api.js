@@ -25,6 +25,8 @@ const AVAILABILITY_CODES = new Set([
   'CAPABILITY_UNAVAILABLE',
   'CONFLICTING_WORK',
   'EXECUTION_TARGET_NOT_AUTHORIZED',
+  'INVALID_CAMPAIGN_ID',
+  'INVALID_TARGET_ID',
 ]);
 
 function safeResult(result, taskType) {
@@ -76,6 +78,12 @@ function requestedTargetError(code) {
 
 function normalizedRequestedId(value) {
   return String(value || '').trim();
+}
+
+function canonicalUuid(value, code) {
+  const normalized = normalizedRequestedId(value);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) throw Object.assign(new Error('The selected hosted record is unavailable.'), { status: 400, code });
+  return normalized;
 }
 
 function campaignPreflightTaskId(deviceId, profileId, payload, ownerUserId = null) {
@@ -178,7 +186,9 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
       const kind = String(req.body?.kind || '');
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
-      const source = await store.getCampaignPreflightSource({ kind, campaignLegacyId: String(req.body?.campaignId || ''), targetLegacyId: String(req.body?.targetId || '') });
+      const campaignId = canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID');
+      const targetId = canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID');
+      const source = await store.getCampaignPreflightSource({ kind, campaignId, targetId });
       const payload = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
       const created = await createCampaignPreflightTask({ deviceId, requestedProfileId, payload, user: req.user });
       return res.status(created.created ? 201 : 200).json({ task: safeTask(created.task) });
