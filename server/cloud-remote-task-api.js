@@ -207,10 +207,16 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
 
   router.post('/controlled-execution', async (req, res) => {
     try {
-      // There is intentionally no per-managed-user execution.run policy relation yet.
-      // Fail closed rather than treating a preflight assignment as publishing authority.
       if (!controlledExecutionEnabled) throw Object.assign(new Error('Controlled execution is disabled.'), { status: 404, code: 'CONTROLLED_EXECUTION_DISABLED' });
-      if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Controlled execution requires execution.run permission.'), { status: 403 });
+      if (req.user?.role === 'USER') {
+        const ownerUserId = managedTaskOwnerId(req.user);
+        if (!ownerUserId || typeof store.getManagedUserById !== 'function' || typeof store.listManagedUserExecutionTargets !== 'function') throw Object.assign(new Error('Controlled execution is unavailable for this session.'), { status: 403 });
+        const managed = await store.getManagedUserById(ownerUserId);
+        if (!managed || managed.enabled === false || managed.controlled_execution_enabled !== true) throw Object.assign(new Error('Controlled execution is not enabled for this user.'), { status: 403 });
+        const requestedDeviceId = normalizedRequestedId(req.body?.deviceId); const requestedProfileId = normalizedRequestedId(req.body?.profileId);
+        const assignments = await store.listManagedUserExecutionTargets(ownerUserId, { enabledOnly: true });
+        if (!assignments.some((item) => item.device_id === requestedDeviceId && item.profile_id === requestedProfileId)) throw Object.assign(new Error('The selected execution target is not authorized.'), { status: 403, code: 'EXECUTION_TARGET_NOT_AUTHORIZED' });
+      } else if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Controlled execution requires execution.run permission.'), { status: 403 });
       const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
       const kind = String(req.body?.kind || '');
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });

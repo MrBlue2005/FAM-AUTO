@@ -1,5 +1,7 @@
 # FAM-AUTO handoff
 
+Managed USER controlled execution requires two independent stored checks: `hosted_users.controlled_execution_enabled=true` and an enabled exact `hosted_user_execution_targets` assignment. The policy defaults false and remains unchanged by disable/re-enable or password reset; disabling it blocks only new controlled tasks. Publishing remains disabled and Facebook/Chromium execution remains out of scope.
+
 ## Hosted campaign-preflight identifiers
 
 Hosted `CAMPAIGN_PREFLIGHT` requests use canonical cloud UUIDs: `campaignId` is `app_campaigns.campaign_id`, `targetId` is `app_targets.target_id`, and `day` selects the authoritative related post. The BFF resolves those exact columns and builds the immutable snapshot itself. `legacy_id` remains only for Local Studio/import compatibility and is rejected by the hosted preflight contract.

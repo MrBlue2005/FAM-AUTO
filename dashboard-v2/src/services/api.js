@@ -162,6 +162,7 @@ export const api = {
   getManagedUsers: () => request('/admin/users'),
   createManagedUser: ({ username, password }) => request('/admin/users', { method: 'POST', body: JSON.stringify({ username, password }) }),
   updateManagedUser: (userId, { enabled }) => request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  updateManagedUserControlledExecutionPolicy: (userId, { controlledExecutionEnabled }) => request(`/admin/users/${encodeURIComponent(userId)}/controlled-execution-policy`, { method: 'PATCH', body: JSON.stringify({ controlledExecutionEnabled }) }),
   resetManagedUserPassword: (userId, { password }) => request(`/admin/users/${encodeURIComponent(userId)}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
   getManagedUserExecutionTargets: (userId) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets`),
   createManagedUserExecutionTarget: (userId, { deviceId, profileId }) => request(`/admin/users/${encodeURIComponent(userId)}/execution-targets`, { method: 'POST', body: JSON.stringify({ deviceId, profileId }) }),

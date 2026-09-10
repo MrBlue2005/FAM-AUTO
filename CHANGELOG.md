@@ -1,5 +1,7 @@
 # Changelog
 
+- Added G4.1's additive `hosted_users.controlled_execution_enabled` policy. It defaults false, is ADMIN-managed only, and is required together with an enabled exact device/profile assignment for a managed USER to request a non-publishing controlled-dry execution. Policy changes affect new requests only; they preserve task ownership/history and do not grant live Facebook execution.
+
 - Added Phase G4 controlled-execution plumbing: `CONTROLLED_CAMPAIGN_EXECUTION` is a distinct, opt-in task type with server-owned `CONTROLLED_DRY_EXECUTION` snapshots and hard-coded `publishEnabled=false`. Its Local Agent executor has no Facebook, Chromium, or publisher dependency; it uses the existing verified-media and profile-lock wrapper. `execution.run` remains ADMIN-only because no per-managed-user execution-policy relation exists yet.
 
 - Hosted campaign preflight now uses canonical cloud UUIDs (`app_campaigns.campaign_id` and `app_targets.target_id`) at the BFF/browser boundary. Legacy IDs remain Local Studio/import compatibility metadata; the hosted preflight source resolver does not fall back between contracts.
