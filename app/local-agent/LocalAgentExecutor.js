@@ -6,7 +6,14 @@ class LocalAgentExecutor {
   }
 
   async runProfile(profileId, handler, details = {}) {
-    return this.lockManager.runExclusive(profileId, details, handler);
+    const lock = this.lockManager.acquire(profileId, details);
+    try {
+      if (typeof details.onAcquired === 'function') details.onAcquired();
+      return await handler();
+    } finally {
+      try { lock.release(); }
+      finally { if (typeof details.onReleased === 'function') details.onReleased(); }
+    }
   }
 }
 

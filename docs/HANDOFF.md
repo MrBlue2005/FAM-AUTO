@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.2 mocked live executor seam
+
+`LIVE_CAMPAIGN_EXECUTION` now has a Local Agent seam, still default-deny behind `RX_AGENT_LIVE_EXECUTION_ENABLED=true`. The launcher injects no publisher adapter, so enabling that flag alone fails closed with `LIVE_EXECUTION_NOT_IMPLEMENTED`; no Facebook, Chromium, or legacy campaign publisher is reachable from this path.
+
+The future adapter contract is `prepare()`, `verifyReady()`, `submit()`, and `verifyOutcome()`. The invariant is strict: **no submit before durable `ATTEMPT_STARTED`; no automatic re-submit after `ATTEMPT_STARTED`**. Positive verification is persisted as `VERIFIED_SUCCESS` before task completion. Any submit/verification/verified-state persistence ambiguity becomes `OUTCOME_UNKNOWN`; completion acknowledgement failure after durable verification is likewise conservative and never authorizes another submit.
+
 Managed USER controlled execution requires two independent stored checks: `hosted_users.controlled_execution_enabled=true` and an enabled exact `hosted_user_execution_targets` assignment. The policy defaults false and remains unchanged by disable/re-enable or password reset; disabling it blocks only new controlled tasks. Publishing remains disabled and Facebook/Chromium execution remains out of scope.
 
 ## Hosted campaign-preflight identifiers
@@ -215,9 +221,9 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
-### G5.1 future-live execution invariant (unapplied hosted migration)
+### G5.1 future-live execution invariant
 
-`202609110001_live_side_effect_state.sql` adds a service-role/agent-protocol-only durable marker. Before `ATTEMPT_STARTED`, a known failure may be `FAILED`; after it, ambiguity is terminal `OUTCOME_UNKNOWN`; only `VERIFIED_SUCCESS` may become `COMPLETED`. Attempted work is never requeued, reclaimed, or automatically retried after a lease loss, reconnect, or profile-lock release. Profile locking remains local execution exclusivity, not retry authority. The Local Agent recognizes `LIVE_CAMPAIGN_EXECUTION` only to fail closed with `LIVE_EXECUTION_NOT_IMPLEMENTED`; it has no Facebook or Chromium dependency. This migration is local/test-only until its dedicated hosted application checkpoint.
+`202609110001_live_side_effect_state.sql` adds a service-role/agent-protocol-only durable marker. Before `ATTEMPT_STARTED`, a known failure may be `FAILED`; after it, ambiguity is terminal `OUTCOME_UNKNOWN`; only `VERIFIED_SUCCESS` may become `COMPLETED`. Attempted work is never requeued, reclaimed, or automatically retried after a lease loss, reconnect, or profile-lock release. Profile locking remains local execution exclusivity, not retry authority. The hosted migration is validated; live gates and live task creation remain disabled.
 
 - Phase G3 is local-only at `HOSTED_DASHBOARD_PHASE_G3_USER_EXECUTION_AUTHORIZATION`: ADMIN assigns explicit enabled device/profile pairs to managed USER accounts. Authorization is distinct from readiness; USER sees only assigned pairs and may request only a server-revalidated campaign PREFLIGHT with `publishEnabled=false`. There is no fallback, legacy environment USER cannot execute, task ownership is server-stamped, and owner identity participates in preflight idempotency. Migration `202609100002_hosted_user_execution_targets.sql` is additive and must be applied to Preview only with separate authorization.
 

@@ -20,7 +20,7 @@ class CloudAgentService {
     if ((await this.transport.getCancellationState(task)).cancellation_requested) {
       await this.transport.reportCancelled(task); return { task, cancelled: true };
     }
-    let leaseTimer = null; let executionFinished = false; let materialized = null; let executionTask = task;
+    let leaseTimer = null; let materialized = null; let executionTask = task;
     try {
       const snapshotMedia = Array.isArray(task.payload?.media) ? task.payload.media : [];
       if (snapshotMedia.length) {
@@ -32,13 +32,38 @@ class CloudAgentService {
       }
       await this.transport.reportRunning(task); this.events('TASK_STARTED', { task_id: task.task_id });
       leaseTimer = setInterval(() => this.transport.renewLease(task).then(() => this.events('LEASE_RENEWED', { task_id: task.task_id })).catch((error) => this.events('LEASE_RENEW_FAILED', { task_id: task.task_id, code: error.code || 'TRANSPORT_ERROR' })), this.leaseRenewIntervalMs);
-      const result = await RobotManager.runExternalProfileTask(task.profile_id, () => this.executor.runProfile(task.profile_id, () => this.executeTask(executionTask, async () => (await this.transport.getCancellationState(task)).cancellation_requested), { taskId: task.task_id }));
-      executionFinished = true;
-      if (result?.cancelled || result?.cancellation_requested_after_safe_point) { await this.transport.reportCancelled(task); return { task, cancelled: true, result }; }
-      await this.transport.reportCompletion(task, result || {}); this.events('TASK_COMPLETED', { task_id: task.task_id }); return { task, result };
+      const runWithTerminalPersistence = async () => {
+        let result = null;
+        try {
+          const context = {
+            transport: this.transport,
+            isCancellationRequested: async () => (await this.transport.getCancellationState(task)).cancellation_requested,
+            trace: (stage) => this.events(stage, { task_id: task.task_id }),
+          };
+          result = await this.executeTask(executionTask, context.isCancellationRequested, context);
+          if (result?.cancelled || result?.cancellation_requested_after_safe_point) { await this.transport.reportCancelled(task); return { task, cancelled: true, result }; }
+          await this.transport.reportCompletion(task, result || {}); this.events('TASK_COMPLETED', { task_id: task.task_id }); return { task, result };
+        } catch (error) {
+          // Once VERIFIED_SUCCESS is durable, a completion acknowledgement
+          // failure is bookkeeping uncertainty, never permission to resubmit.
+          if (result?.sideEffectState === 'VERIFIED_SUCCESS') error.code = 'EXECUTION_OUTCOME_UNKNOWN';
+          if (error.code === 'EXECUTION_OUTCOME_UNKNOWN') { await this.transport.reportOutcomeUnknown(task, error); this.events('TASK_OUTCOME_UNKNOWN', { task_id: task.task_id }); }
+          else if (error.code === 'PROFILE_BUSY') { await this.transport.reportFailure(task, error); this.events('PROFILE_BUSY', { task_id: task.task_id }); }
+          else { await this.transport.reportFailure(task, error); this.events('TASK_FAILED', { task_id: task.task_id }); }
+          error.terminalReported = true;
+          throw error;
+        }
+      };
+      return await RobotManager.runExternalProfileTask(task.profile_id, () => this.executor.runProfile(task.profile_id, runWithTerminalPersistence, {
+        taskId: task.task_id,
+        onAcquired: () => this.events('PROFILE_LOCK_ACQUIRED', { task_id: task.task_id }),
+        onReleased: () => this.events('PROFILE_LOCK_RELEASED', { task_id: task.task_id }),
+      }));
     } catch (error) {
-      if (error.code === 'EXECUTION_OUTCOME_UNKNOWN' || executionFinished) { await this.transport.reportOutcomeUnknown(task, error); this.events('TASK_OUTCOME_UNKNOWN', { task_id: task.task_id }); }
-      else if (error.code === 'PROFILE_BUSY') { await this.transport.reportFailure(task, error); this.events('PROFILE_BUSY', { task_id: task.task_id }); }
+      // Errors before profile execution (materialization, RUNNING acknowledgement,
+      // or lock acquisition) are definitively pre-side-effect failures.
+      if (error.terminalReported) throw error;
+      if (error.code === 'PROFILE_BUSY') { await this.transport.reportFailure(task, error); this.events('PROFILE_BUSY', { task_id: task.task_id }); }
       else { await this.transport.reportFailure(task, error); this.events('TASK_FAILED', { task_id: task.task_id }); }
       throw error;
     } finally { if (leaseTimer) clearInterval(leaseTimer); if (materialized) await materialized.cleanup(); }

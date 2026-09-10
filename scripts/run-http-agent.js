@@ -23,11 +23,13 @@ const campaignPreflight = createCampaignPreflightExecutor(registry, runtimeProfi
 const controlledExecution = createControlledCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CONTROLLED_EXECUTION_ENABLED === 'true' });
 const chromiumSafePreflight = createChromiumSafePreflightExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_CHROMIUM_PREFLIGHT_ENABLED === 'true' });
 const facebookSessionReadiness = createFacebookSessionReadinessExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true' });
-const liveExecution = createLiveCampaignExecutionExecutor({ enabled: process.env.RX_AGENT_LIVE_EXECUTION_ENABLED === 'true' });
+// G5.2 deliberately wires no real publisher. With the explicit gate enabled,
+// this remains LIVE_EXECUTION_NOT_IMPLEMENTED until a reviewed later adapter.
+const liveExecution = createLiveCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_LIVE_EXECUTION_ENABLED === 'true' });
 const legacyCloudExecution = createCloudFacebookTaskExecutor(registry, runtimeProfiles);
 const executeTask = dryRun
-  ? async (task) => {
-    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task);
+  ? async (task, _isCancellationRequested, context) => {
+    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task, context);
     if (task.task_type === 'CAMPAIGN_PREFLIGHT') return campaignPreflight(task);
     if (task.task_type === 'CONTROLLED_CAMPAIGN_EXECUTION') return controlledExecution(task);
     if (task.task_type === 'CHROMIUM_SAFE_PREFLIGHT') return chromiumSafePreflight(task);
@@ -36,8 +38,8 @@ const executeTask = dryRun
     await new Promise((resolve) => setTimeout(resolve, Number(process.env.RX_AGENT_DRY_RUN_DELAY_MS || 0)));
     return { dry_run: true, publishEnabled: false };
   }
-  : async (task, isCancellationRequested) => {
-    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task);
+  : async (task, isCancellationRequested, context) => {
+    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task, context);
     return legacyCloudExecution(task, isCancellationRequested);
   };
 const events = (type, data) => console.log(`RX_AGENT_EVENT:${JSON.stringify({ type, ...data })}`);

@@ -16,6 +16,7 @@ const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredenti
 const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
+const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 
 function temporaryDirectory(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `rx-${name}-`));
@@ -381,4 +382,98 @@ test('executor failure after verified materialization is ordinary FAILED and cle
   const { service, calls } = cloudRuntime({ task, materializer, getManifest: async () => ({ media: [item] }), executeTask: async () => { throw Object.assign(new Error('executor failed'), { code: 'EXECUTOR_FAILED' }); } });
   await assert.rejects(service.runOnce(), { code: 'EXECUTOR_FAILED' });
   assert.deepEqual(calls, { manifest: 1, running: 1, completed: 0, failed: 1, unknown: 0, executor: 1 }); assert.equal(fs.existsSync(path.join(root, task.task_id)), false);
+});
+
+function liveFixture(overrides = {}) {
+  return {
+    task_id: 'live_task', task_type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, agent_id: 'agent_live', profile_id: 'profile_live', lease_id: 'lease_live', side_effect_state: 'NOT_ATTEMPTED',
+    payload: { mode: LIVE_EXECUTION_MODE, publishEnabled: true, execution_config: { publishEnabled: true }, campaign: { campaign_id: 'campaign_live' }, post: { post_id: 'post_live', day: 1, text: 'immutable snapshot' }, target: { target_id: 'target_live', url: 'https://example.test/group' }, media: [], local_media_paths: [] },
+    ...overrides,
+  };
+}
+
+function liveSeamFixture(overrides = {}) {
+  const calls = [];
+  const publisher = {
+    prepare: async () => calls.push('PREPARE'),
+    verifyReady: async () => { calls.push('READY'); return { sessionReady: true, targetReady: true, composerReady: true }; },
+    submit: async () => calls.push('SUBMIT'),
+    verifyOutcome: async () => { calls.push('VERIFY'); return { verified: true }; },
+    ...overrides.publisher,
+  };
+  const transport = {
+    agentId: 'agent_live',
+    renewLease: async () => calls.push('LEASE'),
+    markSideEffectAttemptStarted: async () => calls.push('MARK_ATTEMPT'),
+    markSideEffectVerifiedSuccess: async () => calls.push('MARK_VERIFIED'),
+    ...overrides.transport,
+  };
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher });
+  return { calls, publisher, transport, execute };
+}
+
+test('live executor seam is mock-only, persists marker before submit, and completes only after verified success', async () => {
+  const { calls, transport, execute } = liveSeamFixture(); const trace = [];
+  const result = await execute(liveFixture(), { transport, trace: (event) => trace.push(event) });
+  assert.equal(result.sideEffectState, 'VERIFIED_SUCCESS');
+  assert.deepEqual(calls, ['PREPARE', 'READY', 'LEASE', 'MARK_ATTEMPT', 'SUBMIT', 'VERIFY', 'MARK_VERIFIED']);
+  assert.deepEqual(trace, ['PREPARE_COMPLETE', 'PUBLISHER_READY', 'LEASE_VALID', 'ATTEMPT_STARTED_PERSISTED', 'SUBMIT_CALLED', 'VERIFY_SUCCESS', 'VERIFIED_SUCCESS_PERSISTED']);
+  assert.ok(calls.indexOf('MARK_ATTEMPT') < calls.indexOf('SUBMIT'));
+  await assert.rejects(createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: false })(liveFixture()), { code: 'LIVE_EXECUTION_DISABLED' });
+  await assert.rejects(createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true })(liveFixture()), { code: 'LIVE_EXECUTION_NOT_IMPLEMENTED' });
+});
+
+test('live executor seam fails before publish on pre-marker or marker failure and resolves post-marker ambiguity safely', async () => {
+  let fixture = liveSeamFixture({ publisher: { prepare: async () => { throw Object.assign(new Error('bad snapshot'), { code: 'SNAPSHOT_INVALID' }); } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'SNAPSHOT_INVALID' }); assert.equal(fixture.calls.includes('SUBMIT'), false);
+  fixture = liveSeamFixture({ transport: { markSideEffectAttemptStarted: async () => { throw Object.assign(new Error('marker failed'), { code: 'MARKER_FAILED' }); } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'MARKER_FAILED' }); assert.equal(fixture.calls.includes('SUBMIT'), false);
+  fixture = liveSeamFixture({ publisher: { submit: async () => { fixture.calls.push('SUBMIT'); throw new Error('disconnect'); } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+  fixture = liveSeamFixture({ publisher: { verifyOutcome: async () => { fixture.calls.push('VERIFY'); return { verified: false }; } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+  fixture = liveSeamFixture({ publisher: { verifyOutcome: async () => { fixture.calls.push('VERIFY'); throw new Error('verification timeout'); } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+  fixture = liveSeamFixture({ transport: { markSideEffectVerifiedSuccess: async () => { throw new Error('persist failed'); } } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+  fixture = liveSeamFixture(); let checks = 0;
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.includes('SUBMIT'), false);
+});
+
+test('live executor reconnect states never resubmit and CloudAgentService holds the profile lock through completion persistence', async () => {
+  let fixture = liveSeamFixture();
+  await assert.rejects(fixture.execute(liveFixture({ side_effect_state: 'ATTEMPT_STARTED' }), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.includes('SUBMIT'), false);
+  fixture = liveSeamFixture();
+  const recovered = await fixture.execute(liveFixture({ side_effect_state: 'VERIFIED_SUCCESS' }), { transport: fixture.transport }); assert.equal(recovered.recoveredVerifiedSuccess, true); assert.equal(fixture.calls.includes('SUBMIT'), false);
+
+  fixture = liveSeamFixture(); const events = []; const task = liveFixture();
+  const transport = {
+    ...fixture.transport,
+    heartbeat: async () => {}, claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }), reportRunning: async () => events.push('RUNNING'), reportCompletion: async () => events.push('COMPLETION_PERSISTED'), reportFailure: async () => events.push('FAILED'), reportOutcomeUnknown: async () => events.push('OUTCOME_UNKNOWN'),
+  };
+  const service = new CloudAgentService({
+    transport, registry: { getSafeMetadata: () => ({ agent_id: 'agent_live' }) },
+    executor: { runProfile: async (_profileId, handler, details) => { details.onAcquired(); try { return await handler(); } finally { details.onReleased(); } } },
+    executeTask: (executionTask, _cancel, context) => fixture.execute(executionTask, context),
+    events: (event) => events.push(event),
+  });
+  await service.runOnce();
+  const ordered = ['PROFILE_LOCK_ACQUIRED', 'PREPARE_COMPLETE', 'LEASE_VALID', 'ATTEMPT_STARTED_PERSISTED', 'SUBMIT_CALLED', 'VERIFY_SUCCESS', 'VERIFIED_SUCCESS_PERSISTED', 'COMPLETION_PERSISTED', 'TASK_COMPLETED', 'PROFILE_LOCK_RELEASED'];
+  let prior = -1; for (const event of ordered) { const current = events.indexOf(event); assert.ok(current > prior, `${event} must follow ${ordered[prior] || 'start'}`); prior = current; }
+  assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
+});
+
+test('verified-success completion acknowledgement failure is outcome-unknown and never re-submits', async () => {
+  const fixture = liveSeamFixture(); const events = []; const task = liveFixture();
+  const transport = {
+    ...fixture.transport,
+    heartbeat: async () => {}, claimNextTask: async () => ({ task }), getCancellationState: async () => ({ cancellation_requested: false }), reportRunning: async () => {}, reportCompletion: async () => { throw new Error('completion timeout'); }, reportFailure: async () => events.push('FAILED'), reportOutcomeUnknown: async () => events.push('OUTCOME_UNKNOWN'),
+  };
+  const service = new CloudAgentService({
+    transport, registry: { getSafeMetadata: () => ({ agent_id: 'agent_live' }) },
+    executor: { runProfile: async (_profileId, handler, details) => { details.onAcquired(); try { return await handler(); } finally { details.onReleased(); } } },
+    executeTask: (executionTask, _cancel, context) => fixture.execute(executionTask, context), events: () => {},
+  });
+  await assert.rejects(service.runOnce(), { code: 'EXECUTION_OUTCOME_UNKNOWN' });
+  assert.deepEqual(events, ['OUTCOME_UNKNOWN']); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
 });

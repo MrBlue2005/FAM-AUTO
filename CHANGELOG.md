@@ -1,8 +1,14 @@
 # Changelog
 
+## G5.2 — mocked live executor seam
+
+- Added a default-deny `LIVE_CAMPAIGN_EXECUTION` Local Agent seam with an explicitly injected publisher adapter only. No Facebook, Chromium, Playwright, or existing campaign publisher is wired.
+- The durable `ATTEMPT_STARTED` RPC is acknowledged immediately before `submit()`. Failures before it are ordinary `FAILED`; every post-marker ambiguity resolves to `OUTCOME_UNKNOWN`, with no automatic re-submit after reconnect, lease recovery, cancellation, or duplicate execution.
+- `COMPLETED` is sent only after positive adapter verification and durable `VERIFIED_SUCCESS`. A completion acknowledgement failure after durable verification is conservatively `OUTCOME_UNKNOWN`, never a new publish attempt.
+
 ## G5.1 — durable future-live side-effect state
 
-- Added the unapplied control-plane migration for `NOT_ATTEMPTED → ATTEMPT_STARTED → VERIFIED_SUCCESS`.
+- Applied and validated the hosted control-plane migration for `NOT_ATTEMPTED → ATTEMPT_STARTED → VERIFIED_SUCCESS`.
 - A future live task can only complete after durable verification; ambiguous post-attempt failures become `OUTCOME_UNKNOWN` and are never requeued or retried automatically.
 - Added the independent default-false `live_execution_enabled` policy and fail-closed Local Agent live dispatch. No publishing surface was enabled.
 
