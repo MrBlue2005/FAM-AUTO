@@ -198,7 +198,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   app.get('/api/bff/healthz', (req, res) => res.json({ ok: true, status: 'ready' }));
   app.get('/api/auth/status', async (req, res) => {
     const session = config.authEnabled ? await sessionFor(req) : { username: 'admin', role: ROLES.ADMIN, csrf: null };
-    res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, csrfToken: session?.csrf || null });
+    res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, managedUser: Boolean(session?.managedUserId), csrfToken: session?.csrf || null });
   });
   app.post('/api/auth/login', async (req, res) => {
     const origin = req.get('origin');
@@ -208,7 +208,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     if (!user) return res.status(401).json({ error: 'Invalid username or password.' });
     const session = issueSession(user);
     res.setHeader('Set-Cookie', cookieValue(session.token, config.production, SESSION_TTL_SECONDS));
-    return res.json({ username: user.username, role: user.role, expiresAt: session.payload.exp * 1000, csrfToken: session.payload.csrf });
+    return res.json({ username: user.username, role: user.role, managedUser: Boolean(user.managedUserId), expiresAt: session.payload.exp * 1000, csrfToken: session.payload.csrf });
   });
   app.post('/api/auth/logout', requireSession, requireMutationTrust, (req, res) => {
     res.setHeader('Set-Cookie', cookieValue('', config.production, 0));

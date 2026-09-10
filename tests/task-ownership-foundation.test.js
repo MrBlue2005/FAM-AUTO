@@ -34,10 +34,11 @@ test('control-plane store selects ownership internally and pushes owner filterin
   const requests = [];
   const store = new SupabaseApplicationDataStore({ url: 'https://example.supabase.co', serviceRoleKey: 'test-key', fetchImpl: async (url) => { requests.push(url); return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }); } });
   await store.listControlPlaneTasks({ limit: 25, ownerUserId: '11111111-1111-4111-8111-111111111111' });
-  await store.getControlPlaneTaskHistory('task-a');
+  await store.getControlPlaneTaskHistory('task-a', { ownerUserId: '11111111-1111-4111-8111-111111111111' });
   assert.match(requests[0], /owner_user_id=eq\.11111111-1111-4111-8111-111111111111/);
   assert.match(requests[0], /select=.*owner_user_id/);
   assert.match(requests[1], /select=.*owner_user_id/);
+  assert.match(requests[1], /owner_user_id=eq\.11111111-1111-4111-8111-111111111111/);
 });
 
 test('remote task creation accepts no browser ownership field', () => {

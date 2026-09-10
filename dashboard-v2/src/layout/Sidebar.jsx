@@ -42,11 +42,13 @@ const secondaryItems = [
   { id: 'robot', label: 'Propulse Control', Icon: Bot, localOnly: true },
   { id: 'settings', label: 'Settings', Icon: Settings, localOnly: true },
 ];
-const hostedItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartphone }, { id: 'executions', label: 'Execuții', Icon: MonitorSmartphone }, { id: 'users', label: 'Utilizatori', Icon: UsersRound }];
+const hostedAdminItems = [{ id: 'devices', label: 'Dispozitive', Icon: MonitorSmartphone }, { id: 'executions', label: 'Execuții', Icon: MonitorSmartphone }, { id: 'users', label: 'Utilizatori', Icon: UsersRound }];
+const hostedManagedUserItems = [{ id: 'executions', label: 'Execuțiile mele', Icon: MonitorSmartphone }];
 
 export default function Sidebar({ activePage, auth, onChangePage }) {
   const cloudReadOnly = api.isCloudReadOnly();
   const isAdmin = auth?.user?.role === 'ADMIN';
+  const isManagedUser = auth?.user?.managedUser === true;
   const [expanded, setExpanded] = useState(() => {
     try {
       return window.localStorage.getItem('rx-windowed-sidebar-expanded') === 'true';
@@ -135,7 +137,7 @@ export default function Sidebar({ activePage, auth, onChangePage }) {
 
         {primaryItems.map(renderItem)}
 
-        {cloudReadOnly && isAdmin && <><div className="sidebar-separator" />{hostedItems.map(renderItem)}</>}
+        {cloudReadOnly && (isAdmin || isManagedUser) && <><div className="sidebar-separator" />{(isAdmin ? hostedAdminItems : hostedManagedUserItems).map(renderItem)}</>}
 
         <div className="sidebar-separator" />
 

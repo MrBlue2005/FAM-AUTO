@@ -129,7 +129,7 @@ test('enrollment issuance is ADMIN-only, one-time response-only, and never expos
 test('USER cannot receive Device Admin UI or an enrollment token endpoint, while Phase B/C selection remains explicit', async () => {
   const sidebar = fs.readFileSync(path.join(root, 'dashboard-v2', 'src', 'layout', 'Sidebar.jsx'), 'utf8');
   const page = fs.readFileSync(path.join(root, 'dashboard-v2', 'src', 'pages', 'Devices.jsx'), 'utf8');
-  assert.match(sidebar, /cloudReadOnly && isAdmin/);
+  assert.match(sidebar, /isAdmin \? hostedAdminItems : hostedManagedUserItems/);
   assert.match(page, /if \(!isAdmin\) return/);
   assert.match(page, /Dispozitivele sunt disponibile numai administratorilor/);
   assert.match(page, /if \(!api\.isCloudReadOnly\(\)\) return null/);

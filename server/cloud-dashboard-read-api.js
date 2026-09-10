@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { safeResult } = require('./cloud-remote-task-api');
+const { managedTaskOwnerId } = require('./task-ownership');
 
 const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING']);
@@ -232,8 +233,14 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   })));
   router.get('/agent-status', (req, res) => send(res, store.getAgentStatus().then((agent) => mapAgentStatus(agent))));
   router.get('/devices', requirePermission ? requirePermission('devices.read') : (req, res, next) => next(), (req, res) => send(res, listDevices(store)));
-  const adminOnly = requirePermission ? requirePermission('devices.read') : (req, res, next) => next();
-  router.get('/tasks', adminOnly, (req, res) => send(res, (async () => {
+  const taskHistoryAccess = (req, res, next) => {
+    if (req.user?.role === 'ADMIN') { req.taskHistoryOwnerUserId = null; return next(); }
+    const ownerUserId = managedTaskOwnerId(req.user);
+    if (!ownerUserId) return res.status(403).json({ error: 'Task history is unavailable for this session.' });
+    req.taskHistoryOwnerUserId = ownerUserId;
+    return next();
+  };
+  router.get('/tasks', taskHistoryAccess, (req, res) => send(res, (async () => {
     const deviceId = string(req.query.deviceId)?.trim() || '';
     const profileId = string(req.query.profileId)?.trim() || '';
     const status = string(req.query.status)?.trim().toUpperCase() || '';
@@ -241,11 +248,11 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
     const context = await taskHistoryContext(store);
     if (deviceId && profileId && context.profiles.get(profileId)?.agent_id !== deviceId) return { tasks: [], limit: historyLimit(req.query.limit) };
     const limit = historyLimit(req.query.limit);
-    const tasks = await store.listControlPlaneTasks({ limit, deviceId, profileId, status });
+    const tasks = await store.listControlPlaneTasks({ limit, deviceId, profileId, status, ownerUserId: req.taskHistoryOwnerUserId });
     return { tasks: tasks.map((task) => mapHistoryTask(task, context.agents, context.profiles)), limit };
   })()));
-  router.get('/tasks/:taskId', adminOnly, (req, res) => send(res, (async () => {
-    const task = await store.getControlPlaneTaskHistory(req.params.taskId);
+  router.get('/tasks/:taskId', taskHistoryAccess, (req, res) => send(res, (async () => {
+    const task = await store.getControlPlaneTaskHistory(req.params.taskId, { ownerUserId: req.taskHistoryOwnerUserId });
     if (!task) throw Object.assign(new Error('Task-ul nu a fost găsit.'), { status: 404 });
     const context = await taskHistoryContext(store);
     const events = (await store.listControlPlaneTaskEvents(task.task_id)).map((event) => ({ type: String(event.event_type || ''), occurredAt: isoDate(event.occurred_at) }));

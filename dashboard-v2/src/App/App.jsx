@@ -87,7 +87,7 @@ function DashboardApp({ auth }) {
     if (activePage === 'settings') return <Settings />;
     if (activePage === 'devices') return <Devices isAdmin={auth.isAdmin} />;
     if (activePage === 'users') return <Users isAdmin={auth.isAdmin} />;
-    if (activePage === 'executions') return <Executions isAdmin={auth.isAdmin} />;
+    if (activePage === 'executions') return <Executions isAdmin={auth.isAdmin} isManagedUser={auth.user?.managedUser === true} />;
 
     return <Dashboard onChangePage={handleChangePage} />;
   }
