@@ -23,8 +23,8 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getAuthStatus().then(({ enabled, authenticated, username, role, managedUser, canControlledExecute }) => {
-      setState({ loading: false, required: enabled, authenticated: !enabled || authenticated, user: username ? { username, role, managedUser: managedUser === true, canControlledExecute: canControlledExecute === true } : null, connectionError: '' });
+    api.getAuthStatus().then(({ enabled, authenticated, username, role, managedUser, canControlledExecute, canLiveExecute }) => {
+      setState({ loading: false, required: enabled, authenticated: !enabled || authenticated, user: username ? { username, role, managedUser: managedUser === true, canControlledExecute: canControlledExecute === true, canLiveExecute: canLiveExecute === true } : null, connectionError: '' });
     }).catch((statusError) => setState({
       loading: false,
       required: true,
@@ -46,7 +46,7 @@ await api.login(credentials);
       setState((current) => ({
         ...current,
         authenticated: !verified.enabled || verified.authenticated,
-        user: verified.username ? { username: verified.username, role: verified.role, managedUser: verified.managedUser === true, canControlledExecute: verified.canControlledExecute === true } : null,
+        user: verified.username ? { username: verified.username, role: verified.role, managedUser: verified.managedUser === true, canControlledExecute: verified.canControlledExecute === true, canLiveExecute: verified.canLiveExecute === true } : null,
       }));
       const returnUrl = trustedReturnUrl();
       if (returnUrl) window.location.assign(returnUrl);

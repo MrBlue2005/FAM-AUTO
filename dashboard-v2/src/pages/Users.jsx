@@ -130,6 +130,10 @@ function HostedUsers() {
       setMessage(updateError.message || 'Politica nu a putut fi actualizată.');
     }
   }
+  async function toggleLiveExecution(user) {
+    try { await api.updateManagedUserLiveExecutionPolicy(user.userId, { enabled: !user.liveExecutionEnabled }); setMessage(user.liveExecutionEnabled ? 'Publicarea Facebook a fost dezactivată.' : 'Publicarea Facebook a fost activată numai pentru targeturile autorizate.'); await load(); }
+    catch (updateError) { setMessage(updateError.message || 'Politica live nu a putut fi actualizată.'); }
+  }
   async function resetPassword(userId) {
     if (reset.password !== reset.confirm)
       return setMessage("Parolele nu corespund.");
@@ -326,6 +330,9 @@ function HostedUsers() {
             <button className="secondary-button" onClick={() => toggleControlledExecution(user)}>
               {user.controlledExecutionEnabled ? 'Dezactivează execuția controlată' : 'Activează execuția controlată'}
             </button>
+            <h3>Publicare Facebook</h3>
+            <p className="muted-text">{user.liveExecutionEnabled ? 'Activată' : 'Dezactivată'} · Permite solicitarea execuțiilor live numai pe targeturile autorizate.</p>
+            <button className="secondary-button" onClick={() => toggleLiveExecution(user)}>{user.liveExecutionEnabled ? 'Dezactivează publicarea Facebook' : 'Activează publicarea Facebook'}</button>
             <h3>Acces execuție</h3>
             <p className="muted-text">
               Autorizarea nu implică disponibilitate; preflight-ul rămâne fără

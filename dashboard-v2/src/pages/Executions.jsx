@@ -45,7 +45,7 @@ function devicesFromTasks(tasks) {
   return [...devices.values()];
 }
 
-export default function Executions({ isAdmin = false, isManagedUser = false, canControlledExecute = false }) {
+export default function Executions({ isAdmin = false, isManagedUser = false, canControlledExecute = false, canLiveExecute = false }) {
   const [devices, setDevices] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [detail, setDetail] = useState(null);
@@ -64,6 +64,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
   });
   const [preflightMessage, setPreflightMessage] = useState("");
   const [controlledPending, setControlledPending] = useState(false);
+  const [liveConfirm, setLiveConfirm] = useState(false); const [livePending, setLivePending] = useState(false);
   const [filters, setFilters] = useState({
     deviceId: "",
     profileId: "",
@@ -188,6 +189,12 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
     } catch (requestError) {
       setPreflightMessage(requestError.message || "Execuția controlată nu a putut fi solicitată.");
     } finally { setControlledPending(false); }
+  }
+  async function confirmLiveExecution() {
+    if (livePending) return; setLivePending(true);
+    try { const result = await api.createLiveCampaignExecutionTask({ ...preflight, day: Number(preflight.day) }); setPreflightMessage(`Publicare solicitată: ${result.task.status}`); setLiveConfirm(false); await load(); }
+    catch (error) { setPreflightMessage(error.message || 'Execuția live nu a putut fi solicitată.'); }
+    finally { setLivePending(false); }
   }
   if (!api.isCloudReadOnly()) return null;
   if (!isAdmin && !isManagedUser)
@@ -369,6 +376,10 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
           {api.isControlledExecutionEnabled() && canControlledExecute && (
             <><p className="muted-text">Execuție controlată · fără publicare Facebook.</p><button className="secondary-button" disabled={controlledPending || !preflight.deviceId || !preflight.profileId || !preflight.campaignId || !preflight.day || !preflight.targetId || !executionTargets.some((target) => target.deviceId === preflight.deviceId && target.profileId === preflight.profileId && target.canRequestPreflight)} onClick={requestControlledExecution}>Validează execuția</button></>
           )}
+          {api.isLiveExecutionEnabled() && canLiveExecute && executionTargets.some((target) => target.deviceId === preflight.deviceId && target.profileId === preflight.profileId && target.canRequestPreflight) && preflight.campaignId && preflight.day && preflight.targetId && (
+            <><p className="muted-text">Execuție reală — această acțiune va publica pe Facebook.</p><button className="primary-button" disabled={livePending} onClick={() => !livePending && setLiveConfirm(true)}>Publică pe Facebook</button></>
+          )}
+          {liveConfirm && <section className="editor-panel" role="dialog" aria-label="Confirmă publicarea"><h3>Confirmă publicarea</h3><p>Această acțiune va publica efectiv conținutul pe Facebook.</p><p>Campanie: {preflight.campaignId} · Ziua {preflight.day} · Target: {preflight.targetId}</p><p>Dispozitiv: {preflight.deviceId} · Profil: {preflight.profileId}</p><button className="secondary-button" disabled={livePending} onClick={() => setLiveConfirm(false)}>Renunță</button><button className="primary-button" disabled={livePending} onClick={confirmLiveExecution}>Confirm publicarea</button></section>}
           {preflightMessage && (
             <p className="save-message">{preflightMessage}</p>
           )}
