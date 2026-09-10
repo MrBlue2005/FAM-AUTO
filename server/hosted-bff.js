@@ -153,7 +153,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
     if (!applicationStore?.getManagedUserById) return null;
     try {
       const user = await applicationStore.getManagedUserById(session.managedUserId);
-      return user?.enabled !== false && Number(user.session_version) === Number(session.sessionVersion) && user.role === ROLES.USER ? session : null;
+      return user?.enabled !== false && Number(user.session_version) === Number(session.sessionVersion) && user.role === ROLES.USER ? { ...session, canControlledExecute: user.controlled_execution_enabled === true } : null;
     } catch { return null; }
   };
   const requireSession = async (req, res, next) => {
@@ -199,7 +199,7 @@ function createHostedBffApp({ env = process.env, now = () => Date.now(), store }
   app.get('/api/bff/healthz', (req, res) => res.json({ ok: true, status: 'ready' }));
   app.get('/api/auth/status', async (req, res) => {
     const session = config.authEnabled ? await sessionFor(req) : { username: 'admin', role: ROLES.ADMIN, csrf: null };
-    res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, managedUser: Boolean(session?.managedUserId), csrfToken: session?.csrf || null });
+    res.json({ enabled: config.authEnabled, authenticated: Boolean(session), username: session?.username || null, role: session?.role || null, managedUser: Boolean(session?.managedUserId), canControlledExecute: session?.canControlledExecute === true, csrfToken: session?.csrf || null });
   });
   app.post('/api/auth/login', async (req, res) => {
     const origin = req.get('origin');
