@@ -1,5 +1,12 @@
 # Changelog
 
+## G5.4 — live route policy and UI closure
+
+- Added deterministic closure coverage for the distinct `LIVE_CAMPAIGN_EXECUTION` history states: queued/not-attempted, failed-before-publication, outcome-unknown after an attempt, and verified completion. Browser history receives only the allowlisted side-effect state and no payload, lease, path, credential, signed URL, or raw browser error.
+- ADMIN has a policy separate from controlled execution. A managed USER sees the live action only when the client gate, server-issued `canLiveExecute`, and exact assigned-target readiness are all true; the first click opens a mandatory confirmation and cannot create a task.
+- The browser submits reviewed intent only. The server independently applies `publishEnabled=true`, type, owner, canonical source IDs, exact routing, policy, and assignment validation. All live gates remain default-deny; no live Facebook smoke is authorized by this work.
+- `OUTCOME_UNKNOWN` requires manual Facebook verification and has no retry/resubmit control. `NOT_ATTEMPTED`, `ATTEMPT_STARTED`, and `VERIFIED_SUCCESS` are rendered as distinct safe history states.
+
 ## G5.3 — real Facebook publisher adapter boundary
 
 - Added `RealFacebookPublisherAdapter`, a narrow wrapper around the existing local browser, target navigation, composer preparation, publish-button discovery, and verified-media workflow. It is wired only when both Local Agent live gates are explicitly true; no hosted/UI route was added.

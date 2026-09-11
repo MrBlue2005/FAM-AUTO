@@ -11,7 +11,7 @@ test('Users credential handoff is ephemeral, copyable, revealable, and has no br
   const page = fs.readFileSync(path.join(root, 'dashboard-v2', 'src', 'pages', 'Users.jsx'), 'utf8'); const helper = fs.readFileSync(path.join(root, 'dashboard-v2', 'src', 'services', 'userCredentialHandoff.js'), 'utf8');
   assert.match(helper, /cryptoSource\.getRandomValues/); assert.doesNotMatch(helper, /Math\.random/);
   for (const expected of ['generateCreatePassword', 'generateResetPassword', "setForm({ ...form, password, confirm: password })", "setReset({ password, confirm: password })", 'showCreatePassword', 'showResetPassword', 'showHandoffPassword', 'Copiază username', 'Copiază parola', 'Copiază datele', 'credentialCopyText(handoff)', 'Salvează parola acum', 'setHandoff(null)']) assert.ok(page.includes(expected), expected);
-  assert.match(page, /setHandoff\(\{ username: result\.user\.username, password \}\)/); assert.match(page, /setForm\(\{ username: '', password: '', confirm: '' \}\)/); assert.match(page, /setReset\(\{ password: '', confirm: '' \}\)/);
+  assert.match(page, /setHandoff\(\{ username: result\.user\.username, password \}\)/); assert.match(page, /setForm\(\{ username: "", password: "", confirm: "" \}\)/); assert.match(page, /setReset\(\{ password: "", confirm: "" \}\)/);
   for (const forbidden of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie', 'URLSearchParams', 'console.', 'password_scrypt']) assert.equal(page.includes(forbidden), false, forbidden);
 });
 test('Users list remains ADMIN-only and never contains a permanent password retrieval action', () => {

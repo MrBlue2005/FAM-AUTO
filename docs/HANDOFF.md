@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.4 live route policy and UI closure
+
+`LIVE_CAMPAIGN_EXECUTION` is a distinct BFF route, separately default-deny behind `RX_BFF_LIVE_EXECUTION_ENABLED=true`; the browser additionally requires `VITE_LIVE_EXECUTION_ENABLED=true`. ADMIN manages a separate `live_execution_enabled` policy for each managed USER. A managed USER can see the live action only with that server-issued capability, an enabled exact execution-target assignment, and current target readiness. The action requires an explicit second confirmation; the browser sends reviewed campaign intent only and never supplies `publishEnabled`, task type/mode, owner, or side-effect state. The server alone grants live-publish authority in the immutable snapshot.
+
+Live history uses the separate `Publicare Facebook` label and exposes only safe durable side-effect state: `NOT_ATTEMPTED`, `ATTEMPT_STARTED`, or `VERIFIED_SUCCESS`. A `FAILED` live task with `NOT_ATTEMPTED` means publication was not started. `OUTCOME_UNKNOWN` after an attempt requires manual Facebook verification, never retry/resubmit. No live BFF/browser/Local Agent gate has been enabled, and no first live Facebook smoke has been authorized.
+
 ## G5.3 real Facebook adapter safety boundary
 
 `RealFacebookPublisherAdapter` reuses the local browser launcher, `openGroup`, `createPost`, and publish-button discovery, but it is enabled only by both `RX_AGENT_LIVE_EXECUTION_ENABLED=true` and `RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED=true`. No hosted configuration enables either gate, and no browser live-creation route or USER publishing UI exists.

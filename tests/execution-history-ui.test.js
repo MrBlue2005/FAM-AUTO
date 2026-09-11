@@ -16,8 +16,8 @@ test('execution history UI gives managed users a scoped history without device i
   assert.match(history.failureMessage({ outcomeUnknown: true }), /verificare manuală/i);
   assert.deepEqual(history.profilesForDevice([{ deviceId: 'a', profiles: [{ profileId: 'p' }] }], 'a'), [{ profileId: 'p' }]);
   assert.equal(history.deviceOptionLabel({ displayName: 'PC', deviceId: 'agent_12345678' }), 'PC · 12345678');
-  assert.match(sidebar, /id: 'executions', label: 'Execuțiile mele'/); assert.match(app, /activePage === 'executions'/); assert.match(app, /isManagedUser/); assert.match(page, /if \(!isAdmin && !isManagedUser\) return/);
-  assert.match(page, /devicesFromTasks/); assert.match(page, /isAdmin \? await api\.getDevices\(\)/); assert.match(page, /Execuțiile mele/);
+  assert.match(sidebar, /id: 'executions', label: 'Execuțiile mele'/); assert.match(app, /activePage === 'executions'/); assert.match(app, /isManagedUser/); assert.match(page, /if \(!isAdmin && !isManagedUser\)\s*return/);
+  assert.match(page, /devicesFromTasks/); assert.match(page, /isAdmin\s*\? await api\.getDevices\(\)/); assert.match(page, /Execuțiile mele/);
   assert.match(page, /api\.getCloudTasks/); assert.match(page, /api\.getCloudTask/); assert.match(page, /deviceOptionLabel/); assert.match(page, /profilesForDevice/); assert.match(source('dashboard-v2', 'src', 'services', 'executionHistory.js'), /OUTCOME_UNKNOWN/);
   assert.match(api, /getCloudTasks:/); assert.match(api, /cloudRead\(`\/tasks\?/); assert.match(api, /getCloudTask:/);
   assert.match(page, /getMyExecutionTargets/); assert.match(page, /createCampaignPreflightTask/); assert.doesNotMatch(page, /Retry|Cancel|Delete|Reassign|Publish|createChromiumSafePreflightTask/i);
