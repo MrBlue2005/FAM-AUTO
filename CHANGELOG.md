@@ -1,5 +1,10 @@
 # Changelog
 
+## G5.5 — browser-free live-execution rehearsal
+
+- Added a default-deny Local Agent rehearsal publisher for `LIVE_CAMPAIGN_EXECUTION`. It implements the same adapter interface without importing browser/Facebook code, accepts only a server-marked rehearsal snapshot, and emits safe in-memory invocation counters.
+- The real publisher and rehearsal modes are mutually exclusive and fail closed when both are configured. A rehearsal task is server-marked and browser history explicitly says it is a simulation, never a Facebook publication.
+
 ## G5.4 — live route policy and UI closure
 
 - Added deterministic closure coverage for the distinct `LIVE_CAMPAIGN_EXECUTION` history states: queued/not-attempted, failed-before-publication, outcome-unknown after an attempt, and verified completion. Browser history receives only the allowlisted side-effect state and no payload, lease, path, credential, signed URL, or raw browser error.

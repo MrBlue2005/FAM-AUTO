@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.5 browser-free live-execution rehearsal
+
+The dedicated Local Agent rehearsal mode is `RX_AGENT_LIVE_EXECUTION_REHEARSAL=true`, in addition to `RX_AGENT_LIVE_EXECUTION_ENABLED=true`. It injects `RehearsalLivePublisherAdapter`, which has no browser/Facebook dependency, accepts only a server-owned snapshot with `execution_config.rehearsal=true`, and deterministically completes prepare/readiness/submit/outcome verification. It is mutually exclusive with `RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED=true`; both values fail closed at startup.
+
+The BFF only server-marks the immutable live snapshot as rehearsal when `RX_BFF_LIVE_EXECUTION_REHEARSAL_ENABLED=true`. Browser-safe history exposes only `executionRehearsal: true` and visibly labels such work as a simulation with no Facebook publication. This flag is Preview rehearsal-only; all live gates remain default false. No task, deployment, or real Facebook interaction has occurred at this implementation checkpoint.
+
 ## G5.4 live route policy and UI closure
 
 `LIVE_CAMPAIGN_EXECUTION` is a distinct BFF route, separately default-deny behind `RX_BFF_LIVE_EXECUTION_ENABLED=true`; the browser additionally requires `VITE_LIVE_EXECUTION_ENABLED=true`. ADMIN manages a separate `live_execution_enabled` policy for each managed USER. A managed USER can see the live action only with that server-issued capability, an enabled exact execution-target assignment, and current target readiness. The action requires an explicit second confirmation; the browser sends reviewed campaign intent only and never supplies `publishEnabled`, task type/mode, owner, or side-effect state. The server alone grants live-publish authority in the immutable snapshot.

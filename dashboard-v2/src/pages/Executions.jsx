@@ -472,6 +472,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
                         {view.label}
                       </span>
                       <h3>{executionTypeLabel(task.taskType)}</h3>
+                      {task.executionRehearsal && <p className="muted-text">Simulare â€” nu s-a publicat pe Facebook</p>}
                       {sideEffectStateLabel(task.sideEffectState) && <p className="muted-text">{sideEffectStateLabel(task.sideEffectState)}</p>}
                     </div>
                     <p>
@@ -513,6 +514,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
             {detail.task.mediaVerified ? "da" : "nu"} · preflight:{" "}
             {detail.task.preflightPassed ? "reușit" : "neconfirmat"}
           </p>
+          {detail.task.executionRehearsal && <p className="save-message">Simulare: nu a fost publicat nimic pe Facebook.</p>}
           {failureMessage(detail.task) && (
             <p className="save-message">{failureMessage(detail.task)}</p>
           )}

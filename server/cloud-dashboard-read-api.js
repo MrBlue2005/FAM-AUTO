@@ -212,6 +212,7 @@ function mapHistoryTask(task, agents = new Map(), profiles = new Map()) {
     errorCode: safeErrorCode(task.error, task.status),
     outcomeUnknown: String(task.status || '').toUpperCase() === 'OUTCOME_UNKNOWN',
     sideEffectState: ['NOT_ATTEMPTED','ATTEMPT_STARTED','VERIFIED_SUCCESS'].includes(String(task.side_effect_state || '').toUpperCase()) ? String(task.side_effect_state).toUpperCase() : null,
+    executionRehearsal: task.task_type === 'LIVE_CAMPAIGN_EXECUTION' && task.payload?.execution_config?.rehearsal === true,
   };
 }
 

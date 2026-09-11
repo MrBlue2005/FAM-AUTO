@@ -74,7 +74,7 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       try { await transport.markSideEffectVerifiedSuccess(task); }
       catch (error) { throw uncertain('VERIFIED_SUCCESS_PERSISTENCE_FAILED', 'Verified publication could not be durably recorded.'); }
       trace('VERIFIED_SUCCESS_PERSISTED');
-      return { liveExecution: true, publishEnabled: true, sideEffectState: 'VERIFIED_SUCCESS', outcomeVerified: true, manualReviewRequired: false, blockers: [] };
+      return { liveExecution: true, publishEnabled: true, executionRehearsal: task.payload?.execution_config?.rehearsal === true, sideEffectState: 'VERIFIED_SUCCESS', outcomeVerified: true, manualReviewRequired: false, blockers: [] };
     } finally {
       // Browser ownership remains inside the profile lock; cleanup never alters
       // the durable side-effect state and cannot authorize a retry.

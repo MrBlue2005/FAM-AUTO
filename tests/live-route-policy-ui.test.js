@@ -8,6 +8,8 @@ const http = require('node:http');
 const express = require('express');
 const { mapHistoryTask } = require('../server/cloud-dashboard-read-api');
 const { createCloudRemoteTaskRouter } = require('../server/cloud-remote-task-api');
+const { createRehearsalLivePublisherAdapter } = require('../app/local-agent/RehearsalLivePublisherAdapter');
+const { createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 
 const source = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
 const campaignId = '11111111-1111-4111-8111-111111111111';
@@ -75,7 +77,7 @@ function liveStore({ userEnabled = true, liveEnabled = true, assigned = true } =
 }
 
 async function liveRequest(options, body = {}) {
-  const store = liveStore(options); const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.user = options?.admin ? { role: 'ADMIN' } : { role: 'USER', managedUserId: ownerId }; next(); }); app.use(createCloudRemoteTaskRouter({ store, liveExecutionEnabled: options?.gate === true }));
+  const store = liveStore(options); const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.user = options?.admin ? { role: 'ADMIN' } : { role: 'USER', managedUserId: ownerId }; next(); }); app.use(createCloudRemoteTaskRouter({ store, liveExecutionEnabled: options?.gate === true, liveExecutionRehearsal: options?.rehearsal === true }));
   const server = http.createServer(app); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try { const response = await fetch(`http://127.0.0.1:${server.address().port}/live-campaign-execution`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'property', campaignId, targetId, day: 1, deviceId: 'agent-live', profileId: 'profile-live', ...body }) }); return { status: response.status, body: await response.json(), created: store.created }; } finally { await new Promise((resolve) => server.close(resolve)); }
 }
@@ -85,10 +87,10 @@ test('G5.4 live route is gate-, policy-, assignment-, canonical-ID-, and server-
   assert.equal((await liveRequest({ gate: true, liveEnabled: false })).status, 403);
   assert.equal((await liveRequest({ gate: true, assigned: false })).status, 403);
   assert.equal((await liveRequest({ gate: true }, { campaignId: 'legacy' })).status, 400);
-  const accepted = await liveRequest({ gate: true }, { publishEnabled: false, taskType: 'DRY_RUN', ownerUserId: 'attacker', sideEffectState: 'VERIFIED_SUCCESS' });
+  const accepted = await liveRequest({ gate: true, rehearsal: true }, { publishEnabled: false, taskType: 'DRY_RUN', ownerUserId: 'attacker', sideEffectState: 'VERIFIED_SUCCESS' });
   assert.equal(accepted.status, 201); assert.equal(accepted.created.length, 1);
   const task = accepted.created[0];
-  assert.equal(task.owner_user_id, ownerId); assert.equal(task.task_type, 'LIVE_CAMPAIGN_EXECUTION'); assert.equal(task.payload.publishEnabled, true); assert.equal(task.payload.execution_config.publishEnabled, true);
+  assert.equal(task.owner_user_id, ownerId); assert.equal(task.task_type, 'LIVE_CAMPAIGN_EXECUTION'); assert.equal(task.payload.publishEnabled, true); assert.equal(task.payload.execution_config.publishEnabled, true); assert.equal(task.payload.execution_config.rehearsal, true);
   assert.equal((await liveRequest({ gate: true, admin: true })).status, 201);
 });
 
@@ -102,4 +104,16 @@ test('G5.4 UI keeps separate ADMIN policies and a confirmation-only managed USER
   assert.match(executions, /setLiveConfirm\(true\)/); assert.match(executions, /role="dialog"/); assert.match(executions, /Confirm publicarea/);
   assert.match(executions, /if \(livePending\) return/); assert.match(executions, /createLiveCampaignExecutionTask\(\{ \.\.\.preflight, day: Number\(preflight\.day\) \}\)/);
   assert.doesNotMatch(executions, /publishEnabled\s*:/); assert.doesNotMatch(executions, /taskType\s*:/); assert.doesNotMatch(executions, /owner(UserId)?\s*:/); assert.doesNotMatch(executions, /sideEffectState\s*:/);
+});
+
+test('G5.5 rehearsal publisher is browser-free, server-snapshot-only, and marks its result as simulated', async () => {
+  const events = []; const publisher = createRehearsalLivePublisherAdapter({ onEvent: (event) => events.push(event) });
+  const task = { task_id: 'rehearsal', task_type: 'LIVE_CAMPAIGN_EXECUTION', agent_id: 'agent', profile_id: 'profile', side_effect_state: 'NOT_ATTEMPTED', payload: { mode: 'LIVE_EXECUTION', publishEnabled: true, execution_config: { publishEnabled: true, rehearsal: true }, campaign: { campaign_id: 'campaign' }, post: { post_id: 'post', day: 1 }, target: { target_id: 'target', url: 'https://example.test' }, media: [], local_media_paths: [] } };
+  const calls = []; const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher });
+  const result = await execute(task, { transport: { agentId: 'agent', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('ATTEMPT_STARTED'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED_SUCCESS') } });
+  assert.deepEqual(publisher.getCounters(), { prepare: 1, verifyReady: 1, submit: 1, verifyOutcome: 1 });
+  assert.deepEqual(calls, ['LEASE', 'ATTEMPT_STARTED', 'VERIFIED_SUCCESS']); assert.equal(result.executionRehearsal, true); assert.equal(result.sideEffectState, 'VERIFIED_SUCCESS');
+  assert.deepEqual(events.map((event) => event.phase), ['PREPARE', 'VERIFY_READY', 'SUBMIT', 'VERIFY_OUTCOME']);
+  await assert.rejects(publisher.prepare({ payload: { execution_config: { rehearsal: false } } }), { code: 'LIVE_REHEARSAL_SNAPSHOT_REQUIRED' });
+  const script = source('scripts', 'run-http-agent.js'); assert.match(script, /LIVE_PUBLISHER_MODE_CONFLICT/); assert.match(script, /createRehearsalLivePublisherAdapter/);
 });

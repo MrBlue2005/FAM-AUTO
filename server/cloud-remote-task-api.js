@@ -39,6 +39,7 @@ function safeResult(result, taskType) {
   if (taskType === FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE) return safeFacebookSessionResult(result);
   if (taskType === CAMPAIGN_PREFLIGHT_TASK_TYPE) return safeCampaignPreflightResult(result);
   if (taskType === CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE) return safeControlledExecutionResult(result);
+  if (taskType === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE && result?.liveExecution === true) return { liveExecution: true, executionRehearsal: result.executionRehearsal === true, sideEffectState: result.sideEffectState === 'VERIFIED_SUCCESS' ? 'VERIFIED_SUCCESS' : null, blockers: Array.isArray(result.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [] };
   return null;
 }
 
@@ -101,7 +102,7 @@ function controlledExecutionTaskId(deviceId, profileId, payload, ownerUserId = n
   return `${CONTROLLED_EXECUTION_PREFIX}${fingerprint}`;
 }
 
-function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, now = () => Date.now() }) {
+function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, liveExecutionRehearsal = false, now = () => Date.now() }) {
   const router = express.Router();
   const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
   const syntheticTargetConfigured = Boolean(agentId && profileId);
@@ -255,7 +256,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       const kind = String(req.body?.kind || ''); if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
       const source = await store.getCampaignPreflightSource({ kind, campaignId: canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID'), targetId: canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID') });
       const preflight = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
-      const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true }), publishEnabled: true });
+      const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true, rehearsal: liveExecutionRehearsal === true }), publishEnabled: true });
       const taskId = `live_execution_${crypto.createHash('sha256').update(JSON.stringify({ deviceId, requestedProfileId, payload, ownerUserId })).digest('hex').slice(0, 32)}`;
       const existing = await store.getControlPlaneTask(taskId); if (existing) return res.json({ task: safeTask(existing) });
       if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(requestedProfileId)) throw requestedTargetError('CONFLICTING_WORK');

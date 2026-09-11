@@ -12,6 +12,7 @@ const { createChromiumSafePreflightExecutor } = require('../app/local-agent/Chro
 const { createFacebookSessionReadinessExecutor } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
+const { createRehearsalLivePublisherAdapter } = require('../app/local-agent/RehearsalLivePublisherAdapter');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
 const { uploadsPath } = require('../app/config/storagePaths');
 
@@ -26,8 +27,10 @@ const chromiumSafePreflight = createChromiumSafePreflightExecutor(registry, runt
 const facebookSessionReadiness = createFacebookSessionReadinessExecutor(registry, runtimeProfiles, { enabled: process.env.RX_AGENT_FACEBOOK_SESSION_PREFLIGHT_ENABLED === 'true' });
 const liveExecutionEnabled = process.env.RX_AGENT_LIVE_EXECUTION_ENABLED === 'true';
 const realLivePublisherEnabled = process.env.RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED === 'true';
+const rehearsalLivePublisherEnabled = process.env.RX_AGENT_LIVE_EXECUTION_REHEARSAL === 'true';
+if (realLivePublisherEnabled && rehearsalLivePublisherEnabled) throw Object.assign(new Error('Live rehearsal and the real adapter cannot be enabled together.'), { code: 'LIVE_PUBLISHER_MODE_CONFLICT' });
 // Both gates are required. Browser startup remains deferred until adapter.prepare.
-const livePublisher = liveExecutionEnabled && realLivePublisherEnabled ? createRealFacebookPublisherAdapter(registry, runtimeProfiles) : null;
+const livePublisher = !liveExecutionEnabled ? null : realLivePublisherEnabled ? createRealFacebookPublisherAdapter(registry, runtimeProfiles) : rehearsalLivePublisherEnabled ? createRehearsalLivePublisherAdapter({ onEvent: (data) => console.log(`RX_AGENT_EVENT:${JSON.stringify(data)}`) }) : null;
 const liveExecution = createLiveCampaignExecutionExecutor(registry, runtimeProfiles, { enabled: liveExecutionEnabled, publisher: livePublisher });
 const legacyCloudExecution = createCloudFacebookTaskExecutor(registry, runtimeProfiles);
 const executeTask = dryRun
