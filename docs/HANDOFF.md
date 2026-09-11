@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.5F-A1 live-confirmation token helper
+
+`server/live-confirmation-token.js` provides a server-only stateless HMAC-SHA-256 token for a later explicit live-publication confirmation route. Its purpose-separated versioned claims bind a secure server-generated confirmation ID, immutable managed USER or bootstrap ADMIN identity, campaign/day/target/device/profile intent, and a ten-minute expiry. It is not yet wired to any route, UI, task identity, or hosted configuration.
+
 ## G5.5 browser-free live-execution rehearsal
 
 The dedicated Local Agent rehearsal mode is `RX_AGENT_LIVE_EXECUTION_REHEARSAL=true`, in addition to `RX_AGENT_LIVE_EXECUTION_ENABLED=true`. It injects `RehearsalLivePublisherAdapter`, which has no browser/Facebook dependency, accepts only a server-owned snapshot with `execution_config.rehearsal=true`, and deterministically completes prepare/readiness/submit/outcome verification. It is mutually exclusive with `RX_AGENT_LIVE_EXECUTION_REAL_ADAPTER_ENABLED=true`; both values fail closed at startup.

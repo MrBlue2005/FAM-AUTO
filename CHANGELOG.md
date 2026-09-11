@@ -1,5 +1,9 @@
 # Changelog
 
+## Phase G5.5F-A1 — live-confirmation token helper
+
+- Added a server-only, stateless HMAC-SHA-256 live-confirmation token helper with a purpose-separated MAC domain, cryptographically generated confirmation IDs, ten-minute expiry, and immutable owner/intent binding. It is not wired to a route, UI, task identity, or hosted configuration yet.
+
 ## Phase G5.5B — managed USER campaign visibility
 
 - Added the service-role-only `hosted_user_campaign_visibility` migration and ADMIN user-management controls for exact campaign enable/disable assignments.
