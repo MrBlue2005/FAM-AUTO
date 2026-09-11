@@ -42,6 +42,7 @@ function store({ online = true, agentExists = true, profileExists = true, owners
     getControlPlaneProfile: async (requestedProfileId) => profiles.get(requestedProfileId) || null,
     getActiveControlPlaneTaskForProfile: async (requestedProfileId) => requestedProfileId === activeProfileId ? { task_id: 'active-task' } : null,
     getCampaignPreflightSource: async ({ kind, campaignId, targetId }) => ({ campaign: kind === 'property' && campaignId === source.campaign.campaign_id ? source.campaign : null, target: targetId === source.target.target_id ? source.target : null }),
+    getCampaignPreflightSourceForManagedUser: async ({ kind, campaignId, targetId }) => ({ campaign: kind === 'property' && campaignId === source.campaign.campaign_id ? source.campaign : null, target: targetId === source.target.target_id ? source.target : null }),
     createControlPlaneTask: async (task) => { creates += 1; const row = { ...task, status: 'QUEUED', created_at: new Date().toISOString(), result: null }; tasks.set(task.task_id, row); return row; },
     getControlPlaneTask: async (id) => tasks.get(id) || null,
     listControlPlaneTaskEvents: async (id) => tasks.has(id) ? [{ event_type: 'TASK_CLAIMED', occurred_at: '2026-09-09T00:00:00Z' }, { event_type: 'TASK_RUNNING', occurred_at: '2026-09-09T00:00:01Z' }, { event_type: 'TASK_COMPLETED', occurred_at: '2026-09-09T00:00:02Z' }] : [],

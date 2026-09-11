@@ -3,6 +3,7 @@
 const express = require('express');
 const { safeResult } = require('./cloud-remote-task-api');
 const { managedTaskOwnerId } = require('./task-ownership');
+const { listVisibleCampaigns } = require('./managed-user-campaign-visibility');
 
 const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING']);
@@ -237,14 +238,14 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   const router = express.Router();
   const send = (res, promise) => Promise.resolve(promise).then((value) => res.json(value)).catch((error) => res.status(error.status || 400).json({ error: error.message }));
   const campaignFolders = async () => (await store.listCampaignFolders()).map(mapFolder);
-  const campaigns = async (kind) => {
+  const campaigns = async (kind, user) => {
     const folders = new Map((await store.listCampaignFolders()).map((folder) => [folder.folder_id, String(folder.legacy_id)]));
-    return (await store.listCampaigns(kind)).map((row) => mapCampaign(row, folders));
+    return (await listVisibleCampaigns(store, user, kind)).map((row) => mapCampaign(row, folders));
   };
-  router.get('/properties', (req, res) => send(res, campaigns('property')));
-  router.get('/jobs', (req, res) => send(res, campaigns('job')));
+  router.get('/properties', (req, res) => send(res, campaigns('property', req.user)));
+  router.get('/jobs', (req, res) => send(res, campaigns('job', req.user)));
   router.get('/groups', (req, res) => send(res, store.listTargets().then((rows) => rows.map(mapTarget))));
-  router.get('/preflight-sources', (req, res) => send(res, Promise.all([store.listCampaigns('property'), store.listCampaigns('job'), store.listTargets()]).then(([properties, jobs, targets]) => ({ campaigns: [...properties, ...jobs].filter((row) => row.active !== false).map(mapPreflightCampaign), targets: targets.filter((row) => row.active !== false).map(mapPreflightTarget) }))));
+  router.get('/preflight-sources', (req, res) => send(res, Promise.all([listVisibleCampaigns(store, req.user, 'property'), listVisibleCampaigns(store, req.user, 'job'), store.listTargets()]).then(([properties, jobs, targets]) => ({ campaigns: [...properties, ...jobs].filter((row) => row.active !== false).map(mapPreflightCampaign), targets: targets.filter((row) => row.active !== false).map(mapPreflightTarget) }))));
   router.get('/campaign-folders', (req, res) => send(res, campaignFolders()));
   router.get('/schedule-folders', (req, res) => send(res, store.listScheduleFolders().then((rows) => rows.map(mapFolder))));
   router.get('/schedules', (req, res) => send(res, Promise.all([store.listSchedules(), store.listScheduleFolders(), store.listCampaigns('property'), store.listCampaigns('job')]).then(([rows, folders, properties, jobs]) => {
@@ -289,7 +290,7 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
     return { task: mapHistoryTask(task, context.agents, context.profiles), events };
   })()));
   router.get('/media/:mediaId/preview', (req, res) => send(res, store.createPreview(req.params.mediaId).then((preview) => ({ url: preview.url, expiresIn: Number(preview.expiresIn) || 120 }))));
-  router.get('/campaign-preview', (req, res) => send(res, store.listCampaigns(req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
+  router.get('/campaign-preview', (req, res) => send(res, listVisibleCampaigns(store, req.user, req.query.category === 'jobs' ? 'job' : 'property').then((rows) => {
     const campaign = rows.find((row) => String(row.legacy_id) === String(req.query.campaignId || ''));
     if (!campaign) return { text: '', media: [], warnings: ['Campaign is unavailable in cloud read-only data.'], facebookProfileLabel: '', postingIdentityLabel: '' };
     const post = (campaign.app_campaign_posts || []).find((item) => Number(item.day) === Number(req.query.day)) || (campaign.app_campaign_posts || [])[0];

@@ -8,6 +8,7 @@ const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE } = require('../a
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
+const { getVisibleCampaignPreflightSource } = require('./managed-user-campaign-visibility');
 const { PERMISSIONS, hasPermission } = require('./hosted-rbac');
 
 const FRESHNESS_MS = 90 * 1000;
@@ -200,7 +201,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
       const campaignId = canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID');
       const targetId = canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID');
-      const source = await store.getCampaignPreflightSource({ kind, campaignId, targetId });
+      const source = await getVisibleCampaignPreflightSource(store, req.user, { kind, campaignId, targetId });
       const payload = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
       const created = await createCampaignPreflightTask({ deviceId, requestedProfileId, payload, user: req.user });
       return res.status(created.created ? 201 : 200).json({ task: safeTask(created.task) });
@@ -224,7 +225,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
       const campaignId = canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID');
       const targetId = canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID');
-      const source = await store.getCampaignPreflightSource({ kind, campaignId, targetId });
+      const source = await getVisibleCampaignPreflightSource(store, req.user, { kind, campaignId, targetId });
       const payload = buildControlledExecutionSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
       const ownerUserId = managedTaskOwnerId(req.user); const taskId = controlledExecutionTaskId(deviceId, requestedProfileId, payload, ownerUserId);
       const existing = await store.getControlPlaneTask(taskId);
@@ -254,7 +255,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       } else if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Live execution requires execution.run permission.'), { status: 403 });
       const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
       const kind = String(req.body?.kind || ''); if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
-      const source = await store.getCampaignPreflightSource({ kind, campaignId: canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID'), targetId: canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID') });
+      const source = await getVisibleCampaignPreflightSource(store, req.user, { kind, campaignId: canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID'), targetId: canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID') });
       const preflight = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
       const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true, rehearsal: liveExecutionRehearsal === true }), publishEnabled: true });
       const taskId = `live_execution_${crypto.createHash('sha256').update(JSON.stringify({ deviceId, requestedProfileId, payload, ownerUserId })).digest('hex').slice(0, 32)}`;

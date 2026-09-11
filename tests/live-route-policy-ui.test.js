@@ -69,7 +69,7 @@ function liveStore({ userEnabled = true, liveEnabled = true, assigned = true } =
     listManagedUserExecutionTargets: async () => assigned ? [{ device_id: 'agent-live', profile_id: 'profile-live', enabled: true }] : [],
     getControlPlaneAgent: async (id) => id === 'agent-live' ? { agent_id: id, reported_status: 'ONLINE', last_seen_at: new Date().toISOString() } : null,
     getControlPlaneProfile: async (id) => id === 'profile-live' ? { profile_id: id, agent_id: 'agent-live', status: 'READY' } : null,
-    getCampaignPreflightSource: async () => sourceRow,
+    getCampaignPreflightSource: async () => sourceRow, getCampaignPreflightSourceForManagedUser: async () => sourceRow,
     getActiveControlPlaneTaskForProfile: async () => null,
     getControlPlaneTask: async (id) => created.find((task) => task.task_id === id) || null,
     createControlPlaneTask: async (task) => { const row = { ...task, status: 'QUEUED' }; created.push(row); return row; },

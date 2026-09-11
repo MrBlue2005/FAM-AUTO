@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.5B — managed USER campaign visibility
+
+- Added the service-role-only `hosted_user_campaign_visibility` migration and ADMIN user-management controls for exact campaign enable/disable assignments.
+- Managed USER campaign reads, previews, selectors, and all execution-source resolvers now use the same database-side explicit allowlist; ADMIN remains global and task history remains ownership-scoped independently.
+- Target/group visibility remains a separate global model; no target ACL or hosted rehearsal was added.
+
 ## G5.5 — browser-free live-execution rehearsal
 
 - Added a default-deny Local Agent rehearsal publisher for `LIVE_CAMPAIGN_EXECUTION`. It implements the same adapter interface without importing browser/Facebook code, accepts only a server-marked rehearsal snapshot, and emits safe in-memory invocation counters.

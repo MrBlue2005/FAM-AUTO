@@ -6,6 +6,7 @@ const { PERMISSIONS, ROLES } = require('./hosted-rbac');
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,63}$/;
 const RESERVED_USERNAMES = new Set(['admin', 'root', 'system', 'operator']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function normalizeManagedUsername(value) { return String(value || '').trim().toLowerCase(); }
 function validateManagedUsername(value, reserved = []) {
   const username = normalizeManagedUsername(value);
@@ -22,6 +23,8 @@ function safeUser(user) {
   return { userId: String(user.user_id), username: String(user.username), role: ROLES.USER, enabled: user.enabled !== false, controlledExecutionEnabled: user.controlled_execution_enabled === true, liveExecutionEnabled: user.live_execution_enabled === true, createdAt: user.created_at || null, updatedAt: user.updated_at || null, lastLoginAt: user.last_login_at || null };
 }
 function safeAssignment(row, agent, profile) { return { assignmentId: String(row.assignment_id), deviceId: String(row.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(row.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), enabled: row.enabled !== false, createdAt: row.created_at || null, updatedAt: row.updated_at || null }; }
+function safeCampaignVisibility(row) { const campaign = row.app_campaigns || {}; return { campaignId: String(row.campaign_id), campaignLabel: String(campaign.title || 'Campanie indisponibilă'), enabled: row.enabled !== false }; }
+function campaignUuid(value) { const id = String(value || '').trim(); return UUID_PATTERN.test(id) ? id : null; }
 function createUserAdminRouter({ store, env, requirePermission }) {
   const router = express.Router(); router.use(requirePermission(PERMISSIONS.USERS_MANAGE));
   const reserved = [env.ADMIN_USERNAME || 'admin', env.USER_USERNAME || ''];
@@ -58,6 +61,17 @@ function createUserAdminRouter({ store, env, requirePermission }) {
     if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean.' });
     try { const rows = await store.listManagedUserExecutionTargets(req.params.userId); if (!rows.some((row) => row.assignment_id === req.params.assignmentId)) return res.status(404).json({ error: 'Execution target is unavailable.' }); const row = await store.updateManagedUserExecutionTarget(req.params.assignmentId, { enabled: req.body.enabled }); return res.json({ target: { assignmentId: String(row.assignment_id), enabled: row.enabled !== false } }); } catch { return res.status(400).json({ error: 'Execution target could not be updated.' }); }
   });
+  router.get('/:userId/campaign-visibility', async (req, res) => {
+    try { const [user, rows] = await Promise.all([store.getManagedUserById(req.params.userId), store.listManagedUserCampaignVisibility(req.params.userId)]); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); return res.json({ campaigns: rows.map(safeCampaignVisibility) }); } catch { return res.status(503).json({ error: 'Campaign visibility management is unavailable.' }); }
+  });
+  router.post('/:userId/campaign-visibility', async (req, res) => {
+    const campaignId = campaignUuid(req.body?.campaignId); if (!campaignId) return res.status(400).json({ error: 'A valid campaign ID is required.' });
+    try { const [user, campaign] = await Promise.all([store.getManagedUserById(req.params.userId), store.getCampaignById(campaignId)]); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); if (!campaign) return res.status(404).json({ error: 'Campaign is unavailable.' }); const row = await store.createManagedUserCampaignVisibility({ userId: user.user_id, campaignId }); return res.status(201).json({ campaign: safeCampaignVisibility({ ...row, app_campaigns: campaign }) }); } catch (error) { return res.status(error.code === '23505' ? 409 : 400).json({ error: error.code === '23505' ? 'Campaign is already assigned.' : 'Campaign could not be assigned.' }); }
+  });
+  router.patch('/:userId/campaign-visibility/:campaignId', async (req, res) => {
+    const campaignId = campaignUuid(req.params.campaignId); if (!campaignId || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'A valid campaign ID and enabled boolean are required.' });
+    try { const rows = await store.listManagedUserCampaignVisibility(req.params.userId); if (!rows.some((row) => row.campaign_id === campaignId)) return res.status(404).json({ error: 'Campaign visibility is unavailable.' }); const row = await store.updateManagedUserCampaignVisibility(req.params.userId, campaignId, { enabled: req.body.enabled }); return res.json({ campaign: safeCampaignVisibility(row) }); } catch { return res.status(400).json({ error: 'Campaign visibility could not be updated.' }); }
+  });
   return router;
 }
-module.exports = { createUserAdminRouter, normalizeManagedUsername, validateManagedUsername, validatePassword, hashPassword, safeUser };
+module.exports = { createUserAdminRouter, normalizeManagedUsername, validateManagedUsername, validatePassword, hashPassword, safeUser, safeCampaignVisibility, campaignUuid };

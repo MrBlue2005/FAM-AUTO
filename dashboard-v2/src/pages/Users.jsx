@@ -18,7 +18,9 @@ function HostedUsers() {
   const [users, setUsers] = useState([]);
   const [devices, setDevices] = useState([]);
   const [targets, setTargets] = useState({});
+  const [campaignVisibility, setCampaignVisibility] = useState({});
   const [selection, setSelection] = useState({});
+  const [campaignSelection, setCampaignSelection] = useState({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({ username: "", password: "", confirm: "" });
@@ -31,9 +33,10 @@ function HostedUsers() {
   const [showHandoffPassword, setShowHandoffPassword] = useState(false);
   async function load() {
     try {
-      const [result, deviceResult] = await Promise.all([
+      const [result, deviceResult, preflightSources] = await Promise.all([
         api.getManagedUsers(),
         api.getDevices(),
+        api.getCampaignPreflightSources(),
       ]);
       const nextUsers = result.users || [];
       const nextTargets = Object.fromEntries(
@@ -45,9 +48,14 @@ function HostedUsers() {
           ]),
         ),
       );
+      const nextCampaignVisibility = Object.fromEntries(
+        await Promise.all(nextUsers.map(async (user) => [user.userId, (await api.getManagedUserCampaignVisibility(user.userId)).campaigns || []])),
+      );
       setUsers(nextUsers);
       setDevices(deviceResult.devices || []);
       setTargets(nextTargets);
+      setCampaignVisibility(nextCampaignVisibility);
+      setCampaignSelection((current) => ({ ...current, available: (preflightSources.campaigns || []).map((campaign) => ({ campaignId: campaign.campaignId, label: campaign.title || 'Campanie' })) }));
       setError("");
     } catch (loadError) {
       setError(loadError.message || "Utilizatorii nu au putut fi încărcați.");
@@ -171,6 +179,16 @@ function HostedUsers() {
     } catch (targetError) {
       setMessage(targetError.message || "Accesul nu a putut fi actualizat.");
     }
+  }
+  async function assignCampaign(userId) {
+    const campaignId = campaignSelection[userId]?.campaignId;
+    if (!campaignId) return;
+    try { await api.createManagedUserCampaignVisibility(userId, { campaignId }); setMessage("Campania a devenit vizibilÄƒ pentru utilizator."); await load(); }
+    catch (assignError) { setMessage(assignError.message || "Campania nu a putut fi atribuitÄƒ."); }
+  }
+  async function setCampaignVisible(userId, campaignId, enabled) {
+    try { await api.updateManagedUserCampaignVisibility(userId, campaignId, { enabled }); await load(); }
+    catch (visibilityError) { setMessage(visibilityError.message || "Vizibilitatea campaniei nu a putut fi actualizatÄƒ."); }
   }
   return (
     <div className="management-page">
@@ -398,6 +416,23 @@ function HostedUsers() {
               >
                 Atribuie
               </button>
+            </div>
+            <h3>Campanii vizibile</h3>
+            <p className="muted-text">Doar campaniile atribuite explicit sunt vizibile acestui utilizator USER.</p>
+            {(campaignVisibility[user.userId] || []).map((campaign) => (
+              <p key={campaign.campaignId}>
+                {campaign.campaignLabel} · {campaign.enabled ? "activÄƒ" : "dezactivatÄƒ"}{" "}
+                <button className="ghost-button" onClick={() => setCampaignVisible(user.userId, campaign.campaignId, !campaign.enabled)}>
+                  {campaign.enabled ? "RevocÄƒ" : "ReactiveazÄƒ"}
+                </button>
+              </p>
+            ))}
+            <div className="button-row">
+              <select value={campaignSelection[user.userId]?.campaignId || ""} onChange={(event) => setCampaignSelection({ ...campaignSelection, [user.userId]: { campaignId: event.target.value } })}>
+                <option value="">Campanie</option>
+                {(campaignSelection.available || []).map((campaign) => <option key={campaign.campaignId} value={campaign.campaignId}>{campaign.label}</option>)}
+              </select>
+              <button className="secondary-button" onClick={() => assignCampaign(user.userId)}>Atribuie campania</button>
             </div>
             {resetId === user.userId && (
               <div className="button-row">
