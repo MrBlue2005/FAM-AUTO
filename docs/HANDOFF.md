@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.5F-A2 live-confirmation issuance route
+
+`POST /api/cloud-remote-tasks/live-confirmations` is an authenticated hosted mutation guarded by the existing CSRF and same-origin middleware. With `RX_BFF_LIVE_EXECUTION_ENABLED=true`, it accepts only reviewed campaign/day/target/device/profile intent, then independently revalidates managed-user policy, explicit campaign visibility, exact execution-target assignment, canonical source/post/revision, and ready online routing before issuing the A1 token. It creates no task. The UI and live task route remain unwired: a later task route must revalidate session, policy, ACL, assignment, readiness, revisions, media, and conflicts independently.
+
 ## G5.5F-A1 live-confirmation token helper
 
 `server/live-confirmation-token.js` provides a server-only stateless HMAC-SHA-256 token for a later explicit live-publication confirmation route. Its purpose-separated versioned claims bind a secure server-generated confirmation ID, immutable managed USER or bootstrap ADMIN identity, campaign/day/target/device/profile intent, and a ten-minute expiry. It is not yet wired to any route, UI, task identity, or hosted configuration.

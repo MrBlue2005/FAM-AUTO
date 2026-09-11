@@ -1,5 +1,9 @@
 # Changelog
 
+## Phase G5.5F-A2 — live-confirmation issuance route
+
+- Added the authenticated, CSRF- and Origin-protected `POST /api/cloud-remote-tasks/live-confirmations` endpoint. It issues a short-lived server-signed confirmation token only after independent live gate, managed-user policy, campaign ACL, exact assignment, source, and target readiness checks; issuance creates no task. The UI and task-creation route are intentionally not wired to it yet and must independently reauthorize later.
+
 ## Phase G5.5F-A1 — live-confirmation token helper
 
 - Added a server-only, stateless HMAC-SHA-256 live-confirmation token helper with a purpose-separated MAC domain, cryptographically generated confirmation IDs, ten-minute expiry, and immutable owner/intent binding. It is not wired to a route, UI, task identity, or hosted configuration yet.

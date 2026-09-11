@@ -10,6 +10,7 @@ const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResul
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
 const { getVisibleCampaignPreflightSource } = require('./managed-user-campaign-visibility');
 const { PERMISSIONS, hasPermission } = require('./hosted-rbac');
+const { issueLiveConfirmationToken } = require('./live-confirmation-token');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
@@ -32,6 +33,14 @@ const AVAILABILITY_CODES = new Set([
   'EXECUTION_TARGET_NOT_AUTHORIZED',
   'INVALID_CAMPAIGN_ID',
   'INVALID_TARGET_ID',
+  'LIVE_EXECUTION_DISABLED',
+  'LIVE_CONFIRMATION_UNAUTHENTICATED',
+  'LIVE_CONFIRMATION_LEGACY_USER_DENIED',
+  'LIVE_CONFIRMATION_POLICY_DISABLED',
+  'LIVE_CONFIRMATION_CAMPAIGN_UNAVAILABLE',
+  'LIVE_CONFIRMATION_ASSIGNMENT_UNAVAILABLE',
+  'LIVE_CONFIRMATION_SOURCE_UNAVAILABLE',
+  'LIVE_CONFIRMATION_INVALID_REQUEST',
 ]);
 
 function safeResult(result, taskType) {
@@ -103,7 +112,7 @@ function controlledExecutionTaskId(deviceId, profileId, payload, ownerUserId = n
   return `${CONTROLLED_EXECUTION_PREFIX}${fingerprint}`;
 }
 
-function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, liveExecutionRehearsal = false, now = () => Date.now() }) {
+function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, liveExecutionRehearsal = false, signingSecret, now = () => Date.now() }) {
   const router = express.Router();
   const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
   const syntheticTargetConfigured = Boolean(agentId && profileId);
@@ -159,6 +168,51 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (concurrent) return { task: concurrent, created: false };
       throw error;
     }
+  };
+  const liveConfirmationError = (code, status, message) => Object.assign(new Error(message), { status, code });
+  const authorizeLiveConfirmation = async (user, body) => {
+    if (!liveExecutionEnabled) throw liveConfirmationError('LIVE_EXECUTION_DISABLED', 404, 'Live execution is disabled.');
+    if (!user) throw liveConfirmationError('LIVE_CONFIRMATION_UNAUTHENTICATED', 401, 'Authentication is required.');
+    const requested = {
+      kind: String(body?.kind || ''),
+      campaignId: canonicalUuid(body?.campaignId, 'INVALID_CAMPAIGN_ID'),
+      day: Number(body?.day),
+      targetId: canonicalUuid(body?.targetId, 'INVALID_TARGET_ID'),
+      deviceId: normalizedRequestedId(body?.deviceId),
+      profileId: normalizedRequestedId(body?.profileId),
+      campaignRevision: body?.campaignRevision,
+      postRevision: body?.postRevision,
+    };
+    if (!['property', 'job'].includes(requested.kind) || !Number.isSafeInteger(requested.day) || requested.day < 1 || !requested.deviceId || !requested.profileId) {
+      throw liveConfirmationError('LIVE_CONFIRMATION_INVALID_REQUEST', 400, 'The reviewed live confirmation intent is invalid.');
+    }
+    let owner;
+    if (user.role === 'USER') {
+      const ownerUserId = managedTaskOwnerId(user);
+      if (!ownerUserId) throw liveConfirmationError('LIVE_CONFIRMATION_LEGACY_USER_DENIED', 403, 'Managed USER authorization is required.');
+      if (typeof store.getManagedUserById !== 'function' || typeof store.listManagedUserExecutionTargets !== 'function') throw liveConfirmationError('LIVE_CONFIRMATION_POLICY_DISABLED', 403, 'Live execution is not enabled for this user.');
+      const managed = await store.getManagedUserById(ownerUserId);
+      if (!managed || managed.enabled === false || managed.live_execution_enabled !== true) throw liveConfirmationError('LIVE_CONFIRMATION_POLICY_DISABLED', 403, 'Live execution is not enabled for this user.');
+      const assignments = await store.listManagedUserExecutionTargets(ownerUserId, { enabledOnly: true });
+      if (!assignments.some((item) => item.device_id === requested.deviceId && item.profile_id === requested.profileId)) throw liveConfirmationError('LIVE_CONFIRMATION_ASSIGNMENT_UNAVAILABLE', 403, 'The selected execution target is not authorized.');
+      owner = { role: 'USER', managedUserId: ownerUserId };
+    } else if (user.role === 'ADMIN' && hasPermission(user.role, PERMISSIONS.EXECUTION_RUN)) {
+      if (!user.username) throw liveConfirmationError('LIVE_CONFIRMATION_UNAUTHENTICATED', 401, 'Authentication is required.');
+      owner = { role: 'ADMIN', username: user.username };
+    } else {
+      throw liveConfirmationError('LIVE_CONFIRMATION_LEGACY_USER_DENIED', 403, 'Managed USER authorization is required.');
+    }
+    const target = await verifyRequestedTarget(requested);
+    let source;
+    try {
+      source = await getVisibleCampaignPreflightSource(store, user, requested);
+      if (source?.campaign?.campaign_id !== requested.campaignId || source?.target?.target_id !== requested.targetId) throw new Error('source mismatch');
+      // Reuse the existing canonical source/post/revision validation; the snapshot is not returned or queued.
+      buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: requested.day, expectedCampaignRevision: requested.campaignRevision, expectedPostRevision: requested.postRevision });
+    } catch {
+      throw liveConfirmationError('LIVE_CONFIRMATION_CAMPAIGN_UNAVAILABLE', 404, 'The selected campaign source is unavailable.');
+    }
+    return { owner, intent: { campaignId: requested.campaignId, day: requested.day, targetId: requested.targetId, deviceId: target.deviceId, profileId: target.profileId } };
   };
   const sendError = (res, error) => {
     const body = { error: error.message };
@@ -263,6 +317,14 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(requestedProfileId)) throw requestedTargetError('CONFLICTING_WORK');
       const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, payload }, req.user));
       return res.status(201).json({ task: safeTask(task) });
+    } catch (error) { return sendError(res, error); }
+  });
+
+  router.post('/live-confirmations', async (req, res) => {
+    try {
+      const { owner, intent } = await authorizeLiveConfirmation(req.user, req.body);
+      const issued = issueLiveConfirmationToken({ signingSecret, owner, ...intent, now });
+      return res.status(200).json({ confirmationToken: issued.token, expiresAt: issued.expiresAt });
     } catch (error) { return sendError(res, error); }
   });
 
