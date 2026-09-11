@@ -211,6 +211,7 @@ function mapHistoryTask(task, agents = new Map(), profiles = new Map()) {
     blockers: Array.isArray(result?.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [],
     errorCode: safeErrorCode(task.error, task.status),
     outcomeUnknown: String(task.status || '').toUpperCase() === 'OUTCOME_UNKNOWN',
+    sideEffectState: ['NOT_ATTEMPTED','ATTEMPT_STARTED','VERIFIED_SUCCESS'].includes(String(task.side_effect_state || '').toUpperCase()) ? String(task.side_effect_state).toUpperCase() : null,
   };
 }
 

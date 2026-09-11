@@ -6,6 +6,8 @@ import {
   deviceOptionLabel,
   executionStatusView,
   failureMessage,
+  executionTypeLabel,
+  sideEffectStateLabel,
   historyCards,
   profilesForDevice,
 } from "../services/executionHistory";
@@ -469,7 +471,8 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
                       <span className={`schedule-state ${view.tone}`}>
                         {view.label}
                       </span>
-                      <h3>{task.taskType}</h3>
+                      <h3>{executionTypeLabel(task.taskType)}</h3>
+                      {sideEffectStateLabel(task.sideEffectState) && <p className="muted-text">{sideEffectStateLabel(task.sideEffectState)}</p>}
                     </div>
                     <p>
                       {task.deviceDisplayName} · {task.profileDisplayName} ·
@@ -513,6 +516,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
           {failureMessage(detail.task) && (
             <p className="save-message">{failureMessage(detail.task)}</p>
           )}
+          {detail.task.taskType === 'LIVE_CAMPAIGN_EXECUTION' && detail.task.status === 'OUTCOME_UNKNOWN' && <p className="save-message">Necesită verificare manuală</p>}
           <ol>
             {(detail.events || []).map((event, index) => (
               <li key={`${event.type}-${index}`}>

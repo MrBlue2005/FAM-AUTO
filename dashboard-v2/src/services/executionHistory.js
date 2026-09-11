@@ -10,6 +10,8 @@ export function executionStatusView(status) {
 }
 
 export function failureMessage(task) {
+  if (task?.taskType === 'LIVE_CAMPAIGN_EXECUTION' && task?.status === 'OUTCOME_UNKNOWN') return 'Rezultatul publicării nu poate fi confirmat automat. Verifică manual pe Facebook înainte de orice altă acțiune.';
+  if (task?.taskType === 'LIVE_CAMPAIGN_EXECUTION' && task?.status === 'FAILED' && task?.sideEffectState === 'NOT_ATTEMPTED') return 'Execuția a eșuat înainte ca publicarea să fie inițiată.';
   if (task?.outcomeUnknown) return 'Rezultatul execuției nu este cunoscut. Este necesară verificare manuală; nu există reîncercare automată.';
   const copy = {
     DEVICE_OFFLINE: 'Dispozitivul a fost offline.', DEVICE_STALE: 'Heartbeat-ul dispozitivului a expirat.', PROFILE_NOT_READY: 'Profilul nu era pregătit.',
@@ -18,6 +20,9 @@ export function failureMessage(task) {
   };
   return copy[task?.errorCode] || (Array.isArray(task?.blockers) && task.blockers.length ? task.blockers.join(' · ') : '');
 }
+
+export function executionTypeLabel(type) { return type === 'LIVE_CAMPAIGN_EXECUTION' ? 'Publicare Facebook' : type === 'CONTROLLED_CAMPAIGN_EXECUTION' ? 'Execuție controlată' : type === 'CAMPAIGN_PREFLIGHT' ? 'Preflight' : type; }
+export function sideEffectStateLabel(state) { return ({ NOT_ATTEMPTED: 'Publicarea nu a fost inițiată', ATTEMPT_STARTED: 'Publicarea a fost inițiată', VERIFIED_SUCCESS: 'Publicare confirmată' })[state] || ''; }
 
 export function profilesForDevice(devices, deviceId) {
   return (devices.find((device) => device.deviceId === deviceId)?.profiles || []);
