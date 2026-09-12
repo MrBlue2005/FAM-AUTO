@@ -5,6 +5,7 @@ const crypto = require('crypto');
 
 const { dataPath, profilesPath } = require('../config/storagePaths');
 const { createIdentity } = require('./identity');
+const { normalizeExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 
 const PROFILE_STATES = Object.freeze({
   READY: 'READY',
@@ -75,6 +76,7 @@ class LocalAgentRegistry {
     for (const runtimeProfile of runtimeProfiles) {
       const legacyProfileId = String(runtimeProfile.id || 'main');
       const localProfilePath = this.resolveRuntimePath(runtimeProfile);
+      const expectedFacebookAccountId = normalizeExpectedFacebookAccountId(runtimeProfile.expectedFacebookAccountId);
       const normalizedLocalPath = normalizePath(localProfilePath);
       let entry = registry.profiles.find((profile) =>
         normalizePath(profile.localProfilePath) === normalizedLocalPath
@@ -108,6 +110,8 @@ class LocalAgentRegistry {
         entry.status = entry.status || PROFILE_STATES.READY;
         entry.updatedAt = now;
       }
+      if (expectedFacebookAccountId) entry.expectedFacebookAccountId = expectedFacebookAccountId;
+      else delete entry.expectedFacebookAccountId;
     }
 
     atomicWriteJson(this.filePath, registry);

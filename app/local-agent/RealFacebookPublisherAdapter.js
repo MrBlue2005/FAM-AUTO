@@ -6,6 +6,7 @@ const { createPost } = require('../facebook/postCreator');
 const { findPublishButton } = require('../facebook/publishPost');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
 const { detectSessionState } = require('./FacebookSessionReadinessExecutor');
+const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function targetIdentity(url) { try { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`.toLowerCase(); } catch { return ''; } }
@@ -49,6 +50,9 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       if (browser) throw failure('PUBLISHER_ALREADY_PREPARED', 'Live publisher is already preparing another task.');
       const profile = registry?.getProfile?.(task.profile_id, runtimeProfiles());
       if (!profile || profile.status !== 'READY') throw failure('PROFILE_UNAVAILABLE', 'Configured local profile is unavailable.');
+      // G5.6A1: require local trusted identity configuration before opening a
+      // browser. Session equality verification is deliberately added later.
+      requireExpectedFacebookAccountId(profile);
       const targetUrl = String(task.payload?.target?.url || '');
       if (!targetIdentity(targetUrl)) throw failure('TARGET_INVALID', 'Live task target is invalid.');
       try {

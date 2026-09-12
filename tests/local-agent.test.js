@@ -18,6 +18,7 @@ const { createChromiumSafePreflightExecutor } = require('../app/local-agent/Chro
 const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
+const { normalizeExpectedFacebookAccountId } = require('../app/local-agent/FacebookIdentityConfig');
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
 
 function temporaryDirectory(name) {
@@ -109,6 +110,25 @@ test('tracked agent template contains only persistent non-secret hosted configur
 function profile(id = 'main', label = 'Profil principal', profilePath = 'chrome-profile') {
   return { id, label, profilePath, category: 'real_estate', useSavedLoginIdentity: true };
 }
+
+test('trusted profile-bound Facebook identity is canonical, local-only, and never enters task snapshots', () => {
+  const root = temporaryDirectory('facebook-identity-config');
+  const registry = new LocalAgentRegistry({ filePath: path.join(root, 'registry.json'), profilesRoot: root });
+  const runtimeProfiles = [
+    { ...profile('reviewed', 'Reviewed', 'reviewed'), expectedFacebookAccountId: ' 100000000000001 ' },
+    profile('unconfigured', 'Unconfigured', 'unconfigured'),
+  ];
+  const reviewed = registry.getProfileByRuntimeId('reviewed', runtimeProfiles);
+  const unconfigured = registry.getProfileByRuntimeId('unconfigured', runtimeProfiles);
+  assert.equal(reviewed.expectedFacebookAccountId, '100000000000001');
+  assert.equal(unconfigured.expectedFacebookAccountId, undefined);
+  assert.throws(() => normalizeExpectedFacebookAccountId('any account'), { code: 'FACEBOOK_IDENTITY_CONFIG_INVALID' });
+  assert.throws(() => normalizeExpectedFacebookAccountId(100000000000001), { code: 'FACEBOOK_IDENTITY_CONFIG_INVALID' });
+  const fixture = snapshotFixture({ config: { ...snapshotFixture().input.config, facebookProfiles: runtimeProfiles } });
+  const task = createTaskSnapshots(fixture.input)[0];
+  assert.doesNotMatch(JSON.stringify(task), /expectedFacebookAccountId|100000000000001/);
+  assert.doesNotMatch(JSON.stringify(registry.getSafeMetadata(runtimeProfiles)), /expectedFacebookAccountId|100000000000001/);
+});
 
 function snapshotFixture(overrides = {}) {
   const campaign = {
@@ -490,7 +510,7 @@ function fakeFacebookPublisher(options = {}) {
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
   };
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
-  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile' }) }, () => [], {
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context: { close: async () => { closed += 1; calls.push('CLOSE_FAKE'); } } }; },
     openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => calls.push('PREPARE_POST'), findPublishButton: async () => button,
     inspectContent: async () => options.content || { textPresent: true, mediaReady: true }, verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
@@ -505,6 +525,21 @@ test('real Facebook publisher adapter uses existing browser/navigation/composer 
   await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
   assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
   await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
+});
+
+test('real publisher rejects absent or task-injected Facebook identity before browser launch and marker persistence', async () => {
+  let browserOpened = 0;
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile' }) }, () => [], {
+    openBrowser: async () => { browserOpened += 1; throw new Error('must not open'); },
+  });
+  const task = liveFixture({ payload: { ...liveFixture().payload, facebookAccountId: '999999999999999', target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  await assert.rejects(adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_NOT_CONFIGURED' });
+  assert.equal(browserOpened, 0);
+
+  const calls = [];
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used' }) }, () => [], { enabled: true, publisher: adapter });
+  await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_IDENTITY_NOT_CONFIGURED' });
+  assert.deepEqual(calls, []);
 });
 
 test('real Facebook adapter blocks challenge, wrong target, incomplete composer, and weak outcome without a real click', async () => {

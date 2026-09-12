@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.6A1 trusted Facebook identity configuration
+
+`facebookProfiles[].expectedFacebookAccountId` is a local, profile-bound trust anchor for a future real publisher. The only accepted value is a canonical non-zero numeric Facebook account/profile ID (`^[1-9][0-9]{4,24}$`), stored as a string with surrounding whitespace removed. There is no wildcard, display-name, actor-name, browser, task-payload, or managed-USER override. The Local Agent registry mirrors this value only for its corresponding local profile and excludes it from safe metadata; task snapshots exclude it too.
+
+Local Studio Settings can save the reviewed value for a browser profile. It must be enrolled manually from a separately verified stable Facebook account/profile ID, never guessed or scraped by automation. No operational ID was populated by this checkpoint. For a real adapter, a missing or malformed value fails before browser launch and before durable `ATTEMPT_STARTED` with `FACEBOOK_IDENTITY_NOT_CONFIGURED` or `FACEBOOK_IDENTITY_CONFIG_INVALID`. Browser-free rehearsal, campaign preflight, and controlled execution do not require it. G5.6A2 must compare this local authority with the authenticated session before any real submit.
+
 ## G5.5I Campaigns cloud-load state
 
 `Campaigns.jsx` treats properties, jobs, and campaign folders as one required cloud-read aggregate. It renders campaign counts and the genuine empty state only after all three reads succeed. A failed or incomplete read instead presents a safe retry action; it does not alter managed-user campaign visibility, authorization, or BFF DTO contracts.

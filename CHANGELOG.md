@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.6A1 — trusted Facebook identity configuration
+
+- A Local Studio browser profile may now carry `expectedFacebookAccountId`: a reviewed canonical numeric Facebook account/profile ID retained only in trusted local runtime/registry configuration. It is never copied to task payloads, control-plane metadata, or managed-USER DTOs.
+- Real-adapter preparation now fails closed with `FACEBOOK_IDENTITY_NOT_CONFIGURED` before browser launch, durable `ATTEMPT_STARTED`, or submit when the exact local profile has no configured identity. Rehearsal, preflight, and controlled execution are unchanged.
+- Session-to-identity comparison is deliberately deferred to G5.6A2. Operational identities must be enrolled from a separately verified source; no operational identity was populated here.
+
 ## Phase G5.5I — Campaigns cloud-load state
 
 - Campaigns now distinguishes an incomplete cloud read from a successful zero-campaign result. A rejected properties, jobs, or folders request shows a safe retryable load error rather than a misleading empty dataset.

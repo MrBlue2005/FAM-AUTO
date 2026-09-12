@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { normalizeCampaignMedia, normalizeMediaReference } = require('../utils/mediaPath');
 const { dataPath, logsPath, uploadsPath } = require('../config/storagePaths');
+const { normalizeExpectedFacebookAccountId } = require('../local-agent/FacebookIdentityConfig');
 
 const defaultRuntimeConfig = {
   campaignDay: 1,
@@ -632,13 +633,24 @@ function restoreBackup(backup) {
 
 /* RUNTIME CONFIG */
 
+function normalizeFacebookProfiles(profiles, fallbackProfiles) {
+  return useDefaultIfEmpty(profiles, fallbackProfiles).map((profile) => {
+    const expectedFacebookAccountId = normalizeExpectedFacebookAccountId(profile?.expectedFacebookAccountId);
+    if (!expectedFacebookAccountId) {
+      const { expectedFacebookAccountId: _unused, ...withoutIdentity } = profile;
+      return withoutIdentity;
+    }
+    return { ...profile, expectedFacebookAccountId };
+  });
+}
+
 function getRuntimeConfig() {
   const config = readJson(path.join(dataPath, 'runtimeConfig.json'), {});
 
   return {
     ...defaultRuntimeConfig,
     ...config,
-    facebookProfiles: useDefaultIfEmpty(
+    facebookProfiles: normalizeFacebookProfiles(
       config.facebookProfiles,
       defaultRuntimeConfig.facebookProfiles
     ),
@@ -667,7 +679,7 @@ function saveRuntimeConfig(config) {
   const normalizedConfig = {
     ...defaultRuntimeConfig,
     ...config,
-    facebookProfiles: useDefaultIfEmpty(
+    facebookProfiles: normalizeFacebookProfiles(
       config.facebookProfiles,
       defaultRuntimeConfig.facebookProfiles
     ),

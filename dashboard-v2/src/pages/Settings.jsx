@@ -322,6 +322,13 @@ function LocalSettings() {
                     onChange={(event) => updateProfile(index, 'profilePath', event.target.value)}
                     placeholder="chrome-profile"
                   />
+                  <input
+                    value={profile.expectedFacebookAccountId || ''}
+                    onChange={(event) => updateProfile(index, 'expectedFacebookAccountId', event.target.value)}
+                    placeholder="ID cont Facebook numeric verificat"
+                    inputMode="numeric"
+                    autoComplete="off"
+                  />
                   <select
                     value={profile.category || getProfileCategory(profile)}
                     onChange={(event) => updateProfile(index, 'category', event.target.value)}
