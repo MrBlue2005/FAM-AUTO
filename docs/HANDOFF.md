@@ -1,5 +1,13 @@
 # FAM-AUTO handoff
 
+## G5.6A3 real target, composer, and media hardening
+
+`RealFacebookPublisherAdapter` now permits only `https://www.facebook.com/groups/<group-id>` (an optional trailing slash is normalized). It rejects every other origin, host, redirect, query, fragment, malformed URL, and distinct group. The target is checked after navigation, during readiness, and immediately before durable `ATTEMPT_STARTED`.
+
+Preparation retains the exact opened composer as an `ElementHandle`; later checks prove that same handle is still attached and visible and never reacquire a generic dialog. Text is compared exactly after only NFC, CRLF/LF, non-breaking-space/space, and surrounding-whitespace normalization. Media must have the exact expected count, no processing/progress or upload-failure signal, and exact filename/order whenever Facebook exposes filename metadata. Facebook commonly turns local uploads into blob/CDN previews, so when it removes filenames the strongest remaining proof is the hash-verified local task input plus composer-local count and ready-state—not a claimed filename identity.
+
+The only irreversible action remains `await publishButton.click()`. The control is resolved exactly once from inside the retained composer, must be unique, visible, and enabled, and is revalidated before the marker. Real submit therefore requires trusted expected identity + matching active `c_user` + canonical target + same retained composer + verified text/media + one scoped enabled control + durable `ATTEMPT_STARTED`; no page-wide fallback, composer reacquisition, or retry exists. Browser-free rehearsal and the local/manual path remain unchanged.
+
 ## G5.6A2 real-session identity verification
 
 For a real adapter only, the current authenticated Facebook account is read from the Playwright browser context's `c_user` cookie scoped to `https://www.facebook.com`. The implementation accepts exactly one canonical numeric account ID from an approved Facebook cookie domain and compares it with the exact `expectedFacebookAccountId` bound to the resolved local profile. It does not inspect names, titles, avatars, task payload identity fields, or browser-provided authority, and it never logs, persists, or returns either raw ID.

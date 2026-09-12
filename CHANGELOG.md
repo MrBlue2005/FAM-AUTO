@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.6A3 — real target, composer, and media hardening
+
+- The real publisher now accepts only canonical `https://www.facebook.com/groups/<group-id>` targets (with an optional trailing slash). It rejects redirects, query/fragment variants, non-Facebook and lookalike hosts before the durable attempt marker.
+- The exact composer opened during preparation is retained as a browser handle and never reacquired. Its attachment/visibility, exact normalized text, attachment evidence, and one enabled composer-local publish control are checked again immediately before the marker. There is no page-wide publish-control fallback.
+- Composer text is NFC-normalized with CRLF-to-LF and non-breaking-space-to-space conversion, then compared exactly after trim. Media requires exact attachment count, no busy/progress or upload-error state, and exact filename/order when Facebook exposes it; Facebook blob/CDN previews otherwise cannot expose a stronger stable filename identity.
+
 ## Phase G5.6A2 — real-session identity verification
 
 - The real publisher now obtains the active Facebook account identity only from the browser context's Facebook-origin `c_user` session identifier, accepts one canonical numeric value only, and compares it exactly with the trusted local profile configuration.
