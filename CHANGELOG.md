@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.6B3 — post-lease final readiness recheck
+
+- Real execution now renews its final lease, checks cancellation, reruns the complete side-effect-free browser readiness contract, checks cancellation again, then persists `ATTEMPT_STARTED`. Browser/session/target/composer/content/media/control state is never assumed valid across final lease renewal.
+- Post-lease failures and either cancellation boundary leave the marker and scoped publish click at zero. Rehearsal remains browser-free because only the real adapter implements the optional post-lease readiness method.
+
 ## Phase G5.6B1 — real adapter mode and composer binding
 
 - The real publisher rejects every server-owned rehearsal snapshot before profile resolution or browser launch; the browser-free rehearsal adapter already rejects non-rehearsal tasks, so neither mode can silently substitute for the other.

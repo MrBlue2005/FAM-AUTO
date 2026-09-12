@@ -39,6 +39,17 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null;
     if (current?.context) await current.context.close().catch(() => {});
   }
+  async function verifyCurrentReadiness(task) {
+    requirePrepared(task);
+    await sessionReady(browser.page);
+    await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
+    verifyTarget(browser.page.url(), targetCanonical);
+    await verifyComposer(composer);
+    await verifyText(composer, task.payload?.post?.text);
+    await verifyMedia(composer, task);
+    publishButton = await findPublishControl(composer);
+    return { sessionReady: true, targetReady: true, composerReady: true };
+  }
 
   return {
     async prepare(task) {
@@ -67,16 +78,9 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       } catch (error) { await cleanup(); throw error; }
     },
     async verifyReady(task) {
-      requirePrepared(task);
-      await sessionReady(browser.page);
-      await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
-      verifyTarget(browser.page.url(), targetCanonical);
-      await verifyComposer(composer);
-      await verifyText(composer, task.payload?.post?.text);
-      await verifyMedia(composer, task);
-      publishButton = await findPublishControl(composer);
-      return { sessionReady: true, targetReady: true, composerReady: true };
+      return verifyCurrentReadiness(task);
     },
+    async verifyAfterLeaseReadiness(task) { return verifyCurrentReadiness(task); },
     async verifyBeforeAttempt(task) {
       requirePrepared(task);
       await sessionReady(browser.page);

@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.6B3 post-lease final readiness recheck
+
+For real execution, `LiveCampaignExecutionExecutor` now uses the bounded sequence: initial readiness, final lease renewal, cancellation check #1, `RealFacebookPublisherAdapter.verifyAfterLeaseReadiness()`, cancellation check #2, durable `ATTEMPT_STARTED`, then the one scoped click. The post-lease method reuses the same side-effect-free readiness contract as `verifyReady()`: authenticated session, exact `c_user` identity, canonical target, retained composer, exact text, media evidence, and exactly one scoped enabled control. No browser-state assumption survives lease renewal.
+
+The single lease renewal remains authoritative at the control plane; no renewal loop was added. Any post-lease browser check failure, either cancellation check, or marker-RPC failure leaves submit at zero. Browser-free rehearsal is unchanged because it does not implement the optional post-lease browser readiness method. No real smoke is authorized by this implementation checkpoint.
+
 ## G5.6B1 real adapter mode and composer binding
 
 `RealFacebookPublisherAdapter.prepare()` rejects `execution_config.rehearsal === true` with `LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN` before profile lookup, browser creation, marker, or submit. Conversely, `RehearsalLivePublisherAdapter` accepts only server-marked rehearsal snapshots. Environment-mode conflict detection remains independent; task snapshots provide the second boundary.

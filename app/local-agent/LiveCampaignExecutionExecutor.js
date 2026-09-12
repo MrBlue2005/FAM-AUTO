@@ -56,14 +56,16 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
       if (!transport || typeof transport.renewLease !== 'function' || typeof transport.markSideEffectAttemptStarted !== 'function' || typeof transport.markSideEffectVerifiedSuccess !== 'function') throw failure('LIVE_TRANSPORT_UNAVAILABLE', 'Live control-plane transport is unavailable.');
 
-      if (typeof adapter.verifyBeforeAttempt === 'function') {
-        await adapter.verifyBeforeAttempt(task);
-        trace('PRE_ATTEMPT_VERIFIED');
-      }
-      // Browser readiness is finalized before the lease renewal. Cancellation
-      // immediately after that renewal remains a pre-side-effect terminal path.
+      // The final lease is followed by two cancellation boundaries and a
+      // complete, side-effect-free real-browser readiness recheck.
       await transport.renewLease(task);
       trace('LEASE_VALID');
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      if (typeof adapter.verifyAfterLeaseReadiness === 'function') {
+        const readinessAfterLease = await adapter.verifyAfterLeaseReadiness(task);
+        if (!readinessAccepted(readinessAfterLease)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready after lease renewal.');
+        trace('POST_LEASE_PUBLISHER_READY');
+      }
       if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
       await transport.markSideEffectAttemptStarted(task);
       trace('ATTEMPT_STARTED_PERSISTED');

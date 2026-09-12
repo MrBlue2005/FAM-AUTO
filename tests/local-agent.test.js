@@ -504,7 +504,7 @@ test('verified-success completion acknowledgement failure is outcome-unknown and
 function fakeFacebookPublisher(options = {}) {
   const calls = []; let clicks = 0; let closed = 0;
   const identitySequence = Array.isArray(options.identitySequence) ? options.identitySequence : [Object.hasOwn(options, 'actualIdentity') ? options.actualIdentity : '100000000000001'];
-  let identityRead = 0; let urlRead = 0; let composerChecks = 0; let textChecks = 0; let mediaChecks = 0; let publishChecks = 0;
+  let identityRead = 0; let urlRead = 0; let composerChecks = 0; let textChecks = 0; let mediaChecks = 0; let publishChecks = 0; let publishLookups = 0;
   const composer = { locator: { waitFor: async () => {} }, handle: {} };
   const context = {
     cookies: async (origins) => {
@@ -531,7 +531,7 @@ function fakeFacebookPublisher(options = {}) {
     verifyComposer: async () => { composerChecks += 1; if (options.composerError && (!options.composerErrorAt || composerChecks >= options.composerErrorAt)) throw Object.assign(new Error('composer changed'), { code: options.composerError }); },
     verifyText: async () => { textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
     verifyMedia: async () => { mediaChecks += 1; if (options.content?.mediaReady === false && (!options.contentErrorAt || mediaChecks >= options.contentErrorAt)) throw Object.assign(new Error('media mismatch'), { code: 'FACEBOOK_MEDIA_MISMATCH' }); },
-    findPublishControl: async () => button,
+    findPublishControl: async () => { publishLookups += 1; if (options.publishError && (!options.publishErrorAt || publishLookups >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); return button; },
     verifyPublishControl: async () => { publishChecks += 1; if (options.publishError && (!options.publishErrorAt || publishChecks >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); },
     verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
   });
@@ -605,7 +605,7 @@ test('real publisher verifies only the active Facebook c_user identity and fails
   const calls = [];
   const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
   await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_IDENTITY_MISMATCH' });
-  assert.deepEqual(calls, []); assert.equal(fake.clicks(), 0);
+  assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
 });
 
 test('Facebook session identity extractor accepts only a canonical c_user cookie at Facebook origin', async () => {
@@ -639,11 +639,11 @@ test('real adapter remains outside marker persistence and is ordered by the live
 });
 
 test('final cancellation after lease renewal prevents marker and submit', async () => {
-  const fixture = liveSeamFixture({ publisher: { verifyBeforeAttempt: async () => fixture.calls.push('FINAL_READY') } });
+  const fixture = liveSeamFixture({ publisher: { verifyAfterLeaseReadiness: async () => { fixture.calls.push('POST_LEASE_READY'); return { sessionReady: true, targetReady: true, composerReady: true }; } } });
   let checks = 0;
   const result = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) });
   assert.equal(result.cancelled, true);
-  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'FINAL_READY', 'LEASE']);
+  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'LEASE']);
   assert.equal(fixture.calls.includes('MARK_ATTEMPT'), false); assert.equal(fixture.calls.includes('SUBMIT'), false);
 });
 
@@ -654,13 +654,29 @@ test('real adapter rechecks retained target, composer, text, media, and scoped c
     { composerError: 'FACEBOOK_COMPOSER_CHANGED', composerErrorAt: 3 },
     { content: { textPresent: false, mediaReady: true }, contentErrorAt: 3 },
     { content: { textPresent: true, mediaReady: false }, contentErrorAt: 3 },
-    { publishError: 'FACEBOOK_PUBLISH_CONTROL_MISSING', publishErrorAt: 1 },
+    { publishError: 'FACEBOOK_PUBLISH_CONTROL_MISSING', publishErrorAt: 2 },
   ]) {
     const fake = fakeFacebookPublisher(options); const calls = [];
     const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
     await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }));
-    assert.deepEqual(calls, []); assert.equal(fake.clicks(), 0);
+    assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
   }
+});
+
+test('cancellation during post-lease readiness is caught by the second check before marker or submit', async () => {
+  const fixture = liveSeamFixture({ publisher: { verifyAfterLeaseReadiness: async () => { fixture.calls.push('POST_LEASE_READY'); return { sessionReady: true, targetReady: true, composerReady: true }; } } });
+  let checks = 0;
+  const result = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 4) });
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'LEASE', 'POST_LEASE_READY']);
+  assert.equal(fixture.calls.includes('MARK_ATTEMPT'), false); assert.equal(fixture.calls.includes('SUBMIT'), false);
+});
+
+test('post-lease readiness is ordered before the second cancellation check, marker, and submit', async () => {
+  const fixture = liveSeamFixture({ publisher: { verifyAfterLeaseReadiness: async () => { fixture.calls.push('POST_LEASE_READY'); return { sessionReady: true, targetReady: true, composerReady: true }; } } });
+  const result = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => false });
+  assert.equal(result.sideEffectState, 'VERIFIED_SUCCESS');
+  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'LEASE', 'POST_LEASE_READY', 'MARK_ATTEMPT', 'SUBMIT', 'VERIFY', 'MARK_VERIFIED']);
 });
 
 test('strict live publication verification requires both acknowledgement and a closed composer', async () => {
