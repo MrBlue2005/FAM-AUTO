@@ -1,5 +1,13 @@
 # FAM-AUTO handoff
 
+## G5.6B1 real adapter mode and composer binding
+
+`RealFacebookPublisherAdapter.prepare()` rejects `execution_config.rehearsal === true` with `LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN` before profile lookup, browser creation, marker, or submit. Conversely, `RehearsalLivePublisherAdapter` accepts only server-marked rehearsal snapshots. Environment-mode conflict detection remains independent; task snapshots provide the second boundary.
+
+`openComposer()` records the dialog count before its reviewed opener click and requires exactly one newly created dialog. It returns the retained `{ handle, locator }` reference through `createPost()`. In real live execution, text and media preparation consume that reference, and later validation/scoped publish-control resolution use the same handle. The real path no longer calls global dialog `.last()` or reacquires a generic composer. Legacy Local Studio callers may ignore `createPost()` metadata and retain their existing behavior.
+
+The pre-marker order is now final readiness checks, final lease renewal, final cancellation check, durable `ATTEMPT_STARTED`, then the single scoped click. A cancellation detected after renewal returns safely before any marker or submit. No real smoke is authorized by this implementation checkpoint.
+
 ## G5.6A3 real target, composer, and media hardening
 
 `RealFacebookPublisherAdapter` now permits only `https://www.facebook.com/groups/<group-id>` (an optional trailing slash is normalized). It rejects every other origin, host, redirect, query, fragment, malformed URL, and distinct group. The target is checked after navigation, during readiness, and immediately before durable `ATTEMPT_STARTED`.

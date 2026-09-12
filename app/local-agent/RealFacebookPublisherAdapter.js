@@ -7,7 +7,7 @@ const { verifyLivePostPublished } = require('../facebook/verifyPost');
 const { detectSessionState } = require('./FacebookSessionReadinessExecutor');
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
-const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, captureVerifiedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
+const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, requirePreparedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 
@@ -20,7 +20,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const verifyPublished = options.verifyLivePostPublished || verifyLivePostPublished;
   const canonicalTarget = options.canonicalTarget || canonicalFacebookGroupTarget;
   const verifyTarget = options.verifyTarget || verifyCanonicalFacebookGroupTarget;
-  const captureComposer = options.captureComposer || captureVerifiedComposer;
+  const preparedComposer = options.requirePreparedComposer || requirePreparedComposer;
   const verifyComposer = options.verifyComposer || ensureRetainedComposer;
   const verifyText = options.verifyText || verifyComposerText;
   const verifyMedia = options.verifyMedia || inspectComposerMedia;
@@ -43,6 +43,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   return {
     async prepare(task) {
       if (browser) throw failure('PUBLISHER_ALREADY_PREPARED', 'Live publisher is already preparing another task.');
+      if (task?.payload?.execution_config?.rehearsal === true) throw failure('LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN', 'The real Facebook publisher rejects rehearsal task snapshots.');
       const profile = registry?.getProfile?.(task.profile_id, runtimeProfiles());
       if (!profile || profile.status !== 'READY') throw failure('PROFILE_UNAVAILABLE', 'Configured local profile is unavailable.');
       // G5.6A1: require local trusted identity configuration before opening a
@@ -57,8 +58,8 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         await navigateGroup(browser.page, targetUrl);
         verifyTarget(browser.page.url(), targetCanonical);
         const post = { ...task.payload.post, media: task.payload.local_media_paths, imagePath: task.payload.local_media_paths?.[0], postingIdentityId: task.payload.posting_identity_id || task.payload.post?.postingIdentityId };
-        await preparePost(browser.page, post);
-        composer = await captureComposer(browser.page);
+        const prepared = await preparePost(browser.page, post);
+        composer = preparedComposer(prepared);
         await verifyComposer(composer);
         await verifyText(composer, task.payload?.post?.text);
         await verifyMedia(composer, task);

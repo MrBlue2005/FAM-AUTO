@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.6B1 — real adapter mode and composer binding
+
+- The real publisher rejects every server-owned rehearsal snapshot before profile resolution or browser launch; the browser-free rehearsal adapter already rejects non-rehearsal tasks, so neither mode can silently substitute for the other.
+- Composer opening now returns the one dialog created by that click, and real preparation passes that retained handle to media/text preparation and later readiness checks. The real path has no global `.last()` dialog acquisition or page-wide composer fallback.
+- The final pre-marker sequence now rechecks readiness, renews the lease, checks cancellation again, then persists `ATTEMPT_STARTED`; cancellation after renewal produces no marker or click.
+
 ## Phase G5.6A3 — real target, composer, and media hardening
 
 - The real publisher now accepts only canonical `https://www.facebook.com/groups/<group-id>` targets (with an optional trailing slash). It rejects redirects, query/fragment variants, non-Facebook and lookalike hosts before the durable attempt marker.

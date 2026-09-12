@@ -30,16 +30,10 @@ function normalizeComposerText(value) {
   return String(value ?? '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
 }
 
-async function captureVerifiedComposer(page) {
-  const dialogs = page?.getByRole?.('dialog');
-  if (!dialogs || typeof dialogs.count !== 'function') throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer is unavailable.');
-  const count = await dialogs.count().catch(() => 0);
-  if (!count) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer is unavailable.');
-  const locator = dialogs.last();
-  await locator.waitFor({ state: 'visible', timeout: 10000 }).catch(() => { throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer is unavailable.'); });
-  const handle = await locator.elementHandle?.().catch(() => null);
-  if (!handle) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer cannot be retained.');
-  return { locator, handle };
+function requirePreparedComposer(prepared) {
+  const composer = prepared?.composer;
+  if (!composer?.handle || !composer?.locator) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The exact Facebook composer was not returned by preparation.');
+  return composer;
 }
 
 async function ensureRetainedComposer(composer) {
@@ -136,7 +130,7 @@ module.exports = {
   canonicalFacebookGroupTarget,
   verifyCanonicalFacebookGroupTarget,
   normalizeComposerText,
-  captureVerifiedComposer,
+  requirePreparedComposer,
   ensureRetainedComposer,
   verifyComposerText,
   inspectComposerMedia,

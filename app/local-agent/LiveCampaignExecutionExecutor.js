@@ -56,14 +56,15 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
       if (!transport || typeof transport.renewLease !== 'function' || typeof transport.markSideEffectAttemptStarted !== 'function' || typeof transport.markSideEffectVerifiedSuccess !== 'function') throw failure('LIVE_TRANSPORT_UNAVAILABLE', 'Live control-plane transport is unavailable.');
 
-      // The final server-side lease validation is deliberately adjacent to the
-      // durable marker; no publisher method may run before both have succeeded.
-      await transport.renewLease(task);
-      trace('LEASE_VALID');
       if (typeof adapter.verifyBeforeAttempt === 'function') {
         await adapter.verifyBeforeAttempt(task);
         trace('PRE_ATTEMPT_VERIFIED');
       }
+      // Browser readiness is finalized before the lease renewal. Cancellation
+      // immediately after that renewal remains a pre-side-effect terminal path.
+      await transport.renewLease(task);
+      trace('LEASE_VALID');
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
       await transport.markSideEffectAttemptStarted(task);
       trace('ATTEMPT_STARTED_PERSISTED');
       if (await cancellationRequested()) throw uncertain('CANCELLED_AFTER_ATTEMPT_STARTED', 'Cancellation arrived after live publication authorization.');

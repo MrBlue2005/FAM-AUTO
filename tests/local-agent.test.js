@@ -460,7 +460,7 @@ test('live executor seam fails before publish on pre-marker or marker failure an
   fixture = liveSeamFixture({ transport: { markSideEffectVerifiedSuccess: async () => { throw new Error('persist failed'); } } });
   await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
   fixture = liveSeamFixture(); let checks = 0;
-  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.includes('SUBMIT'), false);
+  const cancelled = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) }); assert.equal(cancelled.cancelled, true); assert.equal(fixture.calls.includes('SUBMIT'), false);
 });
 
 test('live executor reconnect states never resubmit and CloudAgentService holds the profile lock through completion persistence', async () => {
@@ -526,8 +526,8 @@ function fakeFacebookPublisher(options = {}) {
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context }; },
-    openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => calls.push('PREPARE_POST'),
-    captureComposer: async () => composer,
+    openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => { calls.push('PREPARE_POST'); return { composer }; },
+    requirePreparedComposer: (prepared) => prepared?.composer || (() => { throw Object.assign(new Error('composer missing'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' }); })(),
     verifyComposer: async () => { composerChecks += 1; if (options.composerError && (!options.composerErrorAt || composerChecks >= options.composerErrorAt)) throw Object.assign(new Error('composer changed'), { code: options.composerError }); },
     verifyText: async () => { textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
     verifyMedia: async () => { mediaChecks += 1; if (options.content?.mediaReady === false && (!options.contentErrorAt || mediaChecks >= options.contentErrorAt)) throw Object.assign(new Error('media mismatch'), { code: 'FACEBOOK_MEDIA_MISMATCH' }); },
@@ -545,6 +545,30 @@ test('real Facebook publisher adapter uses existing browser/navigation/composer 
   await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
   assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
   await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
+});
+
+test('real publisher rejects rehearsal snapshots before browser launch, marker, or submit', async () => {
+  let launches = 0; const calls = [];
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', expectedFacebookAccountId: '100000000000001' }) }, () => [], { openBrowser: async () => { launches += 1; } });
+  const task = liveFixture({ payload: { ...liveFixture().payload, execution_config: { publishEnabled: true, rehearsal: true }, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  await assert.rejects(adapter.prepare(task), { code: 'LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN' });
+  assert.equal(launches, 0);
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: adapter });
+  await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN' });
+  assert.deepEqual(calls, []);
+});
+
+test('real adapter consumes only the composer returned by preparation, never a page-wide dialog lookup', async () => {
+  const composerA = { handle: {}, locator: { waitFor: async () => {} } }; const calls = [];
+  const context = { cookies: async () => [{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }], close: async () => {} };
+  const page = { content: async () => '<button aria-label="Account menu">Facebook menu</button>', context: () => context, url: () => 'https://www.facebook.com/groups/exact', getByRole: () => { throw new Error('page-wide dialog lookup is forbidden'); } };
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], expectedFacebookAccountId: '100000000000001' }) }, () => [], {
+    openBrowser: async () => ({ page, context }), openGroup: async () => {}, createPost: async () => ({ composer: composerA }),
+    verifyComposer: async (composer) => { assert.equal(composer, composerA); calls.push('COMPOSER_A'); }, verifyText: async () => {}, verifyMedia: async () => {}, findPublishControl: async (composer) => { assert.equal(composer, composerA); return { isVisible: async () => true, isEnabled: async () => true, click: async () => {} }; }, verifyPublishControl: async () => {}, verifyLivePostPublished: async () => true,
+  });
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { url: 'https://www.facebook.com/groups/exact' } } });
+  await adapter.prepare(task); await adapter.verifyReady(task); await adapter.cleanup();
+  assert.deepEqual(calls, ['COMPOSER_A', 'COMPOSER_A']);
 });
 
 test('real publisher rejects absent or task-injected Facebook identity before browser launch and marker persistence', async () => {
@@ -581,7 +605,7 @@ test('real publisher verifies only the active Facebook c_user identity and fails
   const calls = [];
   const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
   await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_IDENTITY_MISMATCH' });
-  assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
+  assert.deepEqual(calls, []); assert.equal(fake.clicks(), 0);
 });
 
 test('Facebook session identity extractor accepts only a canonical c_user cookie at Facebook origin', async () => {
@@ -614,6 +638,15 @@ test('real adapter remains outside marker persistence and is ordered by the live
   await assert.rejects(blocked(task, { transport: { ...transport, markSideEffectAttemptStarted: async () => { throw Object.assign(new Error('marker down'), { code: 'MARKER_FAILED' }); } } }), { code: 'MARKER_FAILED' }); assert.equal(markerFailure.clicks(), 0);
 });
 
+test('final cancellation after lease renewal prevents marker and submit', async () => {
+  const fixture = liveSeamFixture({ publisher: { verifyBeforeAttempt: async () => fixture.calls.push('FINAL_READY') } });
+  let checks = 0;
+  const result = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) });
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'FINAL_READY', 'LEASE']);
+  assert.equal(fixture.calls.includes('MARK_ATTEMPT'), false); assert.equal(fixture.calls.includes('SUBMIT'), false);
+});
+
 test('real adapter rechecks retained target, composer, text, media, and scoped control before marker without a click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   for (const options of [
@@ -626,7 +659,7 @@ test('real adapter rechecks retained target, composer, text, media, and scoped c
     const fake = fakeFacebookPublisher(options); const calls = [];
     const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
     await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }));
-    assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
+    assert.deepEqual(calls, []); assert.equal(fake.clicks(), 0);
   }
 });
 

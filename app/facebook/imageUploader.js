@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { resolveMediaReference } = require('../utils/mediaPath');
 
-async function uploadImage(page, post) {
+async function uploadImage(page, post, preparedComposer = null) {
   const files = post.media?.length ? post.media : [post.imagePath];
   const validFiles = files.filter(Boolean).map(resolveMediaReference);
 
@@ -17,13 +17,19 @@ async function uploadImage(page, post) {
 
   console.log(`📎 Pregătesc upload media: ${validFiles.join(', ')}`);
 
-  const photoVideoButtons = [
-    page.getByRole('button', { name: /Foto\/video/i }),
-    page.getByRole('button', { name: /Photo\/video/i }),
-    page.getByRole('button', { name: /Fotografie\/video/i }),
-    page.locator('[aria-label*="Foto"]').first(),
-    page.locator('[aria-label*="Photo"]').first(),
-  ];
+  const composerScope = preparedComposer?.handle || null;
+  const photoVideoButtons = composerScope
+    ? [
+      composerScope.locator('button[aria-label*="Foto"], [role="button"][aria-label*="Foto"]').first(),
+      composerScope.locator('button[aria-label*="Photo"], [role="button"][aria-label*="Photo"]').first(),
+    ]
+    : [
+      page.getByRole('button', { name: /Foto\/video/i }),
+      page.getByRole('button', { name: /Photo\/video/i }),
+      page.getByRole('button', { name: /Fotografie\/video/i }),
+      page.locator('[aria-label*="Foto"]').first(),
+      page.locator('[aria-label*="Photo"]').first(),
+    ];
 
   for (const button of photoVideoButtons) {
     try {
@@ -50,14 +56,15 @@ async function uploadImage(page, post) {
 
   console.log('⚠️ Nu am prins file chooser-ul. Încerc o singură dată upload direct prin input.');
 
-  const input = page.locator('input[type="file"]').last();
+  const input = composerScope ? composerScope.locator('input[type="file"]') : page.locator('input[type="file"]').last();
+  if (composerScope && await input.count() !== 1) throw Object.assign(new Error('The prepared composer upload input is ambiguous.'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });
 
-  await input.waitFor({
+  await (composerScope ? input.first() : input).waitFor({
     state: 'attached',
     timeout: 15000,
   });
 
-  await input.setInputFiles(validFiles);
+  await (composerScope ? input.first() : input).setInputFiles(validFiles);
 
   console.log('✅ Media a fost trimisă prin input file.');
   console.log('⏳ Aștept procesarea media în composer...');
