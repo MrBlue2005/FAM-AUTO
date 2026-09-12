@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7O target-scoped composer opener resilience
+
+The real publisher no longer depends on one Romanian accessible name to open a group composer. Only after canonical target verification, it accepts exactly one visible, enabled group-composer entry matching the reviewed Romanian (`Scrie ceva...` / `Scrie ceva`) or English (`Write something...` / `Write something`) button/textbox variants. When no reviewed label is present, the sole fallback is one visible, enabled contenteditable textbox inside `[role="main"] [data-pagelet="GroupFeed"]`; generic page-wide contenteditables, comments, unrelated dialogs, and publish controls are never candidates. Multiple candidates fail closed without a click.
+
+The opener click must create exactly one new dialog. That precise dialog is returned and retained; there is no global `.last()` or arbitrary dialog reacquisition. Safe Local Agent traces distinguish `COMPOSER_OPENER_FOUND`, `COMPOSER_OPENED`, `COMPOSER_OPENER_AMBIGUOUS`, and `COMPOSER_OPEN_FAILED`. Composer discovery and opening remain pre-marker, non-publishing work; text/media/control checks, post-lease readiness, marker ordering, outcome verification, and no-retry behavior are unchanged.
+
 ## G5.7M visible negative Facebook session guard
 
 The real publisher now treats login, checkpoint, challenge, recovery, and security state as negative only when it is present in the current approved Facebook URL path or in a visible, scoped Playwright surface: a visible credential/login surface, or a visible checkpoint/challenge/security heading or matching form. Arbitrary whole-page HTML, script, hidden-template, and invisible-node strings are diagnostic-only and cannot reject an otherwise clean root. The approved-root, visible-negative guard, and exact canonical Facebook-origin `c_user` equality remain ordered before target navigation; a visible negative state still fails closed even when `c_user` matches. The same guard runs in preparation, initial readiness, and post-lease readiness before `ATTEMPT_STARTED`.

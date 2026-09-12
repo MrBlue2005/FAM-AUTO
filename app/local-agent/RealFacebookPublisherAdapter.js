@@ -100,7 +100,13 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         verifyTarget(browser.page.url(), targetCanonical);
         trace('TARGET_READY');
         const post = { ...task.payload.post, media: task.payload.local_media_paths, imagePath: task.payload.local_media_paths?.[0], postingIdentityId: task.payload.posting_identity_id || task.payload.post?.postingIdentityId };
-        const prepared = await preparePost(browser.page, post);
+        // Composer discovery is permitted only after the canonical target
+        // proof above. The callback is re-run inside the opener immediately
+        // before it searches for a group creation surface.
+        const prepared = await preparePost(browser.page, post, {
+          assertTargetReady: () => verifyTarget(browser.page.url(), targetCanonical),
+          trace,
+        });
         composer = preparedComposer(prepared);
         await verifyComposer(composer);
         await verifyText(composer, task.payload?.post?.text);

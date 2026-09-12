@@ -3,8 +3,8 @@ const { uploadImage } = require('./imageUploader');
 const { selectPostingIdentity } = require('./postingIdentity');
 const { writePostText } = require('./textWriter');
 
-async function createPost(page, post) {
-  const composer = await openComposer(page);
+async function createPost(page, post, composerOptions = {}) {
+  const composer = await openComposer(page, composerOptions);
   const identityResult = await selectPostingIdentity(page, post);
   if (identityResult.selected) console.log(`Postarea va fi facuta ca: ${identityResult.actorName}`);
   await uploadImage(page, post, composer);

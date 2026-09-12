@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7O - target-scoped composer opener resilience
+
+- Replaced the single `getByRole('button', { name: 'Scrie ceva...' })` dependency with exact reviewed Romanian and English group-composer entry variants, plus one bounded `GroupFeed` contenteditable fallback when no label is available.
+- Composer discovery runs only after canonical group-target proof, ignores hidden/disabled entries and unrelated comment fields, and fails closed without a click when zero or multiple eligible openers exist.
+- The selected opener must create exactly one new dialog; only that retained dialog is returned. No global dialog reacquisition, generic page-wide fallback, durable side-effect marker, submit, or publish click was added.
+
 ## Phase G5.7M - visible negative Facebook session guard
 
 - Replaced whole-document login/checkpoint/challenge substring authority with current approved Facebook negative-path detection and scoped visible Playwright evidence. Known negative paths are `/login`, `/checkpoint`, `/challenge`, `/recover`, and `/security`.
