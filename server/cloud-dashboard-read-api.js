@@ -4,6 +4,7 @@ const express = require('express');
 const { safeResult } = require('./cloud-remote-task-api');
 const { managedTaskOwnerId } = require('./task-ownership');
 const { listVisibleCampaigns } = require('./managed-user-campaign-visibility');
+const { listVisibleTargets } = require('./managed-user-target-visibility');
 
 const AGENT_HEARTBEAT_FRESHNESS_MS = 90 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING']);
@@ -244,8 +245,8 @@ function createCloudDashboardReadRouter(store, { requirePermission } = {}) {
   };
   router.get('/properties', (req, res) => send(res, campaigns('property', req.user)));
   router.get('/jobs', (req, res) => send(res, campaigns('job', req.user)));
-  router.get('/groups', (req, res) => send(res, store.listTargets().then((rows) => rows.map(mapTarget))));
-  router.get('/preflight-sources', (req, res) => send(res, Promise.all([listVisibleCampaigns(store, req.user, 'property'), listVisibleCampaigns(store, req.user, 'job'), store.listTargets()]).then(([properties, jobs, targets]) => ({ campaigns: [...properties, ...jobs].filter((row) => row.active !== false).map(mapPreflightCampaign), targets: targets.filter((row) => row.active !== false).map(mapPreflightTarget) }))));
+  router.get('/groups', (req, res) => send(res, listVisibleTargets(store, req.user).then((rows) => rows.map(mapTarget))));
+  router.get('/preflight-sources', (req, res) => send(res, Promise.all([listVisibleCampaigns(store, req.user, 'property'), listVisibleCampaigns(store, req.user, 'job'), listVisibleTargets(store, req.user)]).then(([properties, jobs, targets]) => ({ campaigns: [...properties, ...jobs].filter((row) => row.active !== false).map(mapPreflightCampaign), targets: targets.filter((row) => row.active !== false).map(mapPreflightTarget) }))));
   router.get('/campaign-folders', (req, res) => send(res, campaignFolders()));
   router.get('/schedule-folders', (req, res) => send(res, store.listScheduleFolders().then((rows) => rows.map(mapFolder))));
   router.get('/schedules', (req, res) => send(res, Promise.all([store.listSchedules(), store.listScheduleFolders(), store.listCampaigns('property'), store.listCampaigns('job')]).then(([rows, folders, properties, jobs]) => {

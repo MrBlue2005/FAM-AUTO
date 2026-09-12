@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7D managed USER target visibility
+
+`hosted_user_target_visibility` is the additive, service-role-only target allowlist for managed USER execution. It has no backfill: a managed USER receives zero target visibility until an ADMIN explicitly assigns an enabled `target_id`. The BFF applies it database-side to Groups, preflight sources, and all managed-USER campaign-preflight, controlled-execution, and live-execution source resolution. The campaign ACL, target ACL, and exact device/profile assignment are independent required dimensions; none implies another. ADMIN remains globally scoped. Disabling a relation affects future source selection only and never rewrites historical tasks. Migration `202609120001_hosted_user_target_visibility.sql` is local-only and must be applied in a separately authorized Preview checkpoint before G5.7C may be retried.
+
 ## G5.6B3 post-lease final readiness recheck
 
 For real execution, `LiveCampaignExecutionExecutor` now uses the bounded sequence: initial readiness, final lease renewal, cancellation check #1, `RealFacebookPublisherAdapter.verifyAfterLeaseReadiness()`, cancellation check #2, durable `ATTEMPT_STARTED`, then the one scoped click. The post-lease method reuses the same side-effect-free readiness contract as `verifyReady()`: authenticated session, exact `c_user` identity, canonical target, retained composer, exact text, media evidence, and exactly one scoped enabled control. No browser-state assumption survives lease renewal.

@@ -19,8 +19,10 @@ function HostedUsers() {
   const [devices, setDevices] = useState([]);
   const [targets, setTargets] = useState({});
   const [campaignVisibility, setCampaignVisibility] = useState({});
+  const [targetVisibility, setTargetVisibility] = useState({});
   const [selection, setSelection] = useState({});
   const [campaignSelection, setCampaignSelection] = useState({});
+  const [targetSelection, setTargetSelection] = useState({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({ username: "", password: "", confirm: "" });
@@ -51,11 +53,16 @@ function HostedUsers() {
       const nextCampaignVisibility = Object.fromEntries(
         await Promise.all(nextUsers.map(async (user) => [user.userId, (await api.getManagedUserCampaignVisibility(user.userId)).campaigns || []])),
       );
+      const nextTargetVisibility = Object.fromEntries(
+        await Promise.all(nextUsers.map(async (user) => [user.userId, (await api.getManagedUserTargetVisibility(user.userId)).targets || []])),
+      );
       setUsers(nextUsers);
       setDevices(deviceResult.devices || []);
       setTargets(nextTargets);
       setCampaignVisibility(nextCampaignVisibility);
+      setTargetVisibility(nextTargetVisibility);
       setCampaignSelection((current) => ({ ...current, available: (preflightSources.campaigns || []).map((campaign) => ({ campaignId: campaign.campaignId, label: campaign.title || 'Campanie' })) }));
+      setTargetSelection((current) => ({ ...current, available: (preflightSources.targets || []).map((target) => ({ targetId: target.targetId, label: target.name || 'Target' })) }));
       setError("");
     } catch (loadError) {
       setError(loadError.message || "Utilizatorii nu au putut fi încărcați.");
@@ -189,6 +196,16 @@ function HostedUsers() {
   async function setCampaignVisible(userId, campaignId, enabled) {
     try { await api.updateManagedUserCampaignVisibility(userId, campaignId, { enabled }); await load(); }
     catch (visibilityError) { setMessage(visibilityError.message || "Vizibilitatea campaniei nu a putut fi actualizatÄƒ."); }
+  }
+  async function assignTargetVisibility(userId) {
+    const targetId = targetSelection[userId]?.targetId;
+    if (!targetId) return;
+    try { await api.createManagedUserTargetVisibility(userId, { targetId }); setMessage('Targetul Facebook a devenit vizibil pentru utilizator.'); await load(); }
+    catch (assignError) { setMessage(assignError.message || 'Targetul nu a putut fi atribuit.'); }
+  }
+  async function setTargetVisible(userId, targetId, enabled) {
+    try { await api.updateManagedUserTargetVisibility(userId, targetId, { enabled }); await load(); }
+    catch (visibilityError) { setMessage(visibilityError.message || 'Vizibilitatea targetului nu a putut fi actualizata.'); }
   }
   return (
     <div className="management-page">
@@ -433,6 +450,23 @@ function HostedUsers() {
                 {(campaignSelection.available || []).map((campaign) => <option key={campaign.campaignId} value={campaign.campaignId}>{campaign.label}</option>)}
               </select>
               <button className="secondary-button" onClick={() => assignCampaign(user.userId)}>Atribuie campania</button>
+            </div>
+            <h3>Targeturi Facebook vizibile</h3>
+            <p className="muted-text">Targeturile Facebook sunt autorizate separat de campanii si de dispozitiv/profil.</p>
+            {(targetVisibility[user.userId] || []).map((target) => (
+              <p key={target.targetId}>
+                {target.targetLabel} · {target.enabled ? "activ" : "dezactivat"}{" "}
+                <button className="ghost-button" onClick={() => setTargetVisible(user.userId, target.targetId, !target.enabled)}>
+                  {target.enabled ? "Revoca" : "Reactiveaza"}
+                </button>
+              </p>
+            ))}
+            <div className="button-row">
+              <select value={targetSelection[user.userId]?.targetId || ""} onChange={(event) => setTargetSelection({ ...targetSelection, [user.userId]: { targetId: event.target.value } })}>
+                <option value="">Target Facebook</option>
+                {(targetSelection.available || []).map((target) => <option key={target.targetId} value={target.targetId}>{target.label}</option>)}
+              </select>
+              <button className="secondary-button" onClick={() => assignTargetVisibility(user.userId)}>Atribuie targetul</button>
             </div>
             {resetId === user.userId && (
               <div className="button-row">

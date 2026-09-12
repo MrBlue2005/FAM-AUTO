@@ -33,13 +33,17 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
     const targetSelect = 'target_id,legacy_id,display_name,target_url,active,category,data,revision,created_at,updated_at';
     const [campaigns, targets] = await Promise.all([
       this.rows('app_campaigns', `campaign_id=eq.${encodeURIComponent(requireValue(campaignId, 'campaign_id'))}&kind=eq.${encodeURIComponent(requireValue(kind, 'kind'))}&hosted_user_campaign_visibility.user_id=eq.${encodeURIComponent(requireValue(userId, 'user_id'))}&hosted_user_campaign_visibility.enabled=eq.true&select=${this.campaignSelect()},hosted_user_campaign_visibility!inner(user_id,enabled)`),
-      this.rows('app_targets', `target_id=eq.${encodeURIComponent(requireValue(targetId, 'target_id'))}&select=${targetSelect}`),
+      this.rows('app_targets', `target_id=eq.${encodeURIComponent(requireValue(targetId, 'target_id'))}&hosted_user_target_visibility.user_id=eq.${encodeURIComponent(requireValue(userId, 'user_id'))}&hosted_user_target_visibility.enabled=eq.true&select=${targetSelect},hosted_user_target_visibility!inner(user_id,enabled)`),
     ]);
     return { campaign: campaigns[0] || null, target: targets[0] || null };
   }
   saveCampaign({ campaign, posts, expectedRevision = 0, requestId = uuid() }) { requireValue(campaign?.legacy_id, 'campaign.legacy_id'); requireValue(campaign?.kind, 'campaign.kind'); requireValue(campaign?.title, 'campaign.title'); if (!['property', 'job'].includes(campaign.kind) || !Array.isArray(posts)) throw appError('Invalid campaign snapshot.'); return this.rpc('rx_app_write_campaign_with_posts', { p_campaign: campaign, p_posts: posts, p_expected_revision: expectedRevision, p_request_id: requestId, p_request_hash: hash({ campaign, posts, expectedRevision }) }); }
   savePost(value) { return this.saveCampaign(value); }
   listTargets() { return this.request('/rest/v1/app_targets?select=*&order=display_name.asc'); }
+  listTargetsForManagedUser(userId) {
+    const visibility = 'hosted_user_target_visibility!inner(user_id,enabled)';
+    return this.request(`/rest/v1/app_targets?select=*,${visibility}&hosted_user_target_visibility.user_id=eq.${encodeURIComponent(requireValue(userId, 'user_id'))}&hosted_user_target_visibility.enabled=eq.true&order=display_name.asc`);
+  }
   saveTarget({ legacy_id, display_name, target_url, external_id = null, category = 'Romania', active = true, data = {}, expectedRevision = 0 }) { requireValue(display_name, 'display_name'); requireValue(target_url, 'target_url'); const body = { legacy_id, display_name, target_url, external_id, category, active, data }; return this.simpleSave('app_targets', 'target_id', legacy_id, expectedRevision, body); }
   deleteTarget({ legacyId, expectedRevision }) { return this.simpleDelete('app_targets', 'target_id', legacyId, expectedRevision); }
   async targetHasReferences(legacyId) { const target = await this.byLegacy('app_targets', legacyId); if (!target) return false; return (await this.rows('app_posting_results', `target_id=eq.${encodeURIComponent(target.target_id)}&select=posting_result_id&limit=1`)).length > 0; }
@@ -68,6 +72,10 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
   async getCampaignById(campaignId) { return (await this.request(`/rest/v1/app_campaigns?campaign_id=eq.${encodeURIComponent(campaignId)}&select=campaign_id,title,kind&limit=1`))[0] || null; }
   async createManagedUserCampaignVisibility({ userId, campaignId }) { return (await this.request('/rest/v1/hosted_user_campaign_visibility', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: userId, campaign_id: campaignId }) }))[0] || null; }
   async updateManagedUserCampaignVisibility(userId, campaignId, { enabled }) { return (await this.request(`/rest/v1/hosted_user_campaign_visibility?user_id=eq.${encodeURIComponent(userId)}&campaign_id=eq.${encodeURIComponent(campaignId)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }) }))[0] || null; }
+  listManagedUserTargetVisibility(userId) { return this.request(`/rest/v1/hosted_user_target_visibility?user_id=eq.${encodeURIComponent(userId)}&select=target_id,enabled,created_at,updated_at,app_targets(target_id,display_name,active)&order=created_at.asc`); }
+  async getTargetById(targetId) { return (await this.request(`/rest/v1/app_targets?target_id=eq.${encodeURIComponent(targetId)}&select=target_id,display_name,active&limit=1`))[0] || null; }
+  async createManagedUserTargetVisibility({ userId, targetId }) { return (await this.request('/rest/v1/hosted_user_target_visibility', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: userId, target_id: targetId }) }))[0] || null; }
+  async updateManagedUserTargetVisibility(userId, targetId, { enabled }) { return (await this.request(`/rest/v1/hosted_user_target_visibility?user_id=eq.${encodeURIComponent(userId)}&target_id=eq.${encodeURIComponent(targetId)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }) }))[0] || null; }
   async getControlPlaneAgent(agentId) { return (await this.request(`/rest/v1/agents?agent_id=eq.${encodeURIComponent(agentId)}&select=agent_id,reported_status,last_seen_at&limit=1`))[0] || null; }
   async getControlPlaneProfile(profileId) { return (await this.request(`/rest/v1/profiles?profile_id=eq.${encodeURIComponent(profileId)}&select=profile_id,agent_id,status&limit=1`))[0] || null; }
   async getActiveControlPlaneTaskForProfile(profileId) { return (await this.request(`/rest/v1/tasks?profile_id=eq.${encodeURIComponent(profileId)}&status=in.(CLAIMED,RUNNING)&select=task_id&limit=1`))[0] || null; }

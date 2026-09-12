@@ -24,6 +24,7 @@ function safeUser(user) {
 }
 function safeAssignment(row, agent, profile) { return { assignmentId: String(row.assignment_id), deviceId: String(row.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(row.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), enabled: row.enabled !== false, createdAt: row.created_at || null, updatedAt: row.updated_at || null }; }
 function safeCampaignVisibility(row) { const campaign = row.app_campaigns || {}; return { campaignId: String(row.campaign_id), campaignLabel: String(campaign.title || 'Campanie indisponibilă'), enabled: row.enabled !== false }; }
+function safeTargetVisibility(row) { const target = row.app_targets || {}; return { targetId: String(row.target_id), targetLabel: String(target.display_name || 'Target unavailable'), enabled: row.enabled !== false }; }
 function campaignUuid(value) { const id = String(value || '').trim(); return UUID_PATTERN.test(id) ? id : null; }
 function createUserAdminRouter({ store, env, requirePermission }) {
   const router = express.Router(); router.use(requirePermission(PERMISSIONS.USERS_MANAGE));
@@ -72,6 +73,17 @@ function createUserAdminRouter({ store, env, requirePermission }) {
     const campaignId = campaignUuid(req.params.campaignId); if (!campaignId || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'A valid campaign ID and enabled boolean are required.' });
     try { const rows = await store.listManagedUserCampaignVisibility(req.params.userId); if (!rows.some((row) => row.campaign_id === campaignId)) return res.status(404).json({ error: 'Campaign visibility is unavailable.' }); const row = await store.updateManagedUserCampaignVisibility(req.params.userId, campaignId, { enabled: req.body.enabled }); return res.json({ campaign: safeCampaignVisibility(row) }); } catch { return res.status(400).json({ error: 'Campaign visibility could not be updated.' }); }
   });
+  router.get('/:userId/target-visibility', async (req, res) => {
+    try { const [user, rows] = await Promise.all([store.getManagedUserById(req.params.userId), store.listManagedUserTargetVisibility(req.params.userId)]); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); return res.json({ targets: rows.map(safeTargetVisibility) }); } catch { return res.status(503).json({ error: 'Target visibility management is unavailable.' }); }
+  });
+  router.post('/:userId/target-visibility', async (req, res) => {
+    const targetId = campaignUuid(req.body?.targetId); if (!targetId) return res.status(400).json({ error: 'A valid target ID is required.' });
+    try { const [user, target] = await Promise.all([store.getManagedUserById(req.params.userId), store.getTargetById(targetId)]); if (!user) return res.status(404).json({ error: 'User is unavailable.' }); if (!target) return res.status(404).json({ error: 'Target is unavailable.' }); const row = await store.createManagedUserTargetVisibility({ userId: user.user_id, targetId }); return res.status(201).json({ target: safeTargetVisibility({ ...row, app_targets: target }) }); } catch (error) { return res.status(error.code === '23505' ? 409 : 400).json({ error: error.code === '23505' ? 'Target is already assigned.' : 'Target could not be assigned.' }); }
+  });
+  router.patch('/:userId/target-visibility/:targetId', async (req, res) => {
+    const targetId = campaignUuid(req.params.targetId); if (!targetId || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'A valid target ID and enabled boolean are required.' });
+    try { const rows = await store.listManagedUserTargetVisibility(req.params.userId); if (!rows.some((row) => row.target_id === targetId)) return res.status(404).json({ error: 'Target visibility is unavailable.' }); const row = await store.updateManagedUserTargetVisibility(req.params.userId, targetId, { enabled: req.body.enabled }); return res.json({ target: safeTargetVisibility(row) }); } catch { return res.status(400).json({ error: 'Target visibility could not be updated.' }); }
+  });
   return router;
 }
-module.exports = { createUserAdminRouter, normalizeManagedUsername, validateManagedUsername, validatePassword, hashPassword, safeUser, safeCampaignVisibility, campaignUuid };
+module.exports = { createUserAdminRouter, normalizeManagedUsername, validateManagedUsername, validatePassword, hashPassword, safeUser, safeCampaignVisibility, safeTargetVisibility, campaignUuid };

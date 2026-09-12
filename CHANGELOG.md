@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7D — managed USER target visibility
+
+- Managed USER Facebook targets now require a separate explicit, enabled `hosted_user_target_visibility` relation. Campaign visibility and device/profile execution assignment do not grant target access.
+- Preflight source lists and every managed-USER campaign, controlled, and live source resolution use the database-scoped relation. Direct browser submission of an unassigned target is rejected before task creation; ADMIN target visibility remains global.
+- The hosted Admin Users page now manages the safe target allowlist independently. No migration was applied or hosted state changed by this local checkpoint.
+
 ## Phase G5.6B3 — post-lease final readiness recheck
 
 - Real execution now renews its final lease, checks cancellation, reruns the complete side-effect-free browser readiness contract, checks cancellation again, then persists `ATTEMPT_STARTED`. Browser/session/target/composer/content/media/control state is never assumed valid across final lease renewal.

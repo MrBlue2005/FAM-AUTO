@@ -81,7 +81,7 @@ test('G5.5B ADMIN campaign assignment management is safe and USER is denied', as
   assert.match(usersUi, /Campanii vizibile/); assert.match(usersUi, /Atribuie campania/); assert.match(api, /campaign-visibility/);
 });
 
-test('G5.5B visibility changes do not alter owned task history and targets remain independent/global', () => {
+test('G5.5B visibility changes do not alter owned task history; target visibility is an independent server boundary', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'server', 'cloud-dashboard-read-api.js'), 'utf8');
-  assert.match(source, /listVisibleCampaigns/); assert.match(source, /store\.listTargets\(\)/); assert.doesNotMatch(source, /owner_user_id.*campaign/i);
+  assert.match(source, /listVisibleCampaigns/); assert.match(source, /listVisibleTargets/); assert.doesNotMatch(source, /owner_user_id.*campaign/i);
 });

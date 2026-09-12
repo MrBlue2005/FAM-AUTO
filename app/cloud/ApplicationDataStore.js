@@ -12,6 +12,11 @@ class ApplicationDataStore {
   async listPosts(_campaignId) { throw new Error('ApplicationDataStore.listPosts is not implemented'); }
   async savePost(_post) { throw new Error('ApplicationDataStore.savePost is not implemented'); }
   async listTargets() { throw new Error('ApplicationDataStore.listTargets is not implemented'); }
+  async listTargetsForManagedUser(_userId) { throw new Error('ApplicationDataStore.listTargetsForManagedUser is not implemented'); }
+  async listManagedUserTargetVisibility(_userId) { throw new Error('ApplicationDataStore.listManagedUserTargetVisibility is not implemented'); }
+  async createManagedUserTargetVisibility(_visibility) { throw new Error('ApplicationDataStore.createManagedUserTargetVisibility is not implemented'); }
+  async updateManagedUserTargetVisibility(_userId, _targetId, _change) { throw new Error('ApplicationDataStore.updateManagedUserTargetVisibility is not implemented'); }
+  async getTargetById(_targetId) { throw new Error('ApplicationDataStore.getTargetById is not implemented'); }
   async saveTarget(_target) { throw new Error('ApplicationDataStore.saveTarget is not implemented'); }
   async deleteTarget(_target) { throw new Error('ApplicationDataStore.deleteTarget is not implemented'); }
   async targetHasReferences(_target) { throw new Error('ApplicationDataStore.targetHasReferences is not implemented'); }
