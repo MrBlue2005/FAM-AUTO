@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.5I Campaigns cloud-load state
+
+`Campaigns.jsx` treats properties, jobs, and campaign folders as one required cloud-read aggregate. It renders campaign counts and the genuine empty state only after all three reads succeed. A failed or incomplete read instead presents a safe retry action; it does not alter managed-user campaign visibility, authorization, or BFF DTO contracts.
+
 ## G5.5F-C managed USER confirmation-token UI
 
 The existing `Executions.jsx` managed-USER flow requests `POST /api/cloud-remote-tasks/live-confirmations` on the first `Publică pe Facebook` click and opens the dialog only after a token is issued. One dialog owns one frozen reviewed intent and opaque in-memory token; `Confirm publicarea` submits that same token to live creation. Cancel, close, selection change, expiry, and token-invalid responses discard it. A network/lost-response retry retains the token and has no automatic issuance or publication retry. Tokens are never rendered, logged, or persisted to browser storage, cookies, or URLs. No hosted action is implied by this UI wiring.

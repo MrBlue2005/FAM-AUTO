@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import { buildCampaignRows, CAMPAIGN_LOAD_STATUS, filterCampaignRows, loadCampaignsState } from '../services/campaignsLoadState';
 import ProfileStartModal from '../components/ProfileStartModal';
 
 function getCampaignIcon(type) {
@@ -17,6 +18,7 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [folders, setFolders] = useState([]);
+  const [campaignLoadStatus, setCampaignLoadStatus] = useState(CAMPAIGN_LOAD_STATUS.LOADING);
   const [folderName, setFolderName] = useState('');
   const [folderFilter, setFolderFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -27,27 +29,32 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
   const [startModalOpen, setStartModalOpen] = useState(false);
   const [pendingCampaignName, setPendingCampaignName] = useState('');
 
-  async function loadCampaigns() {
-    const [propertiesData, jobsData, foldersData] = await Promise.all([api.getProperties(), api.getJobs(), api.getCampaignFolders()]);
-    setProperties(propertiesData);
-    setJobs(jobsData);
-    setFolders(foldersData);
-  }
+  const applyCampaignLoadResult = useCallback((result) => {
+    if (result.status === CAMPAIGN_LOAD_STATUS.ERROR) {
+      setProperties([]);
+      setJobs([]);
+      setFolders([]);
+      setCampaignLoadStatus(CAMPAIGN_LOAD_STATUS.ERROR);
+      return;
+    }
+    setProperties(result.data.properties);
+    setJobs(result.data.jobs);
+    setFolders(result.data.folders);
+    setCampaignLoadStatus(CAMPAIGN_LOAD_STATUS.SUCCESS);
+  }, []);
+
+  const loadCampaigns = useCallback(async () => {
+    setCampaignLoadStatus(CAMPAIGN_LOAD_STATUS.LOADING);
+    applyCampaignLoadResult(await loadCampaignsState(api));
+  }, [applyCampaignLoadResult]);
 
   useEffect(() => {
     let ignore = false;
-
-    Promise.all([api.getProperties(), api.getJobs(), api.getCampaignFolders()]).then(([propertiesData, jobsData, foldersData]) => {
-      if (ignore) return;
-      setProperties(propertiesData);
-      setJobs(jobsData);
-      setFolders(foldersData);
+    loadCampaignsState(api).then((result) => {
+      if (!ignore) applyCampaignLoadResult(result);
     });
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
+    return () => { ignore = true; };
+  }, [applyCampaignLoadResult]);
 
   useEffect(() => {
     function closeActionMenu(event) {
@@ -72,42 +79,8 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
     };
   }, []);
 
-  const campaigns = useMemo(() => {
-    const propertyCampaigns = properties.map((property) => ({
-      id: property.id,
-      title: property.name,
-      type: 'real_estate',
-      active: property.active,
-      sequenceCount: property.posts?.length || 0,
-      raw: property,
-    }));
-
-    const jobCampaigns = jobs.map((job) => ({
-      id: job.id,
-      title: job.title,
-      type: 'job',
-      active: job.active,
-      sequenceCount: job.posts?.length || 0,
-      raw: job,
-    }));
-
-    return [...propertyCampaigns, ...jobCampaigns];
-  }, [properties, jobs]);
-
-  const filteredCampaigns = campaigns.filter((campaign) => {
-    const matchesSearch = `${campaign.title} ${campaign.id}`
-      .toLowerCase()
-      .includes(search.toLowerCase());
-
-    if (!matchesSearch) return false;
-    if (typeFilter !== 'all' && campaign.type !== typeFilter) return false;
-    if (statusFilter === 'active' && !campaign.active) return false;
-    if (statusFilter === 'inactive' && campaign.active) return false;
-    if (folderFilter === 'none' && campaign.raw.folderId) return false;
-    if (folderFilter !== 'all' && folderFilter !== 'none' && campaign.raw.folderId !== folderFilter) return false;
-
-    return true;
-  });
+  const campaigns = useMemo(() => buildCampaignRows(properties, jobs), [properties, jobs]);
+  const filteredCampaigns = useMemo(() => filterCampaignRows(campaigns, { search, typeFilter, statusFilter, folderFilter }), [campaigns, search, typeFilter, statusFilter, folderFilter]);
 
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const jobCount = campaigns.filter((campaign) => campaign.type === 'job').length;
@@ -268,6 +241,20 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
         <button className="primary-button" onClick={handleNewCampaign}>+ Campanie noua</button>
       </section>
 
+      {campaignLoadStatus === CAMPAIGN_LOAD_STATUS.LOADING && (
+        <section className="empty-state-v2" aria-live="polite">
+          Se încarcă campaniile...
+        </section>
+      )}
+
+      {campaignLoadStatus === CAMPAIGN_LOAD_STATUS.ERROR && (
+        <section className="empty-state-v2" role="alert">
+          <p>Nu am putut încărca campaniile.</p>
+          <button className="secondary-button" type="button" onClick={loadCampaigns}>Încearcă din nou</button>
+        </section>
+      )}
+
+      {campaignLoadStatus === CAMPAIGN_LOAD_STATUS.SUCCESS && <>
       <section className="campaign-stats-grid">
         <div>
           <span>Total campanii</span>
@@ -416,6 +403,7 @@ export default function Campaigns({ onChangePage, onEditCampaign }) {
           </div>
         )}
       </section>
+      </>}
     </div>
   );
 }

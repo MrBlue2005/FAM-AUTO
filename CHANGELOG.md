@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.5I — Campaigns cloud-load state
+
+- Campaigns now distinguishes an incomplete cloud read from a successful zero-campaign result. A rejected properties, jobs, or folders request shows a safe retryable load error rather than a misleading empty dataset.
+- Campaign authorization, ACL filtering, BFF campaign DTOs, and existing successful-load filters are unchanged.
+
 ## Phase G5.5F-C — managed USER confirmation-token UI
 
 - The existing managed-USER live-publication dialog now obtains one server-issued token before it opens and submits that exact opaque token only from `Confirm publicarea`. The token is frozen with the reviewed intent in transient memory, never displayed or persisted.
