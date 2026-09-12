@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7F Facebook-root session readiness
+
+`RealFacebookPublisherAdapter.prepare()` now opens the reviewed local profile, performs exactly one bounded navigation to `https://www.facebook.com/`, requires the resulting URL to remain on the approved HTTPS `www.facebook.com` origin, classifies the loaded session DOM, and then verifies exact trusted `c_user` equality. Only after those steps may it navigate to the reviewed group or create a composer. Login, checkpoint, challenge, indeterminate DOM, timeout, and non-Facebook redirect states fail closed before `ATTEMPT_STARTED` and the only publish click.
+
+Manual operator check: open `Profil principal` through Local Studio, visit Facebook home only, confirm the intended account is authenticated and free of checkpoint/challenge, then close or leave the profile ready. Do not visit a group, compose, or publish during this check.
+
 ## G5.7D managed USER target visibility
 
 `hosted_user_target_visibility` is the additive, service-role-only target allowlist for managed USER execution. It has no backfill: a managed USER receives zero target visibility until an ADMIN explicitly assigns an enabled `target_id`. The BFF applies it database-side to Groups, preflight sources, and all managed-USER campaign-preflight, controlled-execution, and live-execution source resolution. The campaign ACL, target ACL, and exact device/profile assignment are independent required dimensions; none implies another. ADMIN remains globally scoped. Disabling a relation affects future source selection only and never rewrites historical tasks. Migration `202609120001_hosted_user_target_visibility.sql` is local-only and must be applied in a separately authorized Preview checkpoint before G5.7C may be retried.

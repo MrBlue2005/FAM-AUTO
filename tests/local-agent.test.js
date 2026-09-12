@@ -504,7 +504,7 @@ test('verified-success completion acknowledgement failure is outcome-unknown and
 function fakeFacebookPublisher(options = {}) {
   const calls = []; let clicks = 0; let closed = 0;
   const identitySequence = Array.isArray(options.identitySequence) ? options.identitySequence : [Object.hasOwn(options, 'actualIdentity') ? options.actualIdentity : '100000000000001'];
-  let identityRead = 0; let urlRead = 0; let composerChecks = 0; let textChecks = 0; let mediaChecks = 0; let publishChecks = 0; let publishLookups = 0;
+  let identityRead = 0; let urlRead = 0; let composerChecks = 0; let textChecks = 0; let mediaChecks = 0; let publishChecks = 0; let publishLookups = 0; let targetNavigated = false; let rootUrl = options.initialUrl || 'about:blank';
   const composer = { locator: { waitFor: async () => {} }, handle: {} };
   const context = {
     cookies: async (origins) => {
@@ -518,7 +518,13 @@ function fakeFacebookPublisher(options = {}) {
   };
   const page = {
     content: async () => options.sessionHtml || '<button aria-label="Account menu">Facebook menu</button>',
-    url: () => (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact'])[Math.min(urlRead++, (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact']).length - 1)],
+    goto: async (url, navigationOptions) => {
+      calls.push(`ROOT_NAVIGATE:${url}`);
+      assert.equal(navigationOptions?.waitUntil, 'domcontentloaded'); assert.equal(navigationOptions?.timeout, 30000);
+      if (options.rootNavigationError) throw options.rootNavigationError;
+      rootUrl = options.rootRedirectUrl || url;
+    },
+    url: () => targetNavigated ? (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact'])[Math.min(urlRead++, (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact']).length - 1)] : rootUrl,
     context: () => context,
     getByRole: () => ({ last: () => composer.locator }),
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
@@ -526,7 +532,7 @@ function fakeFacebookPublisher(options = {}) {
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context }; },
-    openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => { calls.push('PREPARE_POST'); return { composer }; },
+    openGroup: async () => { targetNavigated = true; calls.push('NAVIGATE_FAKE'); }, createPost: async () => { calls.push('PREPARE_POST'); return { composer }; },
     requirePreparedComposer: (prepared) => prepared?.composer || (() => { throw Object.assign(new Error('composer missing'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' }); })(),
     verifyComposer: async () => { composerChecks += 1; if (options.composerError && (!options.composerErrorAt || composerChecks >= options.composerErrorAt)) throw Object.assign(new Error('composer changed'), { code: options.composerError }); },
     verifyText: async () => { textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
@@ -541,10 +547,47 @@ function fakeFacebookPublisher(options = {}) {
 test('real Facebook publisher adapter uses existing browser/navigation/composer seams but only submit can click', async () => {
   const fake = fakeFacebookPublisher(); const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   await fake.adapter.prepare(task); await fake.adapter.verifyReady(task);
-  assert.equal(fake.clicks(), 0); assert.deepEqual(fake.calls.slice(0, 4), ['OPEN_FAKE', 'IDENTITY_SOURCE:https://www.facebook.com', 'NAVIGATE_FAKE', 'PREPARE_POST']);
+  assert.equal(fake.clicks(), 0); assert.deepEqual(fake.calls.slice(0, 5), ['OPEN_FAKE', 'ROOT_NAVIGATE:https://www.facebook.com/', 'IDENTITY_SOURCE:https://www.facebook.com', 'NAVIGATE_FAKE', 'PREPARE_POST']);
   await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
   assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
   await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
+});
+
+test('real publisher establishes bounded Facebook-root session and identity before target preparation', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const fake = fakeFacebookPublisher({ initialUrl: 'about:blank' });
+  await fake.adapter.prepare(task);
+  assert.deepEqual(fake.calls.slice(0, 5), ['OPEN_FAKE', 'ROOT_NAVIGATE:https://www.facebook.com/', 'IDENTITY_SOURCE:https://www.facebook.com', 'NAVIGATE_FAKE', 'PREPARE_POST']);
+  assert.ok(fake.calls.indexOf('ROOT_NAVIGATE:https://www.facebook.com/') < fake.calls.indexOf('NAVIGATE_FAKE'));
+  await fake.adapter.cleanup();
+});
+
+test('real publisher fails closed on root login, checkpoint, challenge, unapproved redirect, or timeout before target, marker, or click', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const cases = [
+    { sessionHtml: 'name="email"' },
+    { sessionHtml: 'checkpoint' },
+    { sessionHtml: 'security challenge' },
+    { rootRedirectUrl: 'https://www.facebook.example/' },
+    { rootNavigationError: new Error('navigation timeout') },
+  ];
+  for (const options of cases) {
+    const fake = fakeFacebookPublisher(options); const markers = [];
+    const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+    await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => markers.push('LEASE'), markSideEffectAttemptStarted: async () => markers.push('MARK'), markSideEffectVerifiedSuccess: async () => markers.push('VERIFIED') } }), { code: 'FACEBOOK_SESSION_NOT_READY' });
+    assert.equal(fake.calls.includes('NAVIGATE_FAKE'), false); assert.equal(fake.calls.includes('PREPARE_POST'), false);
+    assert.deepEqual(markers, []); assert.equal(fake.clicks(), 0);
+  }
+});
+
+test('real publisher rejects missing or mismatched root c_user before target, marker, or click', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  for (const [options, code] of [[{ actualIdentity: null }, 'FACEBOOK_IDENTITY_UNVERIFIED'], [{ actualIdentity: '100000000000002' }, 'FACEBOOK_IDENTITY_MISMATCH']]) {
+    const fake = fakeFacebookPublisher(options); const markers = [];
+    const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+    await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => markers.push('LEASE'), markSideEffectAttemptStarted: async () => markers.push('MARK'), markSideEffectVerifiedSuccess: async () => markers.push('VERIFIED') } }), { code });
+    assert.equal(fake.calls.includes('NAVIGATE_FAKE'), false); assert.deepEqual(markers, []); assert.equal(fake.clicks(), 0);
+  }
 });
 
 test('real publisher rejects rehearsal snapshots before browser launch, marker, or submit', async () => {
@@ -561,7 +604,7 @@ test('real publisher rejects rehearsal snapshots before browser launch, marker, 
 test('real adapter consumes only the composer returned by preparation, never a page-wide dialog lookup', async () => {
   const composerA = { handle: {}, locator: { waitFor: async () => {} } }; const calls = [];
   const context = { cookies: async () => [{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }], close: async () => {} };
-  const page = { content: async () => '<button aria-label="Account menu">Facebook menu</button>', context: () => context, url: () => 'https://www.facebook.com/groups/exact', getByRole: () => { throw new Error('page-wide dialog lookup is forbidden'); } };
+  const page = { goto: async () => {}, content: async () => '<button aria-label="Account menu">Facebook menu</button>', context: () => context, url: () => 'https://www.facebook.com/groups/exact', getByRole: () => { throw new Error('page-wide dialog lookup is forbidden'); } };
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => ({ page, context }), openGroup: async () => {}, createPost: async () => ({ composer: composerA }),
     verifyComposer: async (composer) => { assert.equal(composer, composerA); calls.push('COMPOSER_A'); }, verifyText: async () => {}, verifyMedia: async () => {}, findPublishControl: async (composer) => { assert.equal(composer, composerA); return { isVisible: async () => true, isEnabled: async () => true, click: async () => {} }; }, verifyPublishControl: async () => {}, verifyLivePostPublished: async () => true,

@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7F - Facebook-root session readiness
+
+- The real publisher now performs one bounded, side-effect-free navigation to `https://www.facebook.com/` before classifying session state or reading the trusted active `c_user` identity. A blank, stale, login, checkpoint, challenge, timeout, or non-Facebook redirect fails closed before target navigation, `ATTEMPT_STARTED`, or the scoped publish click.
+- Root-session classification and exact trusted-identity equality now precede `openGroup()` and composer preparation. The existing target/composer/media and post-lease rechecks remain unchanged.
+
 ## Phase G5.7D — managed USER target visibility
 
 - Managed USER Facebook targets now require a separate explicit, enabled `hosted_user_target_visibility` relation. Campaign visibility and device/profile execution assignment do not grant target access.

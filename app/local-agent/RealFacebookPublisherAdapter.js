@@ -10,6 +10,18 @@ const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdent
 const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, requirePreparedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
+const FACEBOOK_ROOT_URL = 'https://www.facebook.com/';
+const FACEBOOK_ROOT_TIMEOUT_MS = 30000;
+
+function isApprovedFacebookOrigin(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === 'www.facebook.com'
+      && !url.port && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
 
 // The sole adapter capable of reaching the real browser publishing click. It
 // owns neither claiming, lease validation, durable markers, nor completion.
@@ -34,6 +46,16 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   async function sessionReady(page) {
     const state = detectSessionState(await page.content().catch(() => ''));
     if (state !== 'AUTHENTICATED') throw failure('FACEBOOK_SESSION_NOT_READY', 'Facebook session is unavailable, challenged, or requires login.');
+  }
+  async function navigateFacebookRoot(page) {
+    try {
+      await page.goto(FACEBOOK_ROOT_URL, { waitUntil: 'domcontentloaded', timeout: FACEBOOK_ROOT_TIMEOUT_MS });
+    } catch {
+      throw failure('FACEBOOK_SESSION_NOT_READY', 'Facebook session root could not be reached.');
+    }
+    if (!isApprovedFacebookOrigin(page?.url?.())) {
+      throw failure('FACEBOOK_SESSION_NOT_READY', 'Facebook session root redirected to an unapproved origin.');
+    }
   }
   async function cleanup() {
     const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null;
@@ -64,6 +86,10 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       targetCanonical = canonicalTarget(targetUrl);
       try {
         browser = await openBrowser((profile.legacyProfileIds || [])[0], { profilePath: profile.localProfilePath, displayName: profile.displayName });
+        // The initial persistent-context page may be blank, stale, or a new tab.
+        // Root navigation is bounded and side-effect-free; identity and target work
+        // remain unavailable until its authenticated state is established.
+        await navigateFacebookRoot(browser.page);
         await sessionReady(browser.page);
         await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
         await navigateGroup(browser.page, targetUrl);
