@@ -334,13 +334,22 @@ test('Chromium safe preflight closes the isolated browser after launch failure d
   await assert.rejects(executor({ task_type: 'CHROMIUM_SAFE_PREFLIGHT', profile_id: 'profile_synthetic', payload: { mode: 'CHROMIUM_SAFE_PREFLIGHT', publishEnabled: false } }), /page failed/);
   assert.equal(closed, true);
 });
-test('Facebook session readiness detection keeps positive markers supplemental and identifies explicit negative guards', () => {
+test('Facebook session text inspection keeps global negative strings diagnostic-only', () => {
   assert.equal(detectSessionState('<button aria-label="Account menu">Facebook menu</button>'), 'AUTHENTICATED');
-  assert.equal(detectSessionState('<input name="email"><input name="pass">'), 'UNAUTHENTICATED');
+  assert.equal(detectSessionState('<input name="email"><input name="pass">'), 'INDETERMINATE');
   assert.equal(detectSessionState('checkpoint'), 'INDETERMINATE');
-  assert.equal(detectSessionState('<input name="email">Facebook menu'), 'INDETERMINATE');
+  assert.equal(detectSessionState('<input name="email">Facebook menu'), 'AUTHENTICATED');
   assert.equal(require('../app/local-agent/FacebookSessionReadinessExecutor').inspectSessionState('<nav role="navigation"></nav>').explicitNegative, false);
-  assert.equal(require('../app/local-agent/FacebookSessionReadinessExecutor').inspectSessionState('<input name="email">').explicitNegative, true);
+  assert.equal(require('../app/local-agent/FacebookSessionReadinessExecutor').inspectSessionState('<input name="email">').explicitNegative, false);
+});
+
+test('known Facebook login, checkpoint, challenge, recovery, and security paths are explicit negative signals', () => {
+  const { knownNegativeFacebookPath } = require('../app/local-agent/FacebookSessionReadinessExecutor');
+  for (const path of ['/login/', '/checkpoint/', '/challenge/', '/recover/initiate/', '/security/check/']) {
+    assert.equal(knownNegativeFacebookPath(`https://www.facebook.com${path}`), true, path);
+  }
+  assert.equal(knownNegativeFacebookPath('https://www.facebook.com/'), false);
+  assert.equal(knownNegativeFacebookPath('https://www.facebook.example/checkpoint/'), false);
 });
 
 test('task media materializer rejects a hash mismatch without leaving a partial file or touching sibling task data', async () => {
@@ -523,8 +532,24 @@ function fakeFacebookPublisher(options = {}) {
     },
     close: async () => { closed += 1; calls.push('CLOSE_FAKE'); },
   };
+  let sessionObservations = 0;
+  const fakeLocator = (visible) => ({
+    count: async () => visible ? 1 : 0,
+    nth: () => fakeLocator(visible),
+    isVisible: async () => visible,
+    last: () => composer.locator,
+  });
+  const visibleSelectors = new Set(options.visibleSelectors || []);
+  const visibleRoles = options.visibleRoles || [];
+  const visibleNow = (visible) => visible && (!options.visibleAfterSessionObservation || sessionObservations >= options.visibleAfterSessionObservation);
+  const roleVisible = (role, name) => visibleRoles.some((entry) => {
+    if (entry.role !== role) return false;
+    if (name instanceof RegExp) return name.test(entry.name);
+    return String(name) === String(entry.name);
+  });
   const page = {
     content: async () => options.sessionHtml || '<button aria-label="Account menu">Facebook menu</button>',
+    waitForFunction: async () => { sessionObservations += 1; },
     goto: async (url, navigationOptions) => {
       calls.push(`ROOT_NAVIGATE:${url}`);
       assert.equal(navigationOptions?.waitUntil, 'domcontentloaded'); assert.equal(navigationOptions?.timeout, 30000);
@@ -533,7 +558,8 @@ function fakeFacebookPublisher(options = {}) {
     },
     url: () => targetNavigated ? (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact'])[Math.min(urlRead++, (options.urlSequence || [options.actualUrl || 'https://www.facebook.com/groups/exact']).length - 1)] : rootUrl,
     context: () => context,
-    getByRole: () => ({ last: () => composer.locator }),
+    locator: (selector) => fakeLocator(visibleNow(visibleSelectors.has(selector))),
+    getByRole: (role, options) => fakeLocator(visibleNow(roleVisible(role, options?.name))),
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
   };
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
@@ -580,6 +606,40 @@ test('real publisher accepts the observed selector-free authenticated root only 
   await fake.adapter.cleanup();
 });
 
+test('real publisher uses only visible/current-page negative evidence before trusted c_user and target navigation', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const visibleLogin = ['input[name="email"]', 'input[name="pass"]'];
+  const cases = [
+    ['visible login form', { visibleSelectors: visibleLogin }, false, 'VISIBLE_LOGIN_DETECTED'],
+    ['hidden login template', { sessionHtml: '<template><input name="email"><input name="pass"></template>' }, true],
+    ['visible checkpoint heading', { visibleRoles: [{ role: 'heading', name: 'Checkpoint' }] }, false, 'VISIBLE_CHECKPOINT_DETECTED'],
+    ['hidden checkpoint text', { sessionHtml: '<script>checkpoint</script><div hidden>checkpoint</div>' }, true],
+    ['visible challenge dialog heading', { visibleRoles: [{ role: 'heading', name: 'Security check' }] }, false, 'VISIBLE_CHALLENGE_DETECTED'],
+    ['script challenge text', { sessionHtml: '<script>challenge</script>' }, true],
+    ['negative Facebook path', { rootRedirectUrl: 'https://www.facebook.com/checkpoint/' }, false, 'NEGATIVE_URL_DETECTED'],
+    ['selector-free approved root', { sessionHtml: '<nav role="navigation"></nav>' }, true],
+  ];
+  for (const [label, options, passes, expectedStage] of cases) {
+    const fake = fakeFacebookPublisher(options); const stages = [];
+    if (passes) {
+      await fake.adapter.prepare(task, { trace: (stage) => stages.push(stage) });
+      assert.ok(stages.includes('NEGATIVE_STATE_NONE_VISIBLE'), label);
+      assert.ok(stages.includes('TRUSTED_IDENTITY_MATCH'), label);
+      assert.ok(fake.calls.includes('NAVIGATE_FAKE'), label);
+      await fake.adapter.cleanup();
+    } else {
+      await assert.rejects(fake.adapter.prepare(task, { trace: (stage) => stages.push(stage) }), { code: 'FACEBOOK_SESSION_NOT_READY' });
+      assert.ok(stages.includes('ROOT_NAVIGATION_OK'), label);
+      assert.ok(stages.includes(expectedStage), label);
+      assert.equal(stages.includes('TRUSTED_IDENTITY_MATCH'), false, label);
+      assert.equal(fake.calls.includes('IDENTITY_SOURCE:https://www.facebook.com'), false, label);
+      assert.equal(fake.calls.includes('NAVIGATE_FAKE'), false, label);
+      assert.equal(fake.calls.includes('PREPARE_POST'), false, label);
+      assert.equal(fake.clicks(), 0, label);
+    }
+  }
+});
+
 test('real publisher selector-free root fails closed for absent, malformed, mismatched, ambiguous identity or explicit negative state before target, marker, or click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   const selectorFree = '<nav role="navigation"></nav>';
@@ -588,9 +648,9 @@ test('real publisher selector-free root fails closed for absent, malformed, mism
     [{ sessionHtml: selectorFree, actualIdentity: 'not-a-facebook-id' }, 'FACEBOOK_IDENTITY_UNVERIFIED'],
     [{ sessionHtml: selectorFree, actualIdentity: '100000000000002' }, 'FACEBOOK_IDENTITY_MISMATCH'],
     [{ sessionHtml: selectorFree, identitySequence: [[{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }, { name: 'c_user', value: '100000000000002', domain: '.facebook.com' }]] }, 'FACEBOOK_IDENTITY_UNVERIFIED'],
-    [{ sessionHtml: '<nav role="navigation"></nav><input name="email">' }, 'FACEBOOK_SESSION_NOT_READY'],
-    [{ sessionHtml: `${selectorFree} checkpoint` }, 'FACEBOOK_SESSION_NOT_READY'],
-    [{ sessionHtml: `${selectorFree} security challenge` }, 'FACEBOOK_SESSION_NOT_READY'],
+    [{ visibleSelectors: ['input[name="email"]', 'input[name="pass"]'] }, 'FACEBOOK_SESSION_NOT_READY'],
+    [{ visibleRoles: [{ role: 'heading', name: 'Checkpoint' }] }, 'FACEBOOK_SESSION_NOT_READY'],
+    [{ visibleRoles: [{ role: 'heading', name: 'Security check' }] }, 'FACEBOOK_SESSION_NOT_READY'],
     [{ sessionHtml: selectorFree, rootRedirectUrl: 'https://www.facebook.example/' }, 'FACEBOOK_SESSION_NOT_READY'],
     [{ sessionHtml: selectorFree, rootNavigationError: new Error('navigation timeout') }, 'FACEBOOK_SESSION_NOT_READY'],
   ];
@@ -605,9 +665,9 @@ test('real publisher selector-free root fails closed for absent, malformed, mism
 test('real publisher fails closed on root login, checkpoint, challenge, unapproved redirect, or timeout before target, marker, or click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   const cases = [
-    { sessionHtml: 'name="email"' },
-    { sessionHtml: 'checkpoint' },
-    { sessionHtml: 'security challenge' },
+    { visibleSelectors: ['input[name="email"]', 'input[name="pass"]'] },
+    { visibleRoles: [{ role: 'heading', name: 'Checkpoint' }] },
+    { visibleRoles: [{ role: 'heading', name: 'Security check' }] },
     { rootRedirectUrl: 'https://www.facebook.example/' },
     { rootNavigationError: new Error('navigation timeout') },
   ];
@@ -679,9 +739,9 @@ test('real publisher verifies only the active Facebook c_user identity and fails
   await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_UNVERIFIED' }); assert.equal(fake.clicks(), 0);
   fake = fakeFacebookPublisher({ identitySequence: [[{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }, { name: 'c_user', value: '100000000000002', domain: '.facebook.com' }]] });
   await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_UNVERIFIED' }); assert.equal(fake.clicks(), 0);
-  fake = fakeFacebookPublisher({ sessionHtml: 'checkpoint' });
+  fake = fakeFacebookPublisher({ visibleRoles: [{ role: 'heading', name: 'Checkpoint' }] });
   await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
-  fake = fakeFacebookPublisher({ sessionHtml: 'name="email"' });
+  fake = fakeFacebookPublisher({ visibleSelectors: ['input[name="email"]', 'input[name="pass"]'] });
   await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
 
   fake = fakeFacebookPublisher({ identitySequence: ['100000000000001', '100000000000001', '100000000000002'] });
@@ -702,7 +762,7 @@ test('Facebook session identity extractor accepts only a canonical c_user cookie
 
 test('real Facebook adapter blocks challenge, wrong target, incomplete composer, and weak outcome without a real click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
-  let fake = fakeFacebookPublisher({ sessionHtml: 'checkpoint' }); await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
+  let fake = fakeFacebookPublisher({ visibleRoles: [{ role: 'heading', name: 'Checkpoint' }] }); await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
   fake = fakeFacebookPublisher({ actualUrl: 'https://www.facebook.com/groups/wrong' }); await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_TARGET_MISMATCH' }); assert.equal(fake.clicks(), 0);
   fake = fakeFacebookPublisher({ content: { textPresent: false, mediaReady: true } }); await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_CONTENT_MISMATCH' }); assert.equal(fake.clicks(), 0); await fake.adapter.cleanup();
   fake = fakeFacebookPublisher({ verified: false }); await fake.adapter.prepare(task); await fake.adapter.verifyReady(task); await fake.adapter.submit(task); assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: false, state: 'AMBIGUOUS' }); assert.equal(fake.clicks(), 1); await fake.adapter.cleanup();
@@ -733,7 +793,7 @@ test('final cancellation after lease renewal prevents marker and submit', async 
 test('real adapter rechecks retained target, composer, text, media, and scoped control before marker without a click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   for (const options of [
-    { urlSequence: ['https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/wrong'] },
+    { urlSequence: ['https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/exact', 'https://www.facebook.com/groups/wrong'] },
     { composerError: 'FACEBOOK_COMPOSER_CHANGED', composerErrorAt: 3 },
     { content: { textPresent: false, mediaReady: true }, contentErrorAt: 3 },
     { content: { textPresent: true, mediaReady: false }, contentErrorAt: 3 },
@@ -744,6 +804,28 @@ test('real adapter rechecks retained target, composer, text, media, and scoped c
     await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }));
     assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
   }
+});
+
+test('real adapter applies the same visible-negative guard after lease renewal before marker or submit', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const fake = fakeFacebookPublisher({
+    visibleSelectors: ['input[name="email"]', 'input[name="pass"]'],
+    // prepare and initial verifyReady remain clean; the final post-lease recheck sees login.
+    visibleAfterSessionObservation: 3,
+  });
+  const calls = []; const stages = [];
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  await assert.rejects(execute(task, {
+    transport: {
+      agentId: 'agent_live', renewLease: async () => calls.push('LEASE'),
+      markSideEffectAttemptStarted: async () => calls.push('MARK'),
+      markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED'),
+    },
+    trace: (stage) => stages.push(stage),
+  }), { code: 'FACEBOOK_SESSION_NOT_READY' });
+  assert.ok(stages.includes('VISIBLE_LOGIN_DETECTED'));
+  assert.deepEqual(calls, ['LEASE']);
+  assert.equal(fake.clicks(), 0);
 });
 
 test('cancellation during post-lease readiness is caught by the second check before marker or submit', async () => {

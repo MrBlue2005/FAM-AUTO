@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7M visible negative Facebook session guard
+
+The real publisher now treats login, checkpoint, challenge, recovery, and security state as negative only when it is present in the current approved Facebook URL path or in a visible, scoped Playwright surface: a visible credential/login surface, or a visible checkpoint/challenge/security heading or matching form. Arbitrary whole-page HTML, script, hidden-template, and invisible-node strings are diagnostic-only and cannot reject an otherwise clean root. The approved-root, visible-negative guard, and exact canonical Facebook-origin `c_user` equality remain ordered before target navigation; a visible negative state still fails closed even when `c_user` matches. The same guard runs in preparation, initial readiness, and post-lease readiness before `ATTEMPT_STARTED`.
+
 ## G5.7K trusted Facebook session readiness
 
 The real publisher no longer requires fragile English Facebook account/menu DOM literals as positive authentication authority. After its bounded root navigation and approved-origin check, it performs a bounded `document.readyState === 'complete'` observation, rejects explicit login, checkpoint, security-check, and challenge evidence, then requires exactly one canonical Facebook-origin `c_user` matching the local profile's trusted `expectedFacebookAccountId`. Missing, malformed, ambiguous, or mismatched identity still fails closed. Positive DOM markers remain supplemental diagnostics only. The same negative guards and exact identity recheck still run after lease renewal before durable `ATTEMPT_STARTED`.

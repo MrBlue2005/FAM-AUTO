@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7M - visible negative Facebook session guard
+
+- Replaced whole-document login/checkpoint/challenge substring authority with current approved Facebook negative-path detection and scoped visible Playwright evidence. Known negative paths are `/login`, `/checkpoint`, `/challenge`, `/recover`, and `/security`.
+- Hidden login templates, scripts, and inert checkpoint/challenge text are diagnostic-only and no longer reject a clean selector-free authenticated root. Exact trusted Facebook-origin `c_user` equality remains mandatory and a visible negative surface always wins over a matching cookie.
+- Added safe stage traces for visible negatives and the clean-visible-state case, plus regressions covering visible and hidden login/checkpoint/challenge evidence, negative paths, trusted identity failures, zero pre-marker side effects, and the post-lease recheck.
+
 ## Phase G5.7K - trusted Facebook session readiness
 
 - Real Facebook readiness now accepts a selector-free authenticated Facebook root only when the URL remains approved, no explicit login/checkpoint/security-check/challenge evidence exists, and exactly one canonical Facebook-origin `c_user` matches the trusted local profile identity. Generic English account/menu DOM markers remain supplemental and cannot cause a false negative by their absence.
