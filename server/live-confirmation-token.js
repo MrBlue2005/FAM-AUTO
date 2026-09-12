@@ -119,9 +119,10 @@ function verifyLiveConfirmationToken({ token, signingSecret: secret, expectedOwn
   if (!claims || claims.purpose !== LIVE_CONFIRMATION_TOKEN_PURPOSE || claims.version !== LIVE_CONFIRMATION_TOKEN_VERSION
     || typeof claims.confirmationId !== 'string' || !claims.confirmationId
     || !Number.isSafeInteger(claims.issuedAt) || !Number.isSafeInteger(claims.expiresAt)
-    || claims.expiresAt <= claims.issuedAt || claims.expiresAt <= Math.floor(readNow(now) / 1000)) {
+    || claims.expiresAt <= claims.issuedAt) {
     throw tokenError('LIVE_CONFIRMATION_TOKEN_INVALID');
   }
+  if (claims.expiresAt <= Math.floor(readNow(now) / 1000)) throw tokenError('LIVE_CONFIRMATION_TOKEN_EXPIRED');
   let owner; let intent;
   try {
     owner = normalizeOwner(claims.owner);

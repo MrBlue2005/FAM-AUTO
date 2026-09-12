@@ -72,10 +72,10 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
   async getControlPlaneProfile(profileId) { return (await this.request(`/rest/v1/profiles?profile_id=eq.${encodeURIComponent(profileId)}&select=profile_id,agent_id,status&limit=1`))[0] || null; }
   async getActiveControlPlaneTaskForProfile(profileId) { return (await this.request(`/rest/v1/tasks?profile_id=eq.${encodeURIComponent(profileId)}&status=in.(CLAIMED,RUNNING)&select=task_id&limit=1`))[0] || null; }
   async createControlPlaneTask(task) { return (await this.request('/rest/v1/tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(task) }))[0]; }
-  async getControlPlaneTask(taskId) { return (await this.request(`/rest/v1/tasks?task_id=eq.${encodeURIComponent(taskId)}&select=task_id,agent_id,profile_id,owner_user_id,task_type,status,created_at,claimed_at,started_at,completed_at,result&limit=1`))[0] || null; }
+  async getControlPlaneTask(taskId) { return (await this.request(`/rest/v1/tasks?task_id=eq.${encodeURIComponent(taskId)}&select=task_id,agent_id,profile_id,owner_user_id,task_type,status,side_effect_state,created_at,claimed_at,started_at,completed_at,result,payload&limit=1`))[0] || null; }
   async getControlPlaneTaskHistory(taskId, { ownerUserId } = {}) { const clauses = [`task_id=eq.${encodeURIComponent(taskId)}`, 'select=task_id,agent_id,profile_id,owner_user_id,task_type,status,created_at,claimed_at,started_at,completed_at,attempt,result,error', 'limit=1']; if (ownerUserId) clauses.push(`owner_user_id=eq.${encodeURIComponent(ownerUserId)}`); return (await this.request(`/rest/v1/tasks?${clauses.join('&')}`))[0] || null; }
   listControlPlaneTasks({ limit, deviceId, profileId, status, ownerUserId } = {}) {
-    const clauses = ['select=task_id,agent_id,profile_id,owner_user_id,task_type,status,created_at,claimed_at,started_at,completed_at,attempt,result,error', 'order=created_at.desc', `limit=${Number(limit)}`];
+    const clauses = ['select=task_id,agent_id,profile_id,owner_user_id,task_type,status,side_effect_state,created_at,claimed_at,started_at,completed_at,attempt,result,error,payload', 'order=created_at.desc', `limit=${Number(limit)}`];
     if (deviceId) clauses.push(`agent_id=eq.${encodeURIComponent(deviceId)}`);
     if (profileId) clauses.push(`profile_id=eq.${encodeURIComponent(profileId)}`);
     if (ownerUserId) clauses.push(`owner_user_id=eq.${encodeURIComponent(ownerUserId)}`);

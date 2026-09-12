@@ -8,6 +8,7 @@ const http = require('node:http');
 const express = require('express');
 const { mapHistoryTask } = require('../server/cloud-dashboard-read-api');
 const { createCloudRemoteTaskRouter } = require('../server/cloud-remote-task-api');
+const { issueLiveConfirmationToken } = require('../server/live-confirmation-token');
 const { createRehearsalLivePublisherAdapter } = require('../app/local-agent/RehearsalLivePublisherAdapter');
 const { createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 
@@ -15,6 +16,7 @@ const source = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts
 const campaignId = '11111111-1111-4111-8111-111111111111';
 const targetId = '22222222-2222-4222-8222-222222222222';
 const ownerId = '33333333-3333-4333-8333-333333333333';
+const signingSecret = 'test-live-confirmation-signing-secret-that-is-long-enough';
 
 test('G5.4 live history fixtures keep status and durable side-effect states distinct', async () => {
   const history = await import('../dashboard-v2/src/services/executionHistory.js');
@@ -70,16 +72,16 @@ function liveStore({ userEnabled = true, liveEnabled = true, assigned = true } =
     getControlPlaneAgent: async (id) => id === 'agent-live' ? { agent_id: id, reported_status: 'ONLINE', last_seen_at: new Date().toISOString() } : null,
     getControlPlaneProfile: async (id) => id === 'profile-live' ? { profile_id: id, agent_id: 'agent-live', status: 'READY' } : null,
     getCampaignPreflightSource: async () => sourceRow, getCampaignPreflightSourceForManagedUser: async () => sourceRow,
-    getActiveControlPlaneTaskForProfile: async () => null,
+    getActiveControlPlaneTaskForProfile: async () => null, listControlPlaneTasks: async () => created,
     getControlPlaneTask: async (id) => created.find((task) => task.task_id === id) || null,
     createControlPlaneTask: async (task) => { const row = { ...task, status: 'QUEUED' }; created.push(row); return row; },
   };
 }
 
 async function liveRequest(options, body = {}) {
-  const store = liveStore(options); const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.user = options?.admin ? { role: 'ADMIN' } : { role: 'USER', managedUserId: ownerId }; next(); }); app.use(createCloudRemoteTaskRouter({ store, liveExecutionEnabled: options?.gate === true, liveExecutionRehearsal: options?.rehearsal === true }));
+  const store = liveStore(options); const app = express(); app.use(express.json()); const user = options?.admin ? { role: 'ADMIN', username: 'admin' } : { role: 'USER', managedUserId: ownerId }; app.use((req, _res, next) => { req.user = user; next(); }); app.use(createCloudRemoteTaskRouter({ store, liveExecutionEnabled: options?.gate === true, liveExecutionRehearsal: options?.rehearsal === true, signingSecret }));
   const server = http.createServer(app); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  try { const response = await fetch(`http://127.0.0.1:${server.address().port}/live-campaign-execution`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'property', campaignId, targetId, day: 1, deviceId: 'agent-live', profileId: 'profile-live', ...body }) }); return { status: response.status, body: await response.json(), created: store.created }; } finally { await new Promise((resolve) => server.close(resolve)); }
+  try { const reviewed = { kind: 'property', campaignId, targetId, day: 1, deviceId: 'agent-live', profileId: 'profile-live' }; const confirmationToken = issueLiveConfirmationToken({ signingSecret, owner: user.role === 'ADMIN' ? { role: 'ADMIN', username: user.username } : { role: 'USER', managedUserId: ownerId }, campaignId, targetId, day: 1, deviceId: 'agent-live', profileId: 'profile-live' }).token; const response = await fetch(`http://127.0.0.1:${server.address().port}/live-campaign-execution`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...reviewed, confirmationToken, ...body }) }); return { status: response.status, body: await response.json(), created: store.created }; } finally { await new Promise((resolve) => server.close(resolve)); }
 }
 
 test('G5.4 live route is gate-, policy-, assignment-, canonical-ID-, and server-authority-bound', async () => {

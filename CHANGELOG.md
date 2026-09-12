@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.5F-B — confirmation-scoped live task identity
+
+- `LIVE_CAMPAIGN_EXECUTION` now requires a verified live-confirmation token. Its task identity is bound to the authenticated owner, canonical intent, exact routing, and server-generated confirmation ID; same-token network retries remain idempotent without persisting the raw token.
+- A fresh confirmation can create a replacement only after an equivalent legacy or current task is `FAILED` with `NOT_ATTEMPTED`. Active, attempted, unknown, completed, verified-success, cancelled, or otherwise ambiguous equivalents fail closed; historical tasks remain immutable. The UI is not wired yet.
+
 ## Phase G5.5F-A2 — live-confirmation issuance route
 
 - Added the authenticated, CSRF- and Origin-protected `POST /api/cloud-remote-tasks/live-confirmations` endpoint. It issues a short-lived server-signed confirmation token only after independent live gate, managed-user policy, campaign ACL, exact assignment, source, and target readiness checks; issuance creates no task. The UI and task-creation route are intentionally not wired to it yet and must independently reauthorize later.

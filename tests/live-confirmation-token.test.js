@@ -64,7 +64,7 @@ test('rejects tampered payloads and signatures without exposing crypto details',
 
 test('rejects expired tokens', () => {
   const issued = issue({ randomBytes: () => Buffer.alloc(16, 10) });
-  assertInvalid(() => verify(issued.token, { now: now + (LIVE_CONFIRMATION_TOKEN_TTL_SECONDS * 1000) }));
+  assertInvalid(() => verify(issued.token, { now: now + (LIVE_CONFIRMATION_TOKEN_TTL_SECONDS * 1000) }), 'LIVE_CONFIRMATION_TOKEN_EXPIRED');
 });
 
 test('rejects owner and every immutable intent mismatch', () => {

@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.5F-B confirmation-scoped live task identity
+
+`POST /api/cloud-remote-tasks/live-campaign-execution` now requires the A1 confirmation token and independently repeats all current authorization and source/readiness checks. Its ID includes the authenticated owner, canonical campaign/day/target/device/profile intent, and verified server-generated confirmation ID. The same token returns the same existing task for lost-response safety; a fresh token is only eligible when every equivalent prior live task is terminal `FAILED` with `NOT_ATTEMPTED`. Active, attempted, unknown, completed, verified-success, cancelled, and ambiguous history is blocked without mutation. Legacy live tasks participate through their immutable payload snapshot and need no migration. Only `confirmationId` is stored in the new internal payload; raw tokens never persist or enter safe DTOs. The browser UI is intentionally not wired yet.
+
 ## G5.5F-A2 live-confirmation issuance route
 
 `POST /api/cloud-remote-tasks/live-confirmations` is an authenticated hosted mutation guarded by the existing CSRF and same-origin middleware. With `RX_BFF_LIVE_EXECUTION_ENABLED=true`, it accepts only reviewed campaign/day/target/device/profile intent, then independently revalidates managed-user policy, explicit campaign visibility, exact execution-target assignment, canonical source/post/revision, and ready online routing before issuing the A1 token. It creates no task. The UI and live task route remain unwired: a later task route must revalidate session, policy, ACL, assignment, readiness, revisions, media, and conflicts independently.

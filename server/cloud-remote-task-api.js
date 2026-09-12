@@ -10,7 +10,7 @@ const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResul
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
 const { getVisibleCampaignPreflightSource } = require('./managed-user-campaign-visibility');
 const { PERMISSIONS, hasPermission } = require('./hosted-rbac');
-const { issueLiveConfirmationToken } = require('./live-confirmation-token');
+const { issueLiveConfirmationToken, verifyLiveConfirmationToken } = require('./live-confirmation-token');
 
 const FRESHNESS_MS = 90 * 1000;
 const TASK_PREFIX = 'synthetic_dry_run_';
@@ -41,6 +41,13 @@ const AVAILABILITY_CODES = new Set([
   'LIVE_CONFIRMATION_ASSIGNMENT_UNAVAILABLE',
   'LIVE_CONFIRMATION_SOURCE_UNAVAILABLE',
   'LIVE_CONFIRMATION_INVALID_REQUEST',
+  'LIVE_CONFIRMATION_REQUIRED',
+  'LIVE_CONFIRMATION_INVALID',
+  'LIVE_CONFIRMATION_EXPIRED',
+  'LIVE_CONFIRMATION_MISMATCH',
+  'LIVE_EXECUTION_ALREADY_ACTIVE',
+  'LIVE_REPLACEMENT_REQUIRES_MANUAL_REVIEW',
+  'LIVE_REPEAT_PUBLICATION_NOT_AUTHORIZED',
 ]);
 
 function safeResult(result, taskType) {
@@ -112,6 +119,16 @@ function controlledExecutionTaskId(deviceId, profileId, payload, ownerUserId = n
   return `${CONTROLLED_EXECUTION_PREFIX}${fingerprint}`;
 }
 
+function liveExecutionTaskId({ ownerKey, campaignId, day, targetId, deviceId, profileId, confirmationId }) {
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ version: 2, type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, ownerKey, campaignId, day, targetId, deviceId, profileId, confirmationId })).digest('hex').slice(0, 32);
+  return `live_execution_${fingerprint}`;
+}
+
+function liveIntentFingerprint({ ownerUserId, deviceId, profileId, payload }) {
+  const { confirmationId, ...immutablePayload } = payload || {};
+  return crypto.createHash('sha256').update(JSON.stringify({ version: 1, ownerUserId: ownerUserId || null, deviceId, profileId, payload: immutablePayload })).digest('hex');
+}
+
 function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPreflightEnabled = false, facebookSessionPreflightEnabled = false, facebookSessionAgentId = '', facebookSessionProfileId = '', controlledExecutionEnabled = false, liveExecutionEnabled = false, liveExecutionRehearsal = false, signingSecret, now = () => Date.now() }) {
   const router = express.Router();
   const adminOnly = (req, res, next) => req.user?.role === 'ADMIN' ? next() : res.status(403).json({ error: 'This action requires administrator access.' });
@@ -170,7 +187,7 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
     }
   };
   const liveConfirmationError = (code, status, message) => Object.assign(new Error(message), { status, code });
-  const authorizeLiveConfirmation = async (user, body) => {
+  const authorizeLiveIntent = async (user, body) => {
     if (!liveExecutionEnabled) throw liveConfirmationError('LIVE_EXECUTION_DISABLED', 404, 'Live execution is disabled.');
     if (!user) throw liveConfirmationError('LIVE_CONFIRMATION_UNAUTHENTICATED', 401, 'Authentication is required.');
     const requested = {
@@ -203,16 +220,16 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
       throw liveConfirmationError('LIVE_CONFIRMATION_LEGACY_USER_DENIED', 403, 'Managed USER authorization is required.');
     }
     const target = await verifyRequestedTarget(requested);
-    let source;
+    let source; let preflight;
     try {
       source = await getVisibleCampaignPreflightSource(store, user, requested);
       if (source?.campaign?.campaign_id !== requested.campaignId || source?.target?.target_id !== requested.targetId) throw new Error('source mismatch');
       // Reuse the existing canonical source/post/revision validation; the snapshot is not returned or queued.
-      buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: requested.day, expectedCampaignRevision: requested.campaignRevision, expectedPostRevision: requested.postRevision });
+      preflight = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: requested.day, expectedCampaignRevision: requested.campaignRevision, expectedPostRevision: requested.postRevision });
     } catch {
       throw liveConfirmationError('LIVE_CONFIRMATION_CAMPAIGN_UNAVAILABLE', 404, 'The selected campaign source is unavailable.');
     }
-    return { owner, intent: { campaignId: requested.campaignId, day: requested.day, targetId: requested.targetId, deviceId: target.deviceId, profileId: target.profileId } };
+    return { owner, ownerUserId: managedTaskOwnerId(user), requested, preflight, intent: { campaignId: requested.campaignId, day: requested.day, targetId: requested.targetId, deviceId: target.deviceId, profileId: target.profileId } };
   };
   const sendError = (res, error) => {
     const body = { error: error.message };
@@ -298,31 +315,36 @@ function createCloudRemoteTaskRouter({ store, agentId, profileId, chromiumPrefli
 
   router.post('/live-campaign-execution', async (req, res) => {
     try {
-      if (!liveExecutionEnabled) throw Object.assign(new Error('Live execution is disabled.'), { status: 404, code: 'LIVE_EXECUTION_DISABLED' });
-      const ownerUserId = managedTaskOwnerId(req.user);
-      if (req.user?.role === 'USER') {
-        const managed = ownerUserId && await store.getManagedUserById(ownerUserId);
-        if (!managed || managed.enabled === false || managed.live_execution_enabled !== true) throw Object.assign(new Error('Live execution is not enabled for this user.'), { status: 403 });
-        const requestedDeviceId = normalizedRequestedId(req.body?.deviceId); const requestedProfileId = normalizedRequestedId(req.body?.profileId);
-        const assignments = await store.listManagedUserExecutionTargets(ownerUserId, { enabledOnly: true });
-        if (!assignments.some((item) => item.device_id === requestedDeviceId && item.profile_id === requestedProfileId)) throw Object.assign(new Error('The selected execution target is not authorized.'), { status: 403, code: 'EXECUTION_TARGET_NOT_AUTHORIZED' });
-      } else if (!hasPermission(req.user?.role, PERMISSIONS.EXECUTION_RUN)) throw Object.assign(new Error('Live execution requires execution.run permission.'), { status: 403 });
-      const { deviceId, profileId: requestedProfileId } = await verifyRequestedTarget(req.body);
-      const kind = String(req.body?.kind || ''); if (!['property', 'job'].includes(kind)) throw Object.assign(new Error('A supported campaign kind is required.'), { status: 400 });
-      const source = await getVisibleCampaignPreflightSource(store, req.user, { kind, campaignId: canonicalUuid(req.body?.campaignId, 'INVALID_CAMPAIGN_ID'), targetId: canonicalUuid(req.body?.targetId, 'INVALID_TARGET_ID') });
-      const preflight = buildCampaignPreflightSnapshot({ campaign: source.campaign, target: source.target, postDay: Number(req.body?.day), expectedCampaignRevision: req.body?.campaignRevision, expectedPostRevision: req.body?.postRevision });
-      const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true, rehearsal: liveExecutionRehearsal === true }), publishEnabled: true });
-      const taskId = `live_execution_${crypto.createHash('sha256').update(JSON.stringify({ deviceId, requestedProfileId, payload, ownerUserId })).digest('hex').slice(0, 32)}`;
+      const authorization = await authorizeLiveIntent(req.user, req.body);
+      if (!req.body?.confirmationToken) throw liveConfirmationError('LIVE_CONFIRMATION_REQUIRED', 400, 'A live confirmation is required.');
+      let confirmation;
+      try {
+        confirmation = verifyLiveConfirmationToken({ token: req.body.confirmationToken, signingSecret, expectedOwner: authorization.owner, expectedIntent: authorization.intent, now });
+      } catch (error) {
+        const code = error?.code === 'LIVE_CONFIRMATION_TOKEN_EXPIRED' ? 'LIVE_CONFIRMATION_EXPIRED' : error?.code === 'LIVE_CONFIRMATION_BINDING_MISMATCH' ? 'LIVE_CONFIRMATION_MISMATCH' : 'LIVE_CONFIRMATION_INVALID';
+        throw liveConfirmationError(code, 400, 'The live confirmation is invalid or expired.');
+      }
+      const { ownerUserId, preflight, intent } = authorization;
+      const payload = Object.freeze({ ...preflight, mode: LIVE_EXECUTION_MODE, execution_config: Object.freeze({ mode: LIVE_EXECUTION_MODE, publishEnabled: true, rehearsal: liveExecutionRehearsal === true }), publishEnabled: true, confirmationId: confirmation.confirmationId });
+      const ownerKey = ownerUserId ? `USER:${ownerUserId}` : `ADMIN:${authorization.owner.username}`;
+      const taskId = liveExecutionTaskId({ ownerKey, ...intent, confirmationId: confirmation.confirmationId });
       const existing = await store.getControlPlaneTask(taskId); if (existing) return res.json({ task: safeTask(existing) });
-      if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(requestedProfileId)) throw requestedTargetError('CONFLICTING_WORK');
-      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: deviceId, profile_id: requestedProfileId, task_type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, payload }, req.user));
+      if (typeof store.listControlPlaneTasks !== 'function') throw liveConfirmationError('LIVE_REPLACEMENT_REQUIRES_MANUAL_REVIEW', 409, 'Equivalent live execution history requires manual review.');
+      const fingerprint = liveIntentFingerprint({ ownerUserId, deviceId: intent.deviceId, profileId: intent.profileId, payload });
+      const equivalents = (await store.listControlPlaneTasks({ limit: 200, deviceId: intent.deviceId, profileId: intent.profileId, ownerUserId })).filter((task) => task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE && (task.owner_user_id || null) === (ownerUserId || null) && liveIntentFingerprint({ ownerUserId, deviceId: task.agent_id, profileId: task.profile_id, payload: task.payload }) === fingerprint);
+      if (equivalents.some((task) => ['QUEUED', 'CLAIMED', 'RUNNING'].includes(String(task.status || '').toUpperCase()))) throw liveConfirmationError('LIVE_EXECUTION_ALREADY_ACTIVE', 409, 'An equivalent live execution is already active.');
+      if (equivalents.some((task) => String(task.side_effect_state || '').toUpperCase() === 'ATTEMPT_STARTED' || String(task.status || '').toUpperCase() === 'OUTCOME_UNKNOWN')) throw liveConfirmationError('LIVE_REPLACEMENT_REQUIRES_MANUAL_REVIEW', 409, 'Equivalent live execution requires manual review.');
+      if (equivalents.some((task) => String(task.side_effect_state || '').toUpperCase() === 'VERIFIED_SUCCESS' || String(task.status || '').toUpperCase() === 'COMPLETED')) throw liveConfirmationError('LIVE_REPEAT_PUBLICATION_NOT_AUTHORIZED', 409, 'Equivalent live publication cannot be repeated automatically.');
+      if (equivalents.some((task) => !(String(task.status || '').toUpperCase() === 'FAILED' && String(task.side_effect_state || '').toUpperCase() === 'NOT_ATTEMPTED'))) throw liveConfirmationError('LIVE_REPLACEMENT_REQUIRES_MANUAL_REVIEW', 409, 'Equivalent live execution requires manual review.');
+      if (typeof store.getActiveControlPlaneTaskForProfile === 'function' && await store.getActiveControlPlaneTaskForProfile(intent.profileId)) throw requestedTargetError('CONFLICTING_WORK');
+      const task = await store.createControlPlaneTask(taskWithServerOwner({ task_id: taskId, agent_id: intent.deviceId, profile_id: intent.profileId, task_type: LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, payload }, req.user));
       return res.status(201).json({ task: safeTask(task) });
     } catch (error) { return sendError(res, error); }
   });
 
   router.post('/live-confirmations', async (req, res) => {
     try {
-      const { owner, intent } = await authorizeLiveConfirmation(req.user, req.body);
+      const { owner, intent } = await authorizeLiveIntent(req.user, req.body);
       const issued = issueLiveConfirmationToken({ signingSecret, owner, ...intent, now });
       return res.status(200).json({ confirmationToken: issued.token, expiresAt: issued.expiresAt });
     } catch (error) { return sendError(res, error); }
