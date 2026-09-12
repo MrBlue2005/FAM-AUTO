@@ -60,6 +60,10 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       // durable marker; no publisher method may run before both have succeeded.
       await transport.renewLease(task);
       trace('LEASE_VALID');
+      if (typeof adapter.verifyBeforeAttempt === 'function') {
+        await adapter.verifyBeforeAttempt(task);
+        trace('PRE_ATTEMPT_VERIFIED');
+      }
       await transport.markSideEffectAttemptStarted(task);
       trace('ATTEMPT_STARTED_PERSISTED');
       if (await cancellationRequested()) throw uncertain('CANCELLED_AFTER_ATTEMPT_STARTED', 'Cancellation arrived after live publication authorization.');

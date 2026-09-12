@@ -19,6 +19,7 @@ const { detectSessionState } = require('../app/local-agent/FacebookSessionReadin
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { normalizeExpectedFacebookAccountId } = require('../app/local-agent/FacebookIdentityConfig');
+const { getAuthenticatedFacebookAccountId } = require('../app/local-agent/FacebookSessionIdentity');
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
 
 function temporaryDirectory(name) {
@@ -502,16 +503,29 @@ test('verified-success completion acknowledgement failure is outcome-unknown and
 
 function fakeFacebookPublisher(options = {}) {
   const calls = []; let clicks = 0; let closed = 0;
+  const identitySequence = Array.isArray(options.identitySequence) ? options.identitySequence : [Object.hasOwn(options, 'actualIdentity') ? options.actualIdentity : '100000000000001'];
+  let identityRead = 0;
   const composer = { waitFor: async () => {}, textContent: async () => 'immutable snapshot', locator: () => ({ count: async () => 0 }) };
+  const context = {
+    cookies: async (origins) => {
+      calls.push(`IDENTITY_SOURCE:${origins?.[0] || ''}`);
+      const identity = identitySequence[Math.min(identityRead++, identitySequence.length - 1)];
+      if (Array.isArray(identity)) return identity;
+      if (identity === null) return [];
+      return [{ name: 'c_user', value: identity, domain: '.facebook.com' }];
+    },
+    close: async () => { closed += 1; calls.push('CLOSE_FAKE'); },
+  };
   const page = {
     content: async () => options.sessionHtml || '<button aria-label="Account menu">Facebook menu</button>',
     url: () => options.actualUrl || 'https://www.facebook.com/groups/exact',
+    context: () => context,
     getByRole: () => ({ last: () => composer }),
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
   };
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
-    openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context: { close: async () => { closed += 1; calls.push('CLOSE_FAKE'); } } }; },
+    openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context }; },
     openGroup: async () => calls.push('NAVIGATE_FAKE'), createPost: async () => calls.push('PREPARE_POST'), findPublishButton: async () => button,
     inspectContent: async () => options.content || { textPresent: true, mediaReady: true }, verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
   });
@@ -521,7 +535,7 @@ function fakeFacebookPublisher(options = {}) {
 test('real Facebook publisher adapter uses existing browser/navigation/composer seams but only submit can click', async () => {
   const fake = fakeFacebookPublisher(); const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
   await fake.adapter.prepare(task); await fake.adapter.verifyReady(task);
-  assert.equal(fake.clicks(), 0); assert.deepEqual(fake.calls.slice(0, 3), ['OPEN_FAKE', 'NAVIGATE_FAKE', 'PREPARE_POST']);
+  assert.equal(fake.clicks(), 0); assert.deepEqual(fake.calls.slice(0, 4), ['OPEN_FAKE', 'IDENTITY_SOURCE:https://www.facebook.com', 'NAVIGATE_FAKE', 'PREPARE_POST']);
   await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
   assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
   await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
@@ -540,6 +554,37 @@ test('real publisher rejects absent or task-injected Facebook identity before br
   const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used' }) }, () => [], { enabled: true, publisher: adapter });
   await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_IDENTITY_NOT_CONFIGURED' });
   assert.deepEqual(calls, []);
+});
+
+test('real publisher verifies only the active Facebook c_user identity and fails closed on ambiguity or change', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  let fake = fakeFacebookPublisher({ actualIdentity: '100000000000002' });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_MISMATCH' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ actualIdentity: null });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_UNVERIFIED' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ actualIdentity: 'not-a-facebook-id' });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_UNVERIFIED' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ identitySequence: [[{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }, { name: 'c_user', value: '100000000000002', domain: '.facebook.com' }]] });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_IDENTITY_UNVERIFIED' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ sessionHtml: 'checkpoint' });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
+  fake = fakeFacebookPublisher({ sessionHtml: 'name="email"' });
+  await assert.rejects(fake.adapter.prepare(task), { code: 'FACEBOOK_SESSION_NOT_READY' }); assert.equal(fake.clicks(), 0);
+
+  fake = fakeFacebookPublisher({ identitySequence: ['100000000000001', '100000000000001', '100000000000002'] });
+  const calls = [];
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_IDENTITY_MISMATCH' });
+  assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
+});
+
+test('Facebook session identity extractor accepts only a canonical c_user cookie at Facebook origin', async () => {
+  const origins = [];
+  const page = { context: () => ({ cookies: async (requested) => { origins.push(...requested); return [{ name: 'c_user', value: '100000000000001', domain: '.facebook.com' }]; } }) };
+  assert.equal(await getAuthenticatedFacebookAccountId(page), '100000000000001');
+  assert.deepEqual(origins, ['https://www.facebook.com']);
+  assert.equal(await getAuthenticatedFacebookAccountId({ context: () => ({ cookies: async () => [{ name: 'c_user', value: '100000000000001', domain: '.facebook.example' }] }) }), null);
+  assert.equal(await getAuthenticatedFacebookAccountId({ context: () => ({ cookies: async () => [{ name: 'display_name', value: 'Not an ID', domain: '.facebook.com' }] }) }), null);
 });
 
 test('real Facebook adapter blocks challenge, wrong target, incomplete composer, and weak outcome without a real click', async () => {

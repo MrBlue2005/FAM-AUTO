@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.6A2 — real-session identity verification
+
+- The real publisher now obtains the active Facebook account identity only from the browser context's Facebook-origin `c_user` session identifier, accepts one canonical numeric value only, and compares it exactly with the trusted local profile configuration.
+- Missing, malformed, ambiguous, unavailable, or mismatched active identities fail closed before the durable attempt marker and submit. Identity is checked during preparation/readiness and immediately after final lease renewal before the marker; neither raw value is logged, persisted, or exposed.
+- Rehearsal, preflight, controlled execution, hosted routes, and task contracts remain unchanged. No operational identity was enrolled.
+
 ## Phase G5.6A1 — trusted Facebook identity configuration
 
 - A Local Studio browser profile may now carry `expectedFacebookAccountId`: a reviewed canonical numeric Facebook account/profile ID retained only in trusted local runtime/registry configuration. It is never copied to task payloads, control-plane metadata, or managed-USER DTOs.

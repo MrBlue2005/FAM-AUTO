@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.6A2 real-session identity verification
+
+For a real adapter only, the current authenticated Facebook account is read from the Playwright browser context's `c_user` cookie scoped to `https://www.facebook.com`. The implementation accepts exactly one canonical numeric account ID from an approved Facebook cookie domain and compares it with the exact `expectedFacebookAccountId` bound to the resolved local profile. It does not inspect names, titles, avatars, task payload identity fields, or browser-provided authority, and it never logs, persists, or returns either raw ID.
+
+`FACEBOOK_IDENTITY_UNVERIFIED` covers missing, malformed, or ambiguous active session identities; `FACEBOOK_IDENTITY_MISMATCH` covers an exact unequal identity. Both occur before browser publication. Identity is checked in `prepare()`/`verifyReady()` and once more after final lease renewal, immediately before durable `ATTEMPT_STARTED`; a changed account therefore produces zero marker and submit calls. The adapter never switches accounts, logs in, or repairs sessions. Rehearsal, preflight, and controlled execution remain unaffected. No operational identity has been enrolled; G5.6A3 must still harden canonical target, composer, and media binding before any real smoke can be considered.
+
 ## G5.6A1 trusted Facebook identity configuration
 
 `facebookProfiles[].expectedFacebookAccountId` is a local, profile-bound trust anchor for a future real publisher. The only accepted value is a canonical non-zero numeric Facebook account/profile ID (`^[1-9][0-9]{4,24}$`), stored as a string with surrounding whitespace removed. There is no wildcard, display-name, actor-name, browser, task-payload, or managed-USER override. The Local Agent registry mirrors this value only for its corresponding local profile and excludes it from safe metadata; task snapshots exclude it too.
