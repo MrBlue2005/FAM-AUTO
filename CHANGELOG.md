@@ -1,10 +1,16 @@
 # Changelog
 
+## Phase G5.7Q - composer identity transition binding
+
+- Replaced count-only composer proof with a bounded pre/post `[role="dialog"]` identity comparison. A candidate is eligible only when its exact retained DOM handle is attached, visible, and has exactly one create-post entry surface.
+- A unique newly appended composer, a removed-shell/new-composer replacement (including unchanged total count), or one exact non-composer shell transitioning into the composer contract can pass. Multiple candidates, ambiguous editor structure, or zero eligible transition fail closed; no first/last dialog selection exists.
+- Added safe transition traces and fake-browser coverage for append, replacement, same-count replacement, reuse, ambiguity, timeout, unrelated modals, delayed rendering, and the observed non-`before + 1` failure. Existing target proof, exact-handle downstream checks, marker ordering, and submit safety are unchanged.
+
 ## Phase G5.7O - target-scoped composer opener resilience
 
 - Replaced the single `getByRole('button', { name: 'Scrie ceva...' })` dependency with exact reviewed Romanian and English group-composer entry variants, plus one bounded `GroupFeed` contenteditable fallback when no label is available.
 - Composer discovery runs only after canonical group-target proof, ignores hidden/disabled entries and unrelated comment fields, and fails closed without a click when zero or multiple eligible openers exist.
-- The selected opener must create exactly one new dialog; only that retained dialog is returned. No global dialog reacquisition, generic page-wide fallback, durable side-effect marker, submit, or publish click was added.
+- The selected opener is bound to a unique eligible composer transition and returns only its retained dialog. No global dialog reacquisition, generic page-wide fallback, durable side-effect marker, submit, or publish click was added.
 
 ## Phase G5.7M - visible negative Facebook session guard
 

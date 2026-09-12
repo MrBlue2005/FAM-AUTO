@@ -1,10 +1,16 @@
 # FAM-AUTO handoff
 
+## G5.7Q composer identity transition binding
+
+Composer proof no longer assumes the reviewed opener appends exactly one persistent `[role="dialog"]`. Before its non-publishing click, `openComposer()` snapshots each current dialog by its retained `ElementHandle`/DOM identity and a narrow state: attached, visible, and whether it contains exactly one create-post entry surface (`[contenteditable="true"][role="textbox"]` or `textarea`). After the click it performs a bounded, identity-based comparison and retains only the one exact eligible handle produced by the transition.
+
+A unique new composer passes; one removed shell plus one new eligible composer passes even when the dialog count is unchanged; and a same-node transition passes only when that exact prior non-composer node becomes the single eligible contract. Multiple new or transformed candidates, an ambiguous contract, and no eligible transition fail closed. This runs only after canonical target proof; the retained handle continues through all existing text, media, scoped-control, post-lease, marker-order, and outcome checks. It adds no submit, publish, task, or retry behavior.
+
 ## G5.7O target-scoped composer opener resilience
 
 The real publisher no longer depends on one Romanian accessible name to open a group composer. Only after canonical target verification, it accepts exactly one visible, enabled group-composer entry matching the reviewed Romanian (`Scrie ceva...` / `Scrie ceva`) or English (`Write something...` / `Write something`) button/textbox variants. When no reviewed label is present, the sole fallback is one visible, enabled contenteditable textbox inside `[role="main"] [data-pagelet="GroupFeed"]`; generic page-wide contenteditables, comments, unrelated dialogs, and publish controls are never candidates. Multiple candidates fail closed without a click.
 
-The opener click must create exactly one new dialog. That precise dialog is returned and retained; there is no global `.last()` or arbitrary dialog reacquisition. Safe Local Agent traces distinguish `COMPOSER_OPENER_FOUND`, `COMPOSER_OPENED`, `COMPOSER_OPENER_AMBIGUOUS`, and `COMPOSER_OPEN_FAILED`. Composer discovery and opening remain pre-marker, non-publishing work; text/media/control checks, post-lease readiness, marker ordering, outcome verification, and no-retry behavior are unchanged.
+The opener click is bound to a uniquely attributable composer transition, rather than a dialog-count increment. That precise dialog is returned and retained; there is no global `.last()` or arbitrary dialog reacquisition. Safe Local Agent traces distinguish opener, transition, unique-binding, ambiguity, timeout, and open-failure states. Composer discovery and opening remain pre-marker, non-publishing work; text/media/control checks, post-lease readiness, marker ordering, outcome verification, and no-retry behavior are unchanged.
 
 ## G5.7M visible negative Facebook session guard
 
