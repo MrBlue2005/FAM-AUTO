@@ -103,8 +103,8 @@ test('G5.4 UI keeps separate ADMIN policies and a confirmation-only managed USER
   assert.match(users, /<h3>Execuție controlată<\/h3>/); assert.match(users, /<h3>Publicare Facebook<\/h3>/);
   assert.match(users, /updateManagedUserControlledExecutionPolicy/); assert.match(users, /updateManagedUserLiveExecutionPolicy\(user\.userId, \{ enabled: !user\.liveExecutionEnabled \}\)/);
   assert.match(api, /live-execution-policy/); assert.match(api, /JSON\.stringify\(\{ enabled \}\)/);
-  assert.match(executions, /setLiveConfirm\(true\)/); assert.match(executions, /role="dialog"/); assert.match(executions, /Confirm publicarea/);
-  assert.match(executions, /if \(livePending\) return/); assert.match(executions, /createLiveCampaignExecutionTask\(\{ \.\.\.preflight, day: Number\(preflight\.day\) \}\)/);
+  assert.match(executions, /openLiveConfirmation/); assert.match(executions, /role="dialog"/); assert.match(executions, /Confirm publicarea/);
+  assert.match(executions, /liveConfirmationFlow\.submit/); assert.match(executions, /createLiveCampaignExecutionTask/);
   assert.doesNotMatch(executions, /publishEnabled\s*:/); assert.doesNotMatch(executions, /taskType\s*:/); assert.doesNotMatch(executions, /owner(UserId)?\s*:/); assert.doesNotMatch(executions, /sideEffectState\s*:/);
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "../services/api";
 import {
@@ -11,6 +11,7 @@ import {
   historyCards,
   profilesForDevice,
 } from "../services/executionHistory";
+import { createLiveConfirmationFlow } from "../services/liveConfirmationFlow";
 
 function date(value) {
   return value
@@ -66,7 +67,9 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
   });
   const [preflightMessage, setPreflightMessage] = useState("");
   const [controlledPending, setControlledPending] = useState(false);
-  const [liveConfirm, setLiveConfirm] = useState(false); const [livePending, setLivePending] = useState(false);
+  const [liveConfirmationFlow] = useState(() => createLiveConfirmationFlow());
+  const [liveFlow, setLiveFlow] = useState(() => liveConfirmationFlow.snapshot());
+  const preflightRef = useRef(preflight);
   const [filters, setFilters] = useState({
     deviceId: "",
     profileId: "",
@@ -80,6 +83,18 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
     [devices, filters.deviceId],
   );
   const cards = historyCards(tasks, devices);
+  const syncLiveFlow = useCallback(() => setLiveFlow(liveConfirmationFlow.snapshot()), [liveConfirmationFlow]);
+  const liveConfirm = liveFlow.dialogOpen;
+  const livePending = liveFlow.pending;
+  const liveIssuing = liveFlow.issuing;
+  const updatePreflight = (next) => {
+    preflightRef.current = next;
+    if (liveConfirmationFlow.invalidateIfIntentChanged(next)) {
+      syncLiveFlow();
+      setPreflightMessage("Selecția s-a modificat. Deschide din nou publicarea.");
+    }
+    setPreflight(next);
+  };
   const load = async () => {
     setLoading(true);
     try {
@@ -160,6 +175,13 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
       ignore = true;
     };
   }, [isManagedUser]);
+  useEffect(() => { preflightRef.current = preflight; }, [preflight]);
+  useEffect(() => {
+    if (!liveFlow.dialogOpen || liveFlow.expired) return undefined;
+    const delay = Math.max(0, Number(liveFlow.expiresAt) * 1000 - Date.now());
+    const timer = window.setTimeout(syncLiveFlow, delay);
+    return () => window.clearTimeout(timer);
+  }, [liveFlow.dialogOpen, liveFlow.expiresAt, liveFlow.expired, syncLiveFlow]);
   async function openDetail(taskId) {
     try {
       setDetail(await api.getCloudTask(taskId));
@@ -192,11 +214,20 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
       setPreflightMessage(requestError.message || "Execuția controlată nu a putut fi solicitată.");
     } finally { setControlledPending(false); }
   }
+  async function openLiveConfirmation() {
+    const outcome = await liveConfirmationFlow.open(preflight, api.issueLiveConfirmation, () => preflightRef.current);
+    syncLiveFlow();
+    if (outcome.error) setPreflightMessage(outcome.error.message || "Confirmarea nu a putut fi inițiată.");
+    else if (outcome.selectionChanged) setPreflightMessage("Selecția s-a modificat. Deschide din nou publicarea.");
+  }
+  function cancelLiveConfirmation() { liveConfirmationFlow.cancel(); syncLiveFlow(); }
   async function confirmLiveExecution() {
-    if (livePending) return; setLivePending(true);
-    try { const result = await api.createLiveCampaignExecutionTask({ ...preflight, day: Number(preflight.day) }); setPreflightMessage(`Publicare solicitată: ${result.task.status}`); setLiveConfirm(false); await load(); }
-    catch (error) { setPreflightMessage(error.message || 'Execuția live nu a putut fi solicitată.'); }
-    finally { setLivePending(false); }
+    const outcome = await liveConfirmationFlow.submit(preflightRef.current, api.createLiveCampaignExecutionTask);
+    syncLiveFlow();
+    if (outcome.expired) { setPreflightMessage("Confirmarea a expirat. Deschide din nou publicarea."); return; }
+    if (outcome.selectionChanged) { setPreflightMessage("Selecția s-a modificat. Deschide din nou publicarea."); return; }
+    if (outcome.error) { setPreflightMessage(outcome.error.message || "Execuția live nu a putut fi solicitată."); return; }
+    if (outcome.result) { setPreflightMessage(`Publicare solicitată: ${outcome.result.task.status}`); await load(); }
   }
   if (!api.isCloudReadOnly()) return null;
   if (!isAdmin && !isManagedUser)
@@ -259,7 +290,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
                       `${item.deviceId}|${item.profileId}` ===
                       event.target.value,
                   );
-                  setPreflight({
+                  updatePreflight({
                     ...preflight,
                     deviceId: target?.deviceId || "",
                     profileId: target?.profileId || "",
@@ -288,11 +319,13 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
               <select
                 value={preflight.kind}
                 onChange={(event) =>
-                  setPreflight({
+                  updatePreflight({
                     ...preflight,
                     kind: event.target.value,
                     campaignId: "",
                     day: "",
+                    campaignRevision: undefined,
+                    postRevision: undefined,
                   })
                 }
               >
@@ -308,10 +341,12 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
                   const campaign = preflightSources.campaigns.find(
                     (item) => item.campaignId === event.target.value,
                   );
-                  setPreflight({
+                  updatePreflight({
                     ...preflight,
                     campaignId: event.target.value,
                     day: String(campaign?.posts?.[0]?.day || ""),
+                    campaignRevision: campaign?.revision,
+                    postRevision: campaign?.posts?.[0]?.revision,
                   });
                 }}
               >
@@ -329,9 +364,15 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
               Zi
               <select
                 value={preflight.day}
-                onChange={(event) =>
-                  setPreflight({ ...preflight, day: event.target.value })
-                }
+                onChange={(event) => {
+                  const campaign = preflightSources.campaigns.find(
+                    (item) => item.campaignId === preflight.campaignId,
+                  );
+                  const post = campaign?.posts?.find(
+                    (item) => Number(item.day) === Number(event.target.value),
+                  );
+                  updatePreflight({ ...preflight, day: event.target.value, postRevision: post?.revision });
+                }}
               >
                 <option value="">Selectează</option>
                 {(
@@ -350,7 +391,7 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
               <select
                 value={preflight.targetId}
                 onChange={(event) =>
-                  setPreflight({ ...preflight, targetId: event.target.value })
+                  updatePreflight({ ...preflight, targetId: event.target.value })
                 }
               >
                 <option value="">Selectează</option>
@@ -379,9 +420,9 @@ export default function Executions({ isAdmin = false, isManagedUser = false, can
             <><p className="muted-text">Execuție controlată · fără publicare Facebook.</p><button className="secondary-button" disabled={controlledPending || !preflight.deviceId || !preflight.profileId || !preflight.campaignId || !preflight.day || !preflight.targetId || !executionTargets.some((target) => target.deviceId === preflight.deviceId && target.profileId === preflight.profileId && target.canRequestPreflight)} onClick={requestControlledExecution}>Validează execuția</button></>
           )}
           {api.isLiveExecutionEnabled() && canLiveExecute && executionTargets.some((target) => target.deviceId === preflight.deviceId && target.profileId === preflight.profileId && target.canRequestPreflight) && preflight.campaignId && preflight.day && preflight.targetId && (
-            <><p className="muted-text">Execuție reală — această acțiune va publica pe Facebook.</p><button className="primary-button" disabled={livePending} onClick={() => !livePending && setLiveConfirm(true)}>Publică pe Facebook</button></>
+            <><p className="muted-text">Execuție reală — această acțiune va publica pe Facebook.</p><button className="primary-button" disabled={livePending || liveIssuing || liveConfirm} onClick={openLiveConfirmation}>Publică pe Facebook</button></>
           )}
-          {liveConfirm && <section className="editor-panel" role="dialog" aria-label="Confirmă publicarea"><h3>Confirmă publicarea</h3><p>Această acțiune va publica efectiv conținutul pe Facebook.</p><p>Campanie: {preflight.campaignId} · Ziua {preflight.day} · Target: {preflight.targetId}</p><p>Dispozitiv: {preflight.deviceId} · Profil: {preflight.profileId}</p><button className="secondary-button" disabled={livePending} onClick={() => setLiveConfirm(false)}>Renunță</button><button className="primary-button" disabled={livePending} onClick={confirmLiveExecution}>Confirm publicarea</button></section>}
+          {liveConfirm && <section className="editor-panel" role="dialog" aria-label="Confirmă publicarea"><h3>Confirmă publicarea</h3><p>Această acțiune va publica efectiv conținutul pe Facebook.</p><p>Campanie: {liveFlow.intent.campaignId} · Ziua {liveFlow.intent.day} · Target: {liveFlow.intent.targetId}</p><p>Dispozitiv: {liveFlow.intent.deviceId} · Profil: {liveFlow.intent.profileId}</p>{liveFlow.expired && <p className="save-message">Confirmarea a expirat. Deschide din nou publicarea.</p>}<button className="secondary-button" disabled={livePending} onClick={cancelLiveConfirmation}>Renunță</button><button className="primary-button" disabled={livePending || liveFlow.expired} onClick={confirmLiveExecution}>Confirm publicarea</button></section>}
           {preflightMessage && (
             <p className="save-message">{preflightMessage}</p>
           )}

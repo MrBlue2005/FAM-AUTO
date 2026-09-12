@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.5F-C managed USER confirmation-token UI
+
+The existing `Executions.jsx` managed-USER flow requests `POST /api/cloud-remote-tasks/live-confirmations` on the first `Publică pe Facebook` click and opens the dialog only after a token is issued. One dialog owns one frozen reviewed intent and opaque in-memory token; `Confirm publicarea` submits that same token to live creation. Cancel, close, selection change, expiry, and token-invalid responses discard it. A network/lost-response retry retains the token and has no automatic issuance or publication retry. Tokens are never rendered, logged, or persisted to browser storage, cookies, or URLs. No hosted action is implied by this UI wiring.
+
 ## G5.5F-B confirmation-scoped live task identity
 
 `POST /api/cloud-remote-tasks/live-campaign-execution` now requires the A1 confirmation token and independently repeats all current authorization and source/readiness checks. Its ID includes the authenticated owner, canonical campaign/day/target/device/profile intent, and verified server-generated confirmation ID. The same token returns the same existing task for lost-response safety; a fresh token is only eligible when every equivalent prior live task is terminal `FAILED` with `NOT_ATTEMPTED`. Active, attempted, unknown, completed, verified-success, cancelled, and ambiguous history is blocked without mutation. Legacy live tasks participate through their immutable payload snapshot and need no migration. Only `confirmationId` is stored in the new internal payload; raw tokens never persist or enter safe DTOs. The browser UI is intentionally not wired yet.

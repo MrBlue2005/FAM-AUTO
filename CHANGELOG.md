@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.5F-C — managed USER confirmation-token UI
+
+- The existing managed-USER live-publication dialog now obtains one server-issued token before it opens and submits that exact opaque token only from `Confirm publicarea`. The token is frozen with the reviewed intent in transient memory, never displayed or persisted.
+- Cancel/close/selection changes discard the token; expiry and confirmation-token errors require a new explicit flow. Network retry retains the same dialog token for idempotency; no live task is created on issuance or automatic retry.
+
 ## Phase G5.5F-B — confirmation-scoped live task identity
 
 - `LIVE_CAMPAIGN_EXECUTION` now requires a verified live-confirmation token. Its task identity is bound to the authenticated owner, canonical intent, exact routing, and server-generated confirmation ID; same-token network retries remain idempotent without persisting the raw token.
