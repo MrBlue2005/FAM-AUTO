@@ -1,8 +1,12 @@
 # FAM-AUTO handoff
 
+## G5.7K trusted Facebook session readiness
+
+The real publisher no longer requires fragile English Facebook account/menu DOM literals as positive authentication authority. After its bounded root navigation and approved-origin check, it performs a bounded `document.readyState === 'complete'` observation, rejects explicit login, checkpoint, security-check, and challenge evidence, then requires exactly one canonical Facebook-origin `c_user` matching the local profile's trusted `expectedFacebookAccountId`. Missing, malformed, ambiguous, or mismatched identity still fails closed. Positive DOM markers remain supplemental diagnostics only. The same negative guards and exact identity recheck still run after lease renewal before durable `ATTEMPT_STARTED`.
+
 ## G5.7F Facebook-root session readiness
 
-`RealFacebookPublisherAdapter.prepare()` now opens the reviewed local profile, performs exactly one bounded navigation to `https://www.facebook.com/`, requires the resulting URL to remain on the approved HTTPS `www.facebook.com` origin, classifies the loaded session DOM, and then verifies exact trusted `c_user` equality. Only after those steps may it navigate to the reviewed group or create a composer. Login, checkpoint, challenge, indeterminate DOM, timeout, and non-Facebook redirect states fail closed before `ATTEMPT_STARTED` and the only publish click.
+`RealFacebookPublisherAdapter.prepare()` now opens the reviewed local profile, performs exactly one bounded navigation to `https://www.facebook.com/`, requires the resulting URL to remain on the approved HTTPS `www.facebook.com` origin, rejects explicit negative session evidence, and then verifies exact trusted `c_user` equality. Only after those steps may it navigate to the reviewed group or create a composer. Login, checkpoint, challenge, timeout, and non-Facebook redirect states fail closed before `ATTEMPT_STARTED` and the only publish click.
 
 Manual operator check: open `Profil principal` through Local Studio, visit Facebook home only, confirm the intended account is authenticated and free of checkpoint/challenge, then close or leave the profile ready. Do not visit a group, compose, or publish during this check.
 

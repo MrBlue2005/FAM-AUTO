@@ -48,7 +48,7 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       const cancellationRequested = typeof context.isCancellationRequested === 'function' ? context.isCancellationRequested : async () => false;
       requireLiveSnapshot(task, registry, runtimeProfiles, transport);
       if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
-      await adapter.prepare(task);
+      await adapter.prepare(task, { trace });
       trace('PREPARE_COMPLETE');
       const readiness = await adapter.verifyReady(task);
       if (!readinessAccepted(readiness)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready.');

@@ -4,7 +4,7 @@ const { startBrowser } = require('../facebook/browserManager');
 const { openGroup } = require('../facebook/groupNavigation');
 const { createPost } = require('../facebook/postCreator');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
-const { detectSessionState } = require('./FacebookSessionReadinessExecutor');
+const { observeFacebookSession, requireNoExplicitNegativeSessionState } = require('./FacebookSessionReadinessExecutor');
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
 const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, requirePreparedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
@@ -43,9 +43,9 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   function requirePrepared(task) {
     if (!browser || preparedTaskId !== task?.task_id || !composer) throw failure('PUBLISHER_NOT_PREPARED', 'Live publisher has not prepared this exact task.');
   }
-  async function sessionReady(page) {
-    const state = detectSessionState(await page.content().catch(() => ''));
-    if (state !== 'AUTHENTICATED') throw failure('FACEBOOK_SESSION_NOT_READY', 'Facebook session is unavailable, challenged, or requires login.');
+  async function sessionReady(page, trace = () => {}) {
+    requireNoExplicitNegativeSessionState(await observeFacebookSession(page));
+    trace('SESSION_NEGATIVE_GUARD_CLEAR');
   }
   async function navigateFacebookRoot(page) {
     try {
@@ -74,7 +74,8 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   }
 
   return {
-    async prepare(task) {
+    async prepare(task, options = {}) {
+      const trace = typeof options.trace === 'function' ? options.trace : () => {};
       if (browser) throw failure('PUBLISHER_ALREADY_PREPARED', 'Live publisher is already preparing another task.');
       if (task?.payload?.execution_config?.rehearsal === true) throw failure('LIVE_REHEARSAL_REAL_ADAPTER_FORBIDDEN', 'The real Facebook publisher rejects rehearsal task snapshots.');
       const profile = registry?.getProfile?.(task.profile_id, runtimeProfiles());
@@ -90,16 +91,20 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         // Root navigation is bounded and side-effect-free; identity and target work
         // remain unavailable until its authenticated state is established.
         await navigateFacebookRoot(browser.page);
-        await sessionReady(browser.page);
+        trace('ROOT_NAVIGATION_OK');
+        await sessionReady(browser.page, trace);
         await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
+        trace('TRUSTED_IDENTITY_MATCH');
         await navigateGroup(browser.page, targetUrl);
         verifyTarget(browser.page.url(), targetCanonical);
+        trace('TARGET_READY');
         const post = { ...task.payload.post, media: task.payload.local_media_paths, imagePath: task.payload.local_media_paths?.[0], postingIdentityId: task.payload.posting_identity_id || task.payload.post?.postingIdentityId };
         const prepared = await preparePost(browser.page, post);
         composer = preparedComposer(prepared);
         await verifyComposer(composer);
         await verifyText(composer, task.payload?.post?.text);
         await verifyMedia(composer, task);
+        trace('COMPOSER_READY');
         preparedTaskId = task.task_id;
       } catch (error) { await cleanup(); throw error; }
     },

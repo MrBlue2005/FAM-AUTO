@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7K - trusted Facebook session readiness
+
+- Real Facebook readiness now accepts a selector-free authenticated Facebook root only when the URL remains approved, no explicit login/checkpoint/security-check/challenge evidence exists, and exactly one canonical Facebook-origin `c_user` matches the trusted local profile identity. Generic English account/menu DOM markers remain supplemental and cannot cause a false negative by their absence.
+- Added bounded SPA-settle observation, safe local stage diagnostics, and regression coverage for the manually observed selector-free page, identity failures, explicit negative states, root redirect/timeout, and pre-marker zero-click safety.
+
 ## Phase G5.7F - Facebook-root session readiness
 
 - The real publisher now performs one bounded, side-effect-free navigation to `https://www.facebook.com/` before classifying session state or reading the trusted active `c_user` identity. A blank, stale, login, checkpoint, challenge, timeout, or non-Facebook redirect fails closed before target navigation, `ATTEMPT_STARTED`, or the scoped publish click.
