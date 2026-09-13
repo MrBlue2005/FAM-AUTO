@@ -34,6 +34,34 @@ const COMPOSER_ROOT_SELECTOR = [
 ].join(', ');
 const COMPOSER_TRANSITION_TIMEOUT_MS = 10000;
 const COMPOSER_TRANSITION_POLL_MS = 100;
+const EDITOR_SHAPE_MAX_CANDIDATES = 12;
+
+// This is intentionally structural-only. It is evaluated only against a root
+// that has already passed the composer structural contract; it never reads a
+// label, value, text node, HTML, class, id, or selector from Facebook.
+async function inspectRootLocalEditorShapes(handle) {
+  if (!handle || typeof handle.evaluate !== 'function') return { candidates: [], summary: {} };
+  const raw = await handle.evaluate((root, max) => {
+    const selector = '[contenteditable],[role],textarea,input,[data-lexical-editor],[tabindex],[aria-multiline]';
+    const visible = (node) => { const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node); const box = node.getBoundingClientRect?.(); return Boolean(node.isConnected && style?.display !== 'none' && style?.visibility !== 'hidden' && box && box.width >= 0 && box.height >= 0); };
+    const depth = (node) => { let value = 0; for (let current = node; current && current !== root; current = current.parentElement) value += 1; return value; };
+    const classFor = (value) => value === 'true' ? 'true' : value === 'false' ? 'false' : value === 'plaintext-only' ? 'plaintext-only' : value === '' ? 'empty' : 'inherited/absent';
+    return Array.from(root.querySelectorAll(selector)).slice(0, max).map((node) => {
+      const ce = node.getAttribute('contenteditable'); const role = node.getAttribute('role');
+      const tag = String(node.tagName || '').toLowerCase();
+      const editableAncestor = Boolean(node.parentElement?.closest?.('[contenteditable], [data-lexical-editor]')) || node.ownerDocument?.designMode === 'on';
+      const reason = node.hasAttribute('contenteditable') ? 'CONTENTEDITABLE_ATTRIBUTE' : role ? 'ROLE_ATTRIBUTE' : tag === 'textarea' ? 'TEXTAREA_TAG' : tag === 'input' ? 'INPUT_TAG' : node.hasAttribute('data-lexical-editor') ? 'LEXICAL_ATTRIBUTE' : node.hasAttribute('aria-multiline') ? 'ARIA_MULTILINE' : 'TABINDEX';
+      return { tagName: ['textarea', 'input', 'div', 'span', 'p'].includes(tag) ? tag : 'other', role: role === 'textbox' ? 'textbox' : role === 'combobox' ? 'combobox' : role === 'searchbox' ? 'searchbox' : role ? 'other' : null, contenteditable: classFor(ce), hasDataLexicalEditor: node.hasAttribute('data-lexical-editor'), ariaMultiline: node.hasAttribute('aria-multiline') ? node.getAttribute('aria-multiline') === 'true' : null, tabIndex: Math.max(-1, Math.min(1000, Number(node.tabIndex) || 0)), isContentEditable: node.isContentEditable === true, disabled: node.disabled === true || node.getAttribute('aria-disabled') === 'true', readOnly: node.readOnly === true || node.getAttribute('aria-readonly') === 'true', visible: visible(node), attached: node.isConnected === true, ancestorEditable: editableAncestor, childElementCount: Math.min(12, node.children?.length || 0), descendantEditableCount: Math.min(12, node.querySelectorAll?.('[contenteditable], [data-lexical-editor], textarea, input').length || 0), candidateDepth: Math.min(12, depth(node)), reason };
+    });
+  }, EDITOR_SHAPE_MAX_CANDIDATES).catch(() => []);
+  const candidates = Array.isArray(raw) ? raw.slice(0, EDITOR_SHAPE_MAX_CANDIDATES) : [];
+  return { candidates, summary: summarizeEditorShapes(candidates) };
+}
+
+function summarizeEditorShapes(candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  return { candidateCount: list.length, visibleCandidateCount: list.filter((item) => item.visible).length, isContentEditableCount: list.filter((item) => item.isContentEditable).length, contenteditableAttributePresentCount: list.filter((item) => item.contenteditable !== 'inherited/absent').length, roleTextboxCount: list.filter((item) => item.role === 'textbox').length, textareaCount: list.filter((item) => item.tagName === 'textarea').length, lexicalCount: list.filter((item) => item.hasDataLexicalEditor).length, editableAncestorCount: list.filter((item) => item.ancestorEditable).length, plaintextOnlyCount: list.filter((item) => item.contenteditable === 'plaintext-only').length, otherRoleCount: list.filter((item) => item.role === 'other').length };
+}
 
 async function visibleEnabledCandidates(locator) {
   const candidates = [];
@@ -285,7 +313,7 @@ async function waitForComposerTransition(page, before, options = {}) {
   do {
     const after = await snapshotComposerRoots(page);
     const result = await transitionResult(before, after);
-    options.onObservation?.(after, result);
+    await options.onObservation?.(after, result);
     if (result.kind !== 'none') return result;
     if (Date.now() - started >= timeoutMs) break;
     if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(pollMs);
@@ -299,6 +327,7 @@ async function openComposer(page, options = {}) {
   const diagnostic = options.diagnostic;
   let finalEvidence = null;
   let diagnosticSummaryWritten = false;
+  let lastShapeSummary = null;
   // The real publisher supplies this immediately after canonical target
   // verification. Do not discover a composer when that target proof fails.
   if (typeof options.assertTargetReady === 'function') options.assertTargetReady();
@@ -312,15 +341,25 @@ async function openComposer(page, options = {}) {
 
     await composerButton.click();
     emitDiagnostic(diagnostic, 'COMPOSER_OPENER_CLICKED', 'OPENER_CLICKED');
+    let shapeSnapshots = 0;
     const transition = await waitForComposerTransition(page, before, {
       ...options,
-      onObservation: (records, result) => { finalEvidence = emitObservationDiagnostics(diagnostic, records, result); },
+      onObservation: async (records, result) => {
+        finalEvidence = emitObservationDiagnostics(diagnostic, records, result);
+        // At most three root-local snapshots are diagnostic-only; composer
+        // eligibility and transition decisions remain exactly as before.
+        if (shapeSnapshots < 3 && diagnostic?.shape) {
+          const root = records.find((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount === 0);
+          if (root) { shapeSnapshots += 1; const shape = await inspectRootLocalEditorShapes(root.handle); lastShapeSummary = shape.summary; diagnostic.shape(shape.candidates, shape.summary); }
+        }
+      },
     });
     if (transition.kind === 'none') {
       trace('COMPOSER_OPEN_TIMEOUT');
       emitDiagnostic(diagnostic, 'COMPOSER_ROOT_NO_TRANSITION', 'NO_ELIGIBLE_TRANSITION', finalEvidence);
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_TIMEOUT', 'ACQUISITION_TIMEOUT', finalEvidence);
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', finalEvidence, true);
+      diagnostic?.shapeSummary?.(lastShapeSummary || {});
       diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_OPEN_FAILED', 'The selected group composer opener did not open a composer.');
     }
@@ -364,9 +403,12 @@ module.exports = {
   COMPOSER_ENTRY_LABELS,
   COMPOSER_EDITOR_SELECTOR,
   COMPOSER_ROOT_SELECTOR,
+  EDITOR_SHAPE_MAX_CANDIDATES,
   GROUP_COMPOSER_STRUCTURAL_SELECTOR,
   findComposerOpener,
   snapshotComposerRoots,
   transitionResult,
   openComposer,
+  inspectRootLocalEditorShapes,
+  summarizeEditorShapes,
 };

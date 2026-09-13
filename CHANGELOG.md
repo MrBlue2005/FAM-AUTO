@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AA - root-local editor-shape diagnostics
+
+- When a structurally eligible composer root has zero eligible editors, the Local Agent may retain at most three bounded structural snapshots from that root only, plus a terminal aggregate summary. Candidate records contain only fixed tag/role/contenteditable classes, bounded numeric structure, editability/visibility booleans, and a fixed discovery reason.
+- Diagnostics never retain Facebook text, labels, placeholders, HTML, selectors, IDs, classes, values, cookies, account identities, URLs, tokens, or credentials. Composer eligibility, binding, text entry, marker ordering, and publication behavior are unchanged.
+
 ## Phase G5.7X - Facebook composer editor-shape support
 
 - Composer-root binding and identity-based transition proof are unchanged. Inside that one retained root only, the editor contract now accepts exactly one visible, enabled, editable text-entry surface: the classic contenteditable textbox, a contenteditable surface without a textbox role, an inherited-editable textbox, a Lexical/ProseMirror-style editable surface, or a textarea.

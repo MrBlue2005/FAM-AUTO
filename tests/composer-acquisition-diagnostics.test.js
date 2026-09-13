@@ -6,8 +6,8 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, openComposer } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, inspectRootLocalEditorShapes, openComposer } = require('../app/facebook/composer');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function root(id, editors, options = {}) {
   return {
@@ -139,5 +139,46 @@ test('terminal acquisition evidence is retained when repeated snapshots approach
     const saved = fs.readFileSync(path.join(directory, 'task_terminal.json'), 'utf8');
     assert.ok(Buffer.byteLength(saved, 'utf8') <= 1200);
     assert.match(saved, /COMPOSER_ACQUISITION_FAILED/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('root-local editor shape records classify supported structural families without private fields', () => {
+  const cases = [
+    { role: 'textbox', reason: 'ROLE_ATTRIBUTE' },
+    { contenteditable: 'true', reason: 'CONTENTEDITABLE_ATTRIBUTE' },
+    { contenteditable: 'plaintext-only', reason: 'CONTENTEDITABLE_ATTRIBUTE' },
+    { contenteditable: 'false', reason: 'CONTENTEDITABLE_ATTRIBUTE' },
+    { ancestorEditable: true, reason: 'TABINDEX' },
+    { hasDataLexicalEditor: true, reason: 'LEXICAL_ATTRIBUTE' },
+    { tagName: 'textarea', reason: 'TEXTAREA_TAG' },
+    { role: 'other', reason: 'ROLE_ATTRIBUTE' },
+  ];
+  for (const item of cases) {
+    const candidate = sanitizeCandidate({ tagName: 'div', attached: true, visible: true, childElementCount: 9999, ...item, text: 'private', id: 'private', className: 'private', value: 'private' });
+    assert.equal(candidate.reason, item.reason); assert.equal(candidate.childElementCount, 1000);
+    assert.equal(Object.hasOwn(candidate, 'text'), false); assert.equal(Object.hasOwn(candidate, 'id'), false); assert.equal(Object.hasOwn(candidate, 'className'), false); assert.equal(Object.hasOwn(candidate, 'value'), false);
+  }
+});
+
+test('editor-shape inspection is invoked only on the retained root handle, never through a page locator', async () => {
+  let calls = 0;
+  const retainedRoot = { evaluate: async (_callback, max) => { calls += 1; assert.equal(max, 12); return [{ tagName: 'div', role: 'textbox', contenteditable: 'inherited/absent', visible: true, attached: true, reason: 'ROLE_ATTRIBUTE' }]; } };
+  const result = await inspectRootLocalEditorShapes(retainedRoot);
+  assert.equal(calls, 1); assert.equal(result.candidates.length, 1); assert.equal(result.summary.roleTextboxCount, 1);
+});
+
+test('editor-shape snapshots are root-local payloads, bounded, and retain terminal summary', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-editor-shape-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 8, maxBytes: 12000, now: () => '2026-09-13T00:00:00.000Z' });
+    const record = sink.forTask('root_only');
+    const candidates = Array.from({ length: 20 }, (_, index) => ({ tagName: index === 0 ? 'textarea' : 'div', role: null, contenteditable: 'inherited/absent', visible: true, attached: true, reason: 'TABINDEX', innerText: 'never persist', selector: 'never persist' }));
+    for (let index = 0; index < 6; index += 1) record.shape(candidates, { candidateCount: 20, textareaCount: 1 });
+    record.shapeSummary({ candidateCount: 20, textareaCount: 1 });
+    const saved = fs.readFileSync(path.join(directory, 'root_only.json'), 'utf8'); const data = JSON.parse(saved);
+    assert.ok(data.records.filter((item) => item.stage === 'EDITOR_SHAPE_SNAPSHOT').length <= 3);
+    assert.ok(data.records.some((item) => item.stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY'));
+    assert.ok(data.records.filter((item) => item.editorShapeCandidates).every((item) => item.editorShapeCandidates.length <= 12));
+    assert.doesNotMatch(saved, /never persist|innerText|selector/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

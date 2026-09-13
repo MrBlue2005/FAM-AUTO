@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AA root-local editor-shape diagnostics
+
+For a zero-editor failure, the composer diagnostic sink can record up to three snapshots only beneath an already structurally eligible composer root and one terminal aggregate summary. Each of at most 12 candidates records a fixed tag/role enum, contenteditable value class, safe attribute-presence/editability/visibility booleans, bounded structural counts and depth, and a fixed reason class. It does not record inner text, text content, HTML, labels, placeholders, names, values, selectors, IDs, classes, DOM paths, cookies, account IDs, URLs, tokens, credentials, or task content. This is observability only: no editor selector, eligibility, root-transition, text, marker, submit, or retry behavior changes.
+
 ## G5.7X Facebook composer editor-shape support
 
 The existing unique root-transition proof remains mandatory. Only inside that exact retained composer root, `eligibleEditors()` accepts one visible, enabled, editable editor from a bounded shape set: a classic contenteditable textbox, role-less contenteditable surface, inherited-editable textbox, Lexical/ProseMirror-style editable surface, or textarea. Comment/reply/search-shaped candidates, hidden/disabled/non-editable surfaces, zero candidates, and multiple candidates fail closed. The accepted exact editor handle is retained for text insertion and later exact-text verification; no page-wide editor lookup or generic composer-editor reacquisition is permitted.
