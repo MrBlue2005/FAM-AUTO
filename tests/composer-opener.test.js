@@ -2,23 +2,53 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { COMPOSER_EDITOR_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, openComposer } = require('../app/facebook/composer');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, openComposer } = require('../app/facebook/composer');
 
 function node(id, editors = 0, options = {}) {
   const attached = options.attached !== false;
-  return { id, editors, visible: options.visible !== false, attached, isConnected: attached };
+  return {
+    id,
+    editors,
+    visible: options.visible !== false,
+    attached,
+    isConnected: attached,
+    role: options.role === undefined ? 'dialog' : options.role,
+    ariaModal: options.ariaModal === true,
+    pagelet: options.pagelet || '',
+    ariaLabel: options.ariaLabel || '',
+    actionRegion: options.actionRegion !== false,
+    editorOptions: options.editorOptions || {},
+    getAttribute(name) {
+      return ({ role: this.role, 'aria-modal': this.ariaModal ? 'true' : '', 'data-pagelet': this.pagelet, 'aria-label': this.ariaLabel, 'data-testid': '' })[name] || '';
+    },
+    closest() { return null; },
+    querySelector() { return this.actionRegion ? {} : null; },
+  };
 }
 
 function collection(items) { return { count: async () => items.length, nth: (index) => items[index] }; }
 
 function fakePage(options = {}) {
-  const state = { dialogs: options.before || [], clicked: 0, ticks: 0, applied: false };
+  const state = { roots: options.before || [], clicked: 0, ticks: 0, applied: false };
   const calls = { targetChecks: 0, structuralLookups: 0, roleLookups: [] };
   const applyAfter = () => {
     if (!state.applied && state.ticks >= (options.delayTicks || 0)) {
       state.applied = true;
-      state.dialogs = options.after || state.dialogs;
+      state.roots = options.after || state.roots;
     }
+  };
+  const editorFor = (root, index) => {
+    const config = Array.isArray(root.editorOptions) ? (root.editorOptions[index] || {}) : root.editorOptions;
+    const editor = {
+      visible: config.visible !== false,
+      enabled: config.enabled !== false,
+      getAttribute(name) {
+        return ({ 'contenteditable': config.contenteditable === false ? 'false' : 'true', role: config.role === undefined ? 'textbox' : config.role, 'aria-label': config.ariaLabel || '', placeholder: config.placeholder || '', 'data-testid': config.testId || '', 'data-pagelet': config.pagelet || '' })[name] || '';
+      },
+      closest() { return null; },
+      tagName: config.tagName || 'DIV',
+    };
+    return { isVisible: async () => editor.visible, isEnabled: async () => editor.enabled, evaluate: async (fn) => fn(editor) };
   };
   const handleFor = (value) => ({
     _node: value,
@@ -26,10 +56,10 @@ function fakePage(options = {}) {
     isVisible: async () => value.visible,
     locator: (selector) => {
       assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
-      return collection(Array.from({ length: value.editors }, () => ({})));
+      return collection(Array.from({ length: value.editors }, (_, index) => editorFor(value, index)));
     },
   });
-  const dialogLocator = (value) => ({
+  const rootLocator = (value) => ({
     elementHandle: async () => handleFor(value),
     waitFor: async () => { if (!value.visible) throw new Error('hidden'); },
   });
@@ -41,11 +71,11 @@ function fakePage(options = {}) {
   const labelled = options.labelled || {};
   const page = {
     getByRole: (role, roleOptions = {}) => {
-      if (role === 'dialog') return { count: async () => state.dialogs.length, nth: (index) => dialogLocator(state.dialogs[index]) };
       calls.roleLookups.push({ role, name: roleOptions.name, exact: roleOptions.exact });
       return collection((labelled[`${role}:${roleOptions.name}`] || []).map(opener));
     },
     locator: (selector) => {
+      if (selector === COMPOSER_ROOT_SELECTOR) return { count: async () => state.roots.length, nth: (index) => rootLocator(state.roots[index]) };
       assert.equal(selector, GROUP_COMPOSER_STRUCTURAL_SELECTOR);
       calls.structuralLookups += 1;
       return collection((options.structural || []).map(opener));
@@ -66,7 +96,7 @@ test('reviewed Romanian and English group opener labels each bind one appended c
     const stages = [];
     const composer = await openComposer(fixture.page, { ...openerOptions(fixture), trace: (stage) => stages.push(stage) });
     assert.equal(composer.handle._node.id, 'new'); assert.equal(fixture.state.clicked, 1);
-    assert.deepEqual(stages, ['COMPOSER_OPENER_FOUND', 'COMPOSER_TRANSITION_OBSERVED', 'COMPOSER_UNIQUE_NEW', 'COMPOSER_OPENED']);
+    assert.deepEqual(stages, ['COMPOSER_OPENER_FOUND', 'COMPOSER_TRANSITION_OBSERVED', 'COMPOSER_ROOT_CANDIDATE_OBSERVED', 'COMPOSER_UNIQUE_NEW', 'COMPOSER_ROOT_UNIQUE_NEW', 'COMPOSER_EDITOR_BOUND', 'COMPOSER_OPENED']);
   }
 });
 
@@ -167,4 +197,38 @@ test('failed canonical target proof prevents discovery and clicking', async () =
   const fixture = fakePage({ labelled: { 'button:Scrie ceva...': [{}] } });
   await assert.rejects(openComposer(fixture.page, { assertTargetReady: () => { throw Object.assign(new Error('wrong target'), { code: 'FACEBOOK_TARGET_MISMATCH' }); } }), { code: 'FACEBOOK_TARGET_MISMATCH' });
   assert.equal(fixture.state.clicked, 0); assert.equal(fixture.calls.roleLookups.length, 0);
+});
+
+test('a non-dialog aria-modal overlay with one bounded post editor is an observed valid transition', async () => {
+  const old = node('old-shell');
+  const overlay = node('facebook-overlay', 1, { role: '', ariaModal: true, pagelet: '' });
+  const fixture = fakePage({ before: [old], after: [old, overlay], labelled: { 'button:Scrie ceva...': [{}] } });
+  const stages = [];
+  const composer = await openComposer(fixture.page, { ...openerOptions(fixture), trace: (stage) => stages.push(stage) });
+  assert.equal(composer.handle._node.id, 'facebook-overlay');
+  assert.ok(stages.includes('COMPOSER_ROOT_CANDIDATE_OBSERVED'));
+  assert.ok(stages.includes('COMPOSER_ROOT_UNIQUE_NEW'));
+  assert.ok(stages.includes('COMPOSER_EDITOR_BOUND'));
+});
+
+test('a Facebook-like composer layer without dialog role or aria-modal is accepted only through its composer pagelet transition', async () => {
+  const old = node('old-shell');
+  const layer = node('composer-layer', 1, { role: '', pagelet: 'CometComposerRoot' });
+  const fixture = fakePage({ before: [old], after: [old, layer], labelled: { 'button:Write something...': [{}] } });
+  assert.equal((await openComposer(fixture.page, openerOptions(fixture))).handle._node.id, 'composer-layer');
+});
+
+test('comment, reply, search, hidden, and unrelated modal textboxes are never composer roots', async () => {
+  const cases = [
+    node('comment', 1, { editorOptions: { ariaLabel: 'Write a comment...' } }),
+    node('reply', 1, { editorOptions: { ariaLabel: 'Reply' } }),
+    node('search', 1, { ariaLabel: 'Search', actionRegion: false, editorOptions: { ariaLabel: 'Search' } }),
+    node('hidden', 1, { visible: false }),
+    node('unrelated', 1, { ariaLabel: 'Settings', actionRegion: false, editorOptions: { ariaLabel: 'Title' } }),
+  ];
+  for (const root of cases) {
+    const fixture = fakePage({ before: [node('old')], after: [node('old'), root], labelled: { 'button:Scrie ceva...': [{}] } });
+    await assert.rejects(openComposer(fixture.page, openerOptions(fixture, { transitionTimeoutMs: 0 })), { code: 'FACEBOOK_COMPOSER_OPEN_FAILED' });
+    assert.equal(fixture.state.clicked, 1);
+  }
 });

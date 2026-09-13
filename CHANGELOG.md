@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7S - observed Facebook composer modal contract
+
+- Composer acquisition now snapshots a bounded set of potential create-post roots: dialogs, `aria-modal` overlays, and Facebook composer/create-post pagelet roots. `role="dialog"` is an accepted signal, not a requirement.
+- Every candidate remains opener-bound: only one visible, attached, structurally composer-like root that uniquely transitions after the reviewed opener click and contains exactly one visible, enabled post editor may be retained. Comment, reply, search, hidden, unrelated, multi-root, and multi-editor surfaces fail closed.
+- The retained root remains the sole downstream scope for text, media, and publish-control checks. New safe root/transition stage traces contain no page content, user text, cookies, or tokens. No task, browser, Facebook action, or publish side effect occurred during implementation.
+
 ## Phase G5.7Q - composer identity transition binding
 
 - Replaced count-only composer proof with a bounded pre/post `[role="dialog"]` identity comparison. A candidate is eligible only when its exact retained DOM handle is attached, visible, and has exactly one create-post entry surface.

@@ -14,6 +14,15 @@ const COMPOSER_ENTRY_LABELS = Object.freeze([
 
 const GROUP_COMPOSER_STRUCTURAL_SELECTOR = '[role="main"] [data-pagelet="GroupFeed"] [role="textbox"][contenteditable="true"][aria-label]';
 const COMPOSER_EDITOR_SELECTOR = '[contenteditable="true"][role="textbox"], textarea';
+// Deliberately small root set.  A root is never selected for publishing merely
+// because it exists: it must make a unique pre/post-click transition into the
+// full composer contract below.
+const COMPOSER_ROOT_SELECTOR = [
+  '[role="dialog"]',
+  '[aria-modal="true"]',
+  '[data-pagelet*="Composer" i]',
+  '[data-pagelet*="CreatePost" i]',
+].join(', ');
 const COMPOSER_TRANSITION_TIMEOUT_MS = 10000;
 const COMPOSER_TRANSITION_POLL_MS = 100;
 
@@ -52,6 +61,60 @@ async function sameDomNode(left, right) {
   return left.evaluate((node, other) => node === other, right).catch(() => false);
 }
 
+async function rootSignals(handle) {
+  if (!handle || typeof handle.evaluate !== 'function') return { structural: false, actionRegion: false, excluded: true };
+  return handle.evaluate((node) => {
+    const attr = (name) => String(node.getAttribute?.(name) || '');
+    const ownPagelet = attr('data-pagelet');
+    const ancestorPagelet = String(node.closest?.('[data-pagelet]')?.getAttribute?.('data-pagelet') || '');
+    const rootText = `${attr('role')} ${attr('aria-modal')} ${ownPagelet} ${ancestorPagelet} ${attr('aria-label')} ${attr('data-testid')}`;
+    const lower = rootText.toLowerCase();
+    const structural = attr('role') === 'dialog'
+      || attr('aria-modal') === 'true'
+      || /(composer|createpost)/i.test(`${ownPagelet} ${ancestorPagelet}`);
+    // A root must look like a create-post surface, rather than merely any
+    // overlay that happens to contain a textbox.  Pagelet evidence is locale
+    // independent; controls are supplemental evidence for the current FB UI.
+    const actionRegion = /(composer|createpost)/i.test(`${ownPagelet} ${ancestorPagelet}`)
+      || Boolean(node.querySelector?.([
+        'input[type="file"]',
+        '[data-pagelet*="Composer" i]',
+        '[data-pagelet*="CreatePost" i]',
+        '[data-testid*="composer" i]',
+        '[data-testid*="post" i]',
+        '[role="button"][aria-label*="post" i]',
+        '[role="button"][aria-label*="photo" i]',
+        '[role="button"][aria-label*="media" i]',
+        '[role="button"][aria-label*="fotograf" i]',
+      ].join(', ')));
+    const excluded = /(comment|reply|ufi|search|settings|report)/i.test(lower);
+    return { structural, actionRegion, excluded };
+  }).catch(() => ({ structural: false, actionRegion: false, excluded: true }));
+}
+
+async function eligibleEditors(handle) {
+  const editors = handle?.locator?.(COMPOSER_EDITOR_SELECTOR);
+  const count = await editors?.count?.().catch(() => 0);
+  const candidates = [];
+  for (let index = 0; index < count; index += 1) {
+    const editor = editors.nth(index);
+    const [visible, enabled, metadata] = await Promise.all([
+      editor?.isVisible?.().catch(() => false),
+      editor?.isEnabled?.().catch(() => false),
+      editor?.evaluate?.((node) => {
+        const attr = (name) => String(node.getAttribute?.(name) || '');
+        const text = `${attr('aria-label')} ${attr('placeholder')} ${attr('data-testid')} ${attr('data-pagelet')}`.toLowerCase();
+        const context = String(node.closest?.('[data-pagelet], [aria-label], [data-testid]')?.getAttribute?.('data-pagelet') || '').toLowerCase();
+        const contentEditable = attr('contenteditable') === 'true';
+        const textbox = attr('role') === 'textbox' || String(node.tagName || '').toLowerCase() === 'textarea';
+        return { postShape: contentEditable ? attr('role') === 'textbox' : textbox, excluded: /(comment|reply|ufi|search)/i.test(`${text} ${context}`) };
+      }).catch(() => ({ postShape: false, excluded: true })),
+    ]);
+    if (visible === true && enabled === true && metadata?.postShape === true && metadata.excluded !== true) candidates.push(editor);
+  }
+  return candidates;
+}
+
 async function composerContract(handle) {
   const attachedPromise = typeof handle?.evaluate === 'function'
     ? handle.evaluate((node) => node.isConnected).catch(() => false)
@@ -64,18 +127,19 @@ async function composerContract(handle) {
     visiblePromise,
   ]);
   if (attached !== true || visible !== true) return 'inactive';
-  const editors = handle.locator?.(COMPOSER_EDITOR_SELECTOR);
-  const count = await editors?.count?.().catch(() => 0);
-  if (count === 1) return 'eligible';
-  return count > 1 ? 'ambiguous' : 'not-composer';
+  const signals = await rootSignals(handle);
+  if (!signals.structural || !signals.actionRegion || signals.excluded) return 'not-composer';
+  const editors = await eligibleEditors(handle);
+  if (editors.length === 1) return 'eligible';
+  return editors.length > 1 ? 'ambiguous' : 'not-composer';
 }
 
-async function snapshotComposerDialogs(page) {
-  const dialogs = page.getByRole('dialog');
+async function snapshotComposerRoots(page) {
+  const roots = page.locator(COMPOSER_ROOT_SELECTOR);
   const records = [];
-  const count = await dialogs.count();
+  const count = await roots.count();
   for (let index = 0; index < count; index += 1) {
-    const locator = dialogs.nth(index);
+    const locator = roots.nth(index);
     const handle = await locator.elementHandle?.().catch(() => null);
     if (!handle) continue;
     records.push({ handle, locator, contract: await composerContract(handle) });
@@ -119,7 +183,7 @@ async function waitForComposerTransition(page, before, options = {}) {
   const pollMs = Number.isFinite(options.transitionPollMs) ? options.transitionPollMs : COMPOSER_TRANSITION_POLL_MS;
   const started = Date.now();
   do {
-    const result = await transitionResult(before, await snapshotComposerDialogs(page));
+    const result = await transitionResult(before, await snapshotComposerRoots(page));
     if (result.kind !== 'none') return result;
     if (Date.now() - started >= timeoutMs) break;
     if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(pollMs);
@@ -136,7 +200,7 @@ async function openComposer(page, options = {}) {
   try {
     const composerButton = await findComposerOpener(page);
     trace('COMPOSER_OPENER_FOUND');
-    const before = await snapshotComposerDialogs(page);
+    const before = await snapshotComposerRoots(page);
 
     await composerButton.click();
     const transition = await waitForComposerTransition(page, before, options);
@@ -145,24 +209,30 @@ async function openComposer(page, options = {}) {
       throw failure('FACEBOOK_COMPOSER_OPEN_FAILED', 'The selected group composer opener did not open a composer.');
     }
     trace('COMPOSER_TRANSITION_OBSERVED');
+    trace('COMPOSER_ROOT_CANDIDATE_OBSERVED');
     if (transition.kind === 'ambiguous') {
       trace('COMPOSER_TRANSITION_AMBIGUOUS');
+      trace('COMPOSER_ROOT_AMBIGUOUS');
       throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be uniquely identified.');
     }
-    if (transition.kind === 'new') trace('COMPOSER_UNIQUE_NEW');
-    if (transition.kind === 'replacement') trace('COMPOSER_UNIQUE_REPLACEMENT');
-    if (transition.kind === 'reuse') trace('COMPOSER_UNIQUE_REUSE');
+    if (transition.kind === 'new') { trace('COMPOSER_UNIQUE_NEW'); trace('COMPOSER_ROOT_UNIQUE_NEW'); }
+    if (transition.kind === 'replacement') { trace('COMPOSER_UNIQUE_REPLACEMENT'); trace('COMPOSER_ROOT_UNIQUE_REPLACEMENT'); }
+    if (transition.kind === 'reuse') { trace('COMPOSER_UNIQUE_REUSE'); trace('COMPOSER_ROOT_UNIQUE_REUSE'); }
     const { locator, handle } = transition.record;
     await locator.waitFor({ state: 'visible', timeout: 10000 });
     if (!handle) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be retained.');
 
+    trace('COMPOSER_EDITOR_BOUND');
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
     return { handle, locator };
   } catch (error) {
     if (error?.code === 'FACEBOOK_COMPOSER_OPENER_AMBIGUOUS') trace('COMPOSER_OPENER_AMBIGUOUS');
     else if (error?.code === 'FACEBOOK_COMPOSER_UNVERIFIED') trace('COMPOSER_TRANSITION_AMBIGUOUS');
-    else trace('COMPOSER_OPEN_FAILED');
+    else {
+      if (error?.code === 'FACEBOOK_COMPOSER_OPEN_FAILED') trace('COMPOSER_ROOT_TIMEOUT');
+      trace('COMPOSER_OPEN_FAILED');
+    }
     throw error;
   }
 }
@@ -170,9 +240,10 @@ async function openComposer(page, options = {}) {
 module.exports = {
   COMPOSER_ENTRY_LABELS,
   COMPOSER_EDITOR_SELECTOR,
+  COMPOSER_ROOT_SELECTOR,
   GROUP_COMPOSER_STRUCTURAL_SELECTOR,
   findComposerOpener,
-  snapshotComposerDialogs,
+  snapshotComposerRoots,
   transitionResult,
   openComposer,
 };

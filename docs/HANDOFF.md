@@ -325,6 +325,10 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
+### G5.7S observed Facebook composer modal contract
+
+`role="dialog"` is no longer mandatory for composer acquisition. The bounded opener-bound transition snapshot includes dialogs, `aria-modal` overlays, and Facebook composer/create-post pagelet roots. A candidate must be attached, visible, structurally composer-like, have a composer-local action region, and contain exactly one visible/enabled post editor; comment, reply, search, hidden, unrelated, multi-root, and multi-editor surfaces fail closed. The exact post-click root handle remains the sole downstream scope for text/media/publish checks. Local deterministic coverage includes dialog, aria-modal, non-dialog pagelet overlay, replacement/reuse, delayed/timeout, and observed-shape regressions. No hosted deployment, task, Chromium, Facebook navigation, or publication was performed.
+
 ### G5.1 future-live execution invariant
 
 `202609110001_live_side_effect_state.sql` adds a service-role/agent-protocol-only durable marker. Before `ATTEMPT_STARTED`, a known failure may be `FAILED`; after it, ambiguity is terminal `OUTCOME_UNKNOWN`; only `VERIFIED_SUCCESS` may become `COMPLETED`. Attempted work is never requeued, reclaimed, or automatically retried after a lease loss, reconnect, or profile-lock release. Profile locking remains local execution exclusivity, not retry authority. The hosted migration is validated; live gates and live task creation remain disabled.
