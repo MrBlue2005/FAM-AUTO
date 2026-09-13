@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AD - editor-eligibility rejection diagnostics
+
+- Root-local editor diagnostic candidates now retain one fixed rejection enum derived from the existing visibility, enabled, editable, post-shape, and comment/reply/search checks. The bounded terminal summary adds fixed reason counts.
+- This is observability only: no selector, candidate eligibility, root binding, editor selection, text entry, marker, submit, retry, task, browser, Facebook, or publish behavior changed. Candidate records continue to exclude text, labels, HTML, IDs, classes, values, DOM paths, URLs, cookies, identities, tokens, and credentials.
+
 ## Phase G5.7AA - root-local editor-shape diagnostics
 
 - When a structurally eligible composer root has zero eligible editors, the Local Agent may retain at most three bounded structural snapshots from that root only, plus a terminal aggregate summary. Candidate records contain only fixed tag/role/contenteditable classes, bounded numeric structure, editability/visibility booleans, and a fixed discovery reason.

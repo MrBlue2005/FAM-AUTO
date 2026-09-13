@@ -47,6 +47,10 @@ const MAX_TASK_FILES = 24;
 const MAX_FILE_BYTES = 32 * 1024;
 const MAX_EDITOR_SHAPE_SNAPSHOTS = 3;
 const MAX_EDITOR_SHAPE_CANDIDATES = 12;
+const ELIGIBILITY_REJECTION_REASONS = new Set([
+  'ACCEPTED', 'HIDDEN', 'PLAYWRIGHT_NOT_ENABLED', 'PLAYWRIGHT_NOT_EDITABLE',
+  'NOT_POST_SHAPE', 'COMMENT_REPLY_SEARCH_EXCLUDED', 'OTHER_SAFE_REJECTION',
+]);
 const TERMINAL_STAGES = new Set([
   'COMPOSER_ROOT_ACCEPTED', 'COMPOSER_EDITOR_BOUND', 'COMPOSER_ACQUISITION_FAILED',
 ]);
@@ -92,11 +96,12 @@ function sanitizeCandidate(value = {}) {
   const contenteditable = ['true', 'false', 'plaintext-only', 'empty', 'inherited/absent'].includes(value.contenteditable) ? value.contenteditable : 'inherited/absent';
   const reason = ['CONTENTEDITABLE_ATTRIBUTE', 'ROLE_ATTRIBUTE', 'TEXTAREA_TAG', 'INPUT_TAG', 'LEXICAL_ATTRIBUTE', 'ARIA_MULTILINE', 'TABINDEX'].includes(value.reason) ? value.reason : 'TABINDEX';
   const bool = (key) => value[key] === true;
-  return { tagName, role, contenteditable, hasDataLexicalEditor: bool('hasDataLexicalEditor'), ariaMultiline: typeof value.ariaMultiline === 'boolean' ? value.ariaMultiline : null, tabIndex: Math.max(-1, Math.min(1000, Number.isFinite(Number(value.tabIndex)) ? Math.trunc(Number(value.tabIndex)) : 0)), isContentEditable: bool('isContentEditable'), disabled: bool('disabled'), readOnly: bool('readOnly'), visible: bool('visible'), attached: bool('attached'), ancestorEditable: bool('ancestorEditable'), childElementCount: boundedInteger(value.childElementCount) || 0, descendantEditableCount: boundedInteger(value.descendantEditableCount) || 0, candidateDepth: boundedInteger(value.candidateDepth) || 0, reason };
+  const eligibilityRejectionReason = ELIGIBILITY_REJECTION_REASONS.has(value.eligibilityRejectionReason) ? value.eligibilityRejectionReason : 'OTHER_SAFE_REJECTION';
+  return { tagName, role, contenteditable, hasDataLexicalEditor: bool('hasDataLexicalEditor'), ariaMultiline: typeof value.ariaMultiline === 'boolean' ? value.ariaMultiline : null, tabIndex: Math.max(-1, Math.min(1000, Number.isFinite(Number(value.tabIndex)) ? Math.trunc(Number(value.tabIndex)) : 0)), isContentEditable: bool('isContentEditable'), disabled: bool('disabled'), readOnly: bool('readOnly'), visible: bool('visible'), attached: bool('attached'), ancestorEditable: bool('ancestorEditable'), childElementCount: boundedInteger(value.childElementCount) || 0, descendantEditableCount: boundedInteger(value.descendantEditableCount) || 0, candidateDepth: boundedInteger(value.candidateDepth) || 0, reason, eligibilityRejectionReason };
 }
 
 function sanitizeShapeSummary(value = {}) {
-  const keys = ['candidateCount', 'visibleCandidateCount', 'isContentEditableCount', 'contenteditableAttributePresentCount', 'roleTextboxCount', 'textareaCount', 'lexicalCount', 'editableAncestorCount', 'plaintextOnlyCount', 'otherRoleCount'];
+  const keys = ['candidateCount', 'visibleCandidateCount', 'isContentEditableCount', 'contenteditableAttributePresentCount', 'roleTextboxCount', 'textareaCount', 'lexicalCount', 'editableAncestorCount', 'plaintextOnlyCount', 'otherRoleCount', 'acceptedCount', 'playwrightNotEnabledCount', 'playwrightNotEditableCount', 'commentReplySearchExcludedCount', 'notPostShapeCount', 'otherSafeRejectionCount'];
   return Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0]));
 }
 
@@ -183,6 +188,7 @@ module.exports = {
   MAX_FILE_BYTES,
   MAX_EDITOR_SHAPE_CANDIDATES,
   MAX_EDITOR_SHAPE_SNAPSHOTS,
+  ELIGIBILITY_REJECTION_REASONS,
   MAX_RECORDS_PER_TASK,
   MAX_TASK_FILES,
   REASON_CLASSES,

@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AD editor-eligibility rejection diagnostics
+
+When a structurally eligible retained composer root has zero accepted editors, its bounded root-local editor records now include one fixed, diagnostic-only `eligibilityRejectionReason`: `ACCEPTED`, `HIDDEN`, `PLAYWRIGHT_NOT_ENABLED`, `PLAYWRIGHT_NOT_EDITABLE`, `NOT_POST_SHAPE`, `COMMENT_REPLY_SEARCH_EXCLUDED`, or `OTHER_SAFE_REJECTION`. The reason follows the existing eligibility condition order and does not alter selectors, root discovery, editor acceptance, comment/reply/search exclusions, transition handling, text insertion, marker ordering, submit, or retry behavior. The terminal summary adds bounded counts for accepted, Playwright-enabled/editable, exclusion, post-shape, and other safe rejections. No private DOM data is retained.
+
 ## G5.7AA root-local editor-shape diagnostics
 
 For a zero-editor failure, the composer diagnostic sink can record up to three snapshots only beneath an already structurally eligible composer root and one terminal aggregate summary. Each of at most 12 candidates records a fixed tag/role enum, contenteditable value class, safe attribute-presence/editability/visibility booleans, bounded structural counts and depth, and a fixed reason class. It does not record inner text, text content, HTML, labels, placeholders, names, values, selectors, IDs, classes, DOM paths, cookies, account IDs, URLs, tokens, credentials, or task content. This is observability only: no editor selector, eligibility, root-transition, text, marker, submit, or retry behavior changes.

@@ -35,6 +35,15 @@ const COMPOSER_ROOT_SELECTOR = [
 const COMPOSER_TRANSITION_TIMEOUT_MS = 10000;
 const COMPOSER_TRANSITION_POLL_MS = 100;
 const EDITOR_SHAPE_MAX_CANDIDATES = 12;
+const EDITOR_ELIGIBILITY_REJECTION_REASONS = Object.freeze([
+  'ACCEPTED',
+  'HIDDEN',
+  'PLAYWRIGHT_NOT_ENABLED',
+  'PLAYWRIGHT_NOT_EDITABLE',
+  'NOT_POST_SHAPE',
+  'COMMENT_REPLY_SEARCH_EXCLUDED',
+  'OTHER_SAFE_REJECTION',
+]);
 
 // This is intentionally structural-only. It is evaluated only against a root
 // that has already passed the composer structural contract; it never reads a
@@ -60,7 +69,25 @@ async function inspectRootLocalEditorShapes(handle) {
 
 function summarizeEditorShapes(candidates = []) {
   const list = Array.isArray(candidates) ? candidates : [];
-  return { candidateCount: list.length, visibleCandidateCount: list.filter((item) => item.visible).length, isContentEditableCount: list.filter((item) => item.isContentEditable).length, contenteditableAttributePresentCount: list.filter((item) => item.contenteditable !== 'inherited/absent').length, roleTextboxCount: list.filter((item) => item.role === 'textbox').length, textareaCount: list.filter((item) => item.tagName === 'textarea').length, lexicalCount: list.filter((item) => item.hasDataLexicalEditor).length, editableAncestorCount: list.filter((item) => item.ancestorEditable).length, plaintextOnlyCount: list.filter((item) => item.contenteditable === 'plaintext-only').length, otherRoleCount: list.filter((item) => item.role === 'other').length };
+  const count = (reason) => list.filter((item) => item.eligibilityRejectionReason === reason).length;
+  return {
+    candidateCount: list.length,
+    visibleCandidateCount: list.filter((item) => item.visible).length,
+    isContentEditableCount: list.filter((item) => item.isContentEditable).length,
+    contenteditableAttributePresentCount: list.filter((item) => item.contenteditable !== 'inherited/absent').length,
+    roleTextboxCount: list.filter((item) => item.role === 'textbox').length,
+    textareaCount: list.filter((item) => item.tagName === 'textarea').length,
+    lexicalCount: list.filter((item) => item.hasDataLexicalEditor).length,
+    editableAncestorCount: list.filter((item) => item.ancestorEditable).length,
+    plaintextOnlyCount: list.filter((item) => item.contenteditable === 'plaintext-only').length,
+    otherRoleCount: list.filter((item) => item.role === 'other').length,
+    acceptedCount: count('ACCEPTED'),
+    playwrightNotEnabledCount: count('PLAYWRIGHT_NOT_ENABLED'),
+    playwrightNotEditableCount: count('PLAYWRIGHT_NOT_EDITABLE'),
+    commentReplySearchExcludedCount: count('COMMENT_REPLY_SEARCH_EXCLUDED'),
+    notPostShapeCount: count('NOT_POST_SHAPE'),
+    otherSafeRejectionCount: count('HIDDEN') + count('OTHER_SAFE_REJECTION'),
+  };
 }
 
 async function visibleEnabledCandidates(locator) {
@@ -130,12 +157,50 @@ async function rootSignals(handle) {
   }).catch(() => ({ structural: false, actionRegion: false, excluded: true, hasRoleDialog: false, hasAriaModal: false, hasComposerPageletSignal: false }));
 }
 
-async function eligibleEditors(handle) {
+function editorEligibilityReason({ visible, enabled, isEditable, metadata, metadataAvailable }) {
+  // Keep this ordered exactly like the existing acceptance expression below.
+  // The enum is diagnostic-only; it has no authority over editor selection.
+  if (visible !== true) return 'HIDDEN';
+  if (enabled !== true) return 'PLAYWRIGHT_NOT_ENABLED';
+  if (isEditable !== true) return 'PLAYWRIGHT_NOT_EDITABLE';
+  if (!metadataAvailable) return 'OTHER_SAFE_REJECTION';
+  if (metadata?.postShape !== true) return 'NOT_POST_SHAPE';
+  if (metadata.excluded === true) return 'COMMENT_REPLY_SEARCH_EXCLUDED';
+  return 'ACCEPTED';
+}
+
+function safeEditorCandidate(metadata, runtime, eligibilityRejectionReason) {
+  const tag = String(metadata?.tagName || '').toLowerCase();
+  const role = metadata?.role === 'textbox' ? 'textbox' : metadata?.role === 'combobox' ? 'combobox' : metadata?.role === 'searchbox' ? 'searchbox' : metadata?.role ? 'other' : null;
+  const contenteditable = metadata?.contenteditable === 'true' ? 'true' : metadata?.contenteditable === 'false' ? 'false' : metadata?.contenteditable === 'plaintext-only' ? 'plaintext-only' : metadata?.contenteditable === '' ? 'empty' : 'inherited/absent';
+  return {
+    tagName: ['textarea', 'input', 'div', 'span', 'p'].includes(tag) ? tag : 'other',
+    role,
+    contenteditable,
+    hasDataLexicalEditor: metadata?.lexical === true,
+    ariaMultiline: metadata?.ariaMultiline === true ? true : metadata?.ariaMultiline === false ? false : null,
+    tabIndex: Number.isFinite(metadata?.tabIndex) ? Math.max(-1, Math.min(1000, Math.trunc(metadata.tabIndex))) : 0,
+    isContentEditable: metadata?.inheritedEditable === true,
+    disabled: metadata?.disabled === true,
+    readOnly: metadata?.readOnly === true,
+    visible: runtime.visible === true,
+    attached: metadata?.attached === true,
+    ancestorEditable: metadata?.ancestorEditable === true,
+    childElementCount: Number.isInteger(metadata?.childElementCount) ? Math.min(12, Math.max(0, metadata.childElementCount)) : 0,
+    descendantEditableCount: Number.isInteger(metadata?.descendantEditableCount) ? Math.min(12, Math.max(0, metadata.descendantEditableCount)) : 0,
+    candidateDepth: 0,
+    reason: metadata?.reason || 'TABINDEX',
+    eligibilityRejectionReason,
+  };
+}
+
+async function eligibleEditors(handle, options = {}) {
   const editors = handle?.locator?.(COMPOSER_EDITOR_SELECTOR);
   const count = await editors?.count?.().catch(() => 0);
   const candidates = [];
   for (let index = 0; index < count; index += 1) {
     const editor = editors.nth(index);
+    let metadataAvailable = true;
     const [visible, enabled, editable, metadata] = await Promise.all([
       editor?.isVisible?.().catch(() => false),
       editor?.isEnabled?.().catch(() => false),
@@ -150,6 +215,9 @@ async function eligibleEditors(handle) {
         const isTextarea = String(node.tagName || '').toLowerCase() === 'textarea';
         const lexical = attr('data-lexical-editor') === 'true'
           || Boolean(node.closest?.('[data-lexical-editor="true"], .ProseMirror'));
+        const tagName = String(node.tagName || '').toLowerCase();
+        const contenteditable = attr('contenteditable');
+        const candidateReason = node.hasAttribute?.('contenteditable') ? 'CONTENTEDITABLE_ATTRIBUTE' : roleTextbox ? 'ROLE_ATTRIBUTE' : isTextarea ? 'TEXTAREA_TAG' : tagName === 'input' ? 'INPUT_TAG' : attr('data-lexical-editor') === 'true' ? 'LEXICAL_ATTRIBUTE' : node.hasAttribute?.('aria-multiline') ? 'ARIA_MULTILINE' : 'TABINDEX';
         return {
           postShape: isTextarea || contentEditable || (roleTextbox && inheritedEditable) || (lexical && inheritedEditable),
           contentEditable,
@@ -158,11 +226,30 @@ async function eligibleEditors(handle) {
           isTextarea,
           inheritedEditable,
           excluded: /(comment|reply|ufi|search)/i.test(`${text} ${context}`),
+          tagName,
+          role: attr('role'),
+          contenteditable,
+          ariaMultiline: node.hasAttribute?.('aria-multiline') ? attr('aria-multiline') === 'true' : null,
+          tabIndex: Number(node.tabIndex) || 0,
+          disabled: node.disabled === true || attr('aria-disabled') === 'true',
+          readOnly: node.readOnly === true || attr('aria-readonly') === 'true',
+          attached: node.isConnected === true,
+          ancestorEditable: Boolean(node.parentElement?.closest?.('[contenteditable], [data-lexical-editor]')) || node.ownerDocument?.designMode === 'on',
+          childElementCount: Math.min(12, node.children?.length || 0),
+          descendantEditableCount: Math.min(12, node.querySelectorAll?.('[contenteditable], [data-lexical-editor], textarea, input').length || 0),
+          reason: candidateReason,
         };
-      }).catch(() => ({ postShape: false, excluded: true, contentEditable: false, roleTextbox: false, lexical: false, isTextarea: false, inheritedEditable: false })),
+      }).catch(() => {
+        metadataAvailable = false;
+        return { postShape: false, excluded: true, contentEditable: false, roleTextbox: false, lexical: false, isTextarea: false, inheritedEditable: false };
+      }),
     ]);
     const isEditable = editable === null ? metadata?.inheritedEditable === true || metadata?.isTextarea === true : editable === true;
-    if (visible === true && enabled === true && isEditable && metadata?.postShape === true && metadata.excluded !== true) {
+    const eligibilityRejectionReason = editorEligibilityReason({ visible, enabled, isEditable, metadata, metadataAvailable });
+    if (index < EDITOR_SHAPE_MAX_CANDIDATES) {
+      try { options.onCandidate?.(safeEditorCandidate(metadata, { visible }, eligibilityRejectionReason)); } catch { /* diagnostic callback is non-authoritative */ }
+    }
+    if (eligibilityRejectionReason === 'ACCEPTED') {
       const exactHandle = await editor?.elementHandle?.().catch(() => null);
       candidates.push({ locator: editor, handle: exactHandle || editor, evidence: { ...metadata, isEditable } });
     }
@@ -191,11 +278,12 @@ async function composerContract(handle) {
     contract: 'not-composer',
     evidence: { isAttached: true, isVisible: true, ...signals, structurallyEligible: false, eligibleEditorCount: 0 },
   };
-  const editors = await eligibleEditors(handle);
+  const editorEligibilityCandidates = [];
+  const editors = await eligibleEditors(handle, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
   const editorEvidence = editors[0]?.evidence || {};
   const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length, ...editorEvidence };
-  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0] };
-  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null };
+  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0], editorEligibilityCandidates };
+  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null, editorEligibilityCandidates };
 }
 
 async function snapshotComposerRoots(page) {
@@ -350,7 +438,12 @@ async function openComposer(page, options = {}) {
         // eligibility and transition decisions remain exactly as before.
         if (shapeSnapshots < 3 && diagnostic?.shape) {
           const root = records.find((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount === 0);
-          if (root) { shapeSnapshots += 1; const shape = await inspectRootLocalEditorShapes(root.handle); lastShapeSummary = shape.summary; diagnostic.shape(shape.candidates, shape.summary); }
+          if (root) {
+            shapeSnapshots += 1;
+            const shape = summarizeEditorShapes(root.editorEligibilityCandidates || []);
+            lastShapeSummary = shape;
+            diagnostic.shape(root.editorEligibilityCandidates || [], shape);
+          }
         }
       },
     });
@@ -404,11 +497,14 @@ module.exports = {
   COMPOSER_EDITOR_SELECTOR,
   COMPOSER_ROOT_SELECTOR,
   EDITOR_SHAPE_MAX_CANDIDATES,
+  EDITOR_ELIGIBILITY_REJECTION_REASONS,
   GROUP_COMPOSER_STRUCTURAL_SELECTOR,
   findComposerOpener,
   snapshotComposerRoots,
   transitionResult,
   openComposer,
   inspectRootLocalEditorShapes,
+  eligibleEditors,
+  editorEligibilityReason,
   summarizeEditorShapes,
 };

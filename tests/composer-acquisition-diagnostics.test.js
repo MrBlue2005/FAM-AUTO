@@ -6,7 +6,7 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, inspectRootLocalEditorShapes, openComposer } = require('../app/facebook/composer');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, openComposer, summarizeEditorShapes } = require('../app/facebook/composer');
 const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function root(id, editors, options = {}) {
@@ -181,4 +181,109 @@ test('editor-shape snapshots are root-local payloads, bounded, and retain termin
     assert.ok(data.records.filter((item) => item.editorShapeCandidates).every((item) => item.editorShapeCandidates.length <= 12));
     assert.doesNotMatch(saved, /never persist|innerText|selector/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+function eligibilityRoot(configs) {
+  const locatorFor = (config = {}) => {
+    const node = {
+      isConnected: config.attached !== false,
+      isContentEditable: config.isContentEditable === undefined ? config.contenteditable !== false : config.isContentEditable === true,
+      disabled: config.disabled === true,
+      readOnly: config.readOnly === true,
+      tabIndex: config.tabIndex === undefined ? 0 : config.tabIndex,
+      children: Array.from({ length: config.childElementCount || 0 }),
+      ownerDocument: { designMode: 'off' },
+      getAttribute: (name) => ({
+        contenteditable: config.contenteditable === false ? 'false' : 'true',
+        role: config.role === undefined ? 'textbox' : config.role,
+        'aria-label': config.ariaLabel || '',
+        placeholder: config.placeholder || '',
+        'data-testid': config.testId || '',
+        'data-pagelet': config.pagelet || '',
+        'data-lexical-editor': config.lexical === true ? 'true' : '',
+        'aria-multiline': config.ariaMultiline === true ? 'true' : '',
+        'aria-disabled': config.ariaDisabled === true ? 'true' : '',
+        'aria-readonly': config.ariaReadOnly === true ? 'true' : '',
+      })[name] || '',
+      hasAttribute: (name) => ['contenteditable', 'role'].includes(name) || (name === 'data-lexical-editor' && config.lexical === true),
+      closest: (selector) => config.lexical === true && /lexical|ProseMirror/.test(String(selector || '')) ? {} : null,
+      querySelectorAll: () => Array.from({ length: config.descendantEditableCount || 0 }),
+      tagName: config.tagName || 'DIV',
+      parentElement: { closest: () => config.ancestorEditable === true ? {} : null },
+    };
+    const result = {
+      isVisible: async () => config.visible !== false,
+      isEnabled: async () => config.enabled !== false,
+      isEditable: async () => config.editable !== false,
+      evaluate: async (callback) => {
+        if (config.evaluateFails) throw new Error('detached');
+        return callback(node);
+      },
+      elementHandle: async () => result,
+    };
+    return result;
+  };
+  return {
+    locator: (selector) => {
+      assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
+      return { count: async () => configs.length, nth: (index) => locatorFor(configs[index]) };
+    },
+  };
+}
+
+test('eligibility diagnostics report the first existing runtime rejection without changing accepted-editor selection', async () => {
+  const observed = [];
+  const candidates = await eligibleEditors(eligibilityRoot([
+    // Candidate #10-style editor: inside the retained root, visible, enabled,
+    // editable, textbox/contenteditable, and Lexical.
+    { tagName: 'DIV', role: 'textbox', contenteditable: true, lexical: true, isContentEditable: true },
+    { enabled: false },
+    { editable: false },
+    { ariaLabel: 'comment reply' },
+    { role: 'other', contenteditable: false, isContentEditable: false },
+    { visible: false },
+    { evaluateFails: true },
+  ]), { onCandidate: (candidate) => observed.push(candidate) });
+  assert.equal(candidates.length, 1);
+  assert.deepEqual(observed.map((candidate) => candidate.eligibilityRejectionReason), [
+    'ACCEPTED', 'PLAYWRIGHT_NOT_ENABLED', 'PLAYWRIGHT_NOT_EDITABLE',
+    'COMMENT_REPLY_SEARCH_EXCLUDED', 'NOT_POST_SHAPE', 'HIDDEN', 'OTHER_SAFE_REJECTION',
+  ]);
+  assert.equal(observed[0].role, 'textbox');
+  assert.equal(observed[0].contenteditable, 'true');
+  assert.equal(observed[0].hasDataLexicalEditor, true);
+  assert.equal(observed[0].isContentEditable, true);
+  assert.equal(observed[0].visible, true);
+  assert.equal(observed[0].disabled, false);
+  assert.equal(observed[0].readOnly, false);
+});
+
+test('editor eligibility summary is bounded and contains only fixed counters and enum data', () => {
+  const summary = summarizeEditorShapes([
+    { eligibilityRejectionReason: 'ACCEPTED', visible: true },
+    { eligibilityRejectionReason: 'PLAYWRIGHT_NOT_ENABLED', visible: true },
+    { eligibilityRejectionReason: 'PLAYWRIGHT_NOT_EDITABLE', visible: true },
+    { eligibilityRejectionReason: 'COMMENT_REPLY_SEARCH_EXCLUDED', visible: true },
+    { eligibilityRejectionReason: 'NOT_POST_SHAPE', visible: true },
+    { eligibilityRejectionReason: 'HIDDEN', visible: false },
+    { eligibilityRejectionReason: 'OTHER_SAFE_REJECTION', visible: true },
+  ]);
+  assert.equal(summary.acceptedCount, 1);
+  assert.equal(summary.playwrightNotEnabledCount, 1);
+  assert.equal(summary.playwrightNotEditableCount, 1);
+  assert.equal(summary.commentReplySearchExcludedCount, 1);
+  assert.equal(summary.notPostShapeCount, 1);
+  assert.equal(summary.otherSafeRejectionCount, 2);
+  assert.equal(summary.candidateCount, 7);
+});
+
+test('eligibility rejection enum is whitelisted and does not retain private candidate material', () => {
+  const candidate = sanitizeCandidate({
+    tagName: 'div', role: 'textbox', eligibilityRejectionReason: 'COMMENT_REPLY_SEARCH_EXCLUDED',
+    ariaLabel: 'private label', text: 'private text', html: '<private>', id: 'private-id',
+    className: 'private-class', value: 'private-value', url: 'https://private.invalid', cookie: 'c_user=1',
+  });
+  assert.equal(candidate.eligibilityRejectionReason, 'COMMENT_REPLY_SEARCH_EXCLUDED');
+  assert.doesNotMatch(JSON.stringify(candidate), /private|c_user/);
+  assert.equal(sanitizeCandidate({ eligibilityRejectionReason: 'not-an-enum' }).eligibilityRejectionReason, 'OTHER_SAFE_REJECTION');
 });
