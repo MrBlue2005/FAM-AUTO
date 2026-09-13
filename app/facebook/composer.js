@@ -109,6 +109,97 @@ function summarizePreSelectorEditorShapes(candidates = []) {
   };
 }
 
+const SELECTOR_PARITY_RESULTS = Object.freeze([
+  'BOTH_ZERO',
+  'BOTH_NONZERO_EQUAL',
+  'BOTH_NONZERO_DIFFERENT',
+  'DOM_NONZERO_PLAYWRIGHT_ZERO',
+  'DOM_ZERO_PLAYWRIGHT_NONZERO',
+  'ROOT_UNAVAILABLE',
+  'SAFE_EVALUATION_ERROR',
+]);
+
+function boundedSelectorCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? Math.min(1000, count) : 0;
+}
+
+function selectorParityResult(domNativeCount, playwrightScopedCount) {
+  if (domNativeCount === 0 && playwrightScopedCount === 0) return 'BOTH_ZERO';
+  if (domNativeCount === 0) return 'DOM_ZERO_PLAYWRIGHT_NONZERO';
+  if (playwrightScopedCount === 0) return 'DOM_NONZERO_PLAYWRIGHT_ZERO';
+  return domNativeCount === playwrightScopedCount ? 'BOTH_NONZERO_EQUAL' : 'BOTH_NONZERO_DIFFERENT';
+}
+
+// This is deliberately a same-root observability probe. It neither changes
+// the reviewed selector nor returns an element that execution could bind.
+async function inspectRootLocalSelectorParity(handle) {
+  if (!handle || typeof handle.evaluate !== 'function' || typeof handle.locator !== 'function') {
+    return { domNativeCount: 0, playwrightScopedCount: 0, rootAttached: false, rootVisible: false, sameRootReference: false, selectorParityResult: 'ROOT_UNAVAILABLE', branchCounts: {} };
+  }
+  try {
+    const [dom, playwrightScopedCount, rootVisible] = await Promise.all([
+      handle.evaluate((root, selector) => ({
+        rootAttached: root.isConnected === true,
+        domNativeCount: root.querySelectorAll(selector).length,
+        contenteditableTrueCount: root.querySelectorAll('[contenteditable="true"]').length,
+        roleTextboxCount: root.querySelectorAll('[role="textbox"]').length,
+        lexicalSelectorCount: root.querySelectorAll('[data-lexical-editor="true"]').length,
+      }), COMPOSER_EDITOR_SELECTOR),
+      handle.locator(COMPOSER_EDITOR_SELECTOR).count(),
+      handle.isVisible(),
+    ]);
+    const rootAttached = dom?.rootAttached === true;
+    const domNativeCount = boundedSelectorCount(dom?.domNativeCount);
+    const scopedCount = boundedSelectorCount(playwrightScopedCount);
+    if (!rootAttached) return { domNativeCount, playwrightScopedCount: scopedCount, rootAttached: false, rootVisible: rootVisible === true, sameRootReference: true, selectorParityResult: 'ROOT_UNAVAILABLE', branchCounts: {} };
+    return {
+      domNativeCount,
+      playwrightScopedCount: scopedCount,
+      rootAttached: true,
+      rootVisible: rootVisible === true,
+      sameRootReference: true,
+      selectorParityResult: selectorParityResult(domNativeCount, scopedCount),
+      branchCounts: {
+        contenteditableTrueCount: boundedSelectorCount(dom?.contenteditableTrueCount),
+        roleTextboxCount: boundedSelectorCount(dom?.roleTextboxCount),
+        lexicalSelectorCount: boundedSelectorCount(dom?.lexicalSelectorCount),
+      },
+    };
+  } catch {
+    return { domNativeCount: 0, playwrightScopedCount: 0, rootAttached: false, rootVisible: false, sameRootReference: true, selectorParityResult: 'SAFE_EVALUATION_ERROR', branchCounts: {} };
+  }
+}
+
+function emptySelectorParitySummary() {
+  return {
+    samples: 0,
+    bothZeroCount: 0,
+    bothNonzeroEqualCount: 0,
+    bothNonzeroDifferentCount: 0,
+    domNonzeroPlaywrightZeroCount: 0,
+    domZeroPlaywrightNonzeroCount: 0,
+    rootUnavailableCount: 0,
+    safeEvaluationErrorCount: 0,
+  };
+}
+
+function addSelectorParitySample(summary, sample) {
+  const next = summary || emptySelectorParitySummary();
+  next.samples += 1;
+  const key = {
+    BOTH_ZERO: 'bothZeroCount',
+    BOTH_NONZERO_EQUAL: 'bothNonzeroEqualCount',
+    BOTH_NONZERO_DIFFERENT: 'bothNonzeroDifferentCount',
+    DOM_NONZERO_PLAYWRIGHT_ZERO: 'domNonzeroPlaywrightZeroCount',
+    DOM_ZERO_PLAYWRIGHT_NONZERO: 'domZeroPlaywrightNonzeroCount',
+    ROOT_UNAVAILABLE: 'rootUnavailableCount',
+    SAFE_EVALUATION_ERROR: 'safeEvaluationErrorCount',
+  }[sample?.selectorParityResult];
+  if (key) next[key] += 1;
+  return next;
+}
+
 async function visibleEnabledCandidates(locator) {
   const candidates = [];
   const count = await locator.count();
@@ -301,13 +392,17 @@ async function composerContract(handle, options = {}) {
   // it. This callback is diagnostic-only and cannot alter the contract.
   const preSelectorShape = await inspectRootLocalEditorShapes(handle);
   try { options.onPreSelectorShape?.(preSelectorShape.candidates, summarizePreSelectorEditorShapes(preSelectorShape.candidates)); } catch { /* diagnostics are non-authoritative */ }
+  // Compare the exact selector through DOM-native and Playwright-scoped paths
+  // against this same retained root before eligibility evaluates candidates.
+  const selectorParity = await inspectRootLocalSelectorParity(handle);
+  try { options.onSelectorParity?.(selectorParity); } catch { /* diagnostics are non-authoritative */ }
   const editorEligibilityCandidates = [];
   const editors = await eligibleEditors(handle, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
   try { options.onEligibilityShape?.(editorEligibilityCandidates, summarizeEditorShapes(editorEligibilityCandidates)); } catch { /* diagnostics are non-authoritative */ }
   const editorEvidence = editors[0]?.evidence || {};
   const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length, ...editorEvidence };
-  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0], editorEligibilityCandidates, preSelectorShape };
-  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null, editorEligibilityCandidates, preSelectorShape };
+  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0], editorEligibilityCandidates, preSelectorShape, selectorParity };
+  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null, editorEligibilityCandidates, preSelectorShape, selectorParity };
 }
 
 async function snapshotComposerRoots(page, options = {}) {
@@ -425,6 +520,7 @@ async function waitForComposerTransition(page, before, options = {}) {
   do {
     const after = await snapshotComposerRoots(page, {
       onPreSelectorShape: options.onPreSelectorShape,
+      onSelectorParity: options.onSelectorParity,
       onEligibilityShape: options.onEligibilityShape,
     });
     const result = await transitionResult(before, after);
@@ -446,10 +542,18 @@ async function openComposer(page, options = {}) {
   let lastPreSelectorShapeSummary = null;
   let preSelectorShapeSnapshotWritten = false;
   let preSelectorSummaryWritten = false;
+  let selectorParitySnapshotWritten = false;
+  let selectorParitySummaryWritten = false;
+  let selectorParitySummary = emptySelectorParitySummary();
   const emitPreSelectorSummary = () => {
     if (preSelectorSummaryWritten) return;
     try { diagnostic?.preSelectorShapeSummary?.(lastPreSelectorShapeSummary || {}); } catch { /* diagnostics are non-authoritative */ }
     preSelectorSummaryWritten = true;
+  };
+  const emitSelectorParitySummary = () => {
+    if (selectorParitySummaryWritten) return;
+    try { diagnostic?.selectorParitySummary?.(selectorParitySummary); } catch { /* diagnostics are non-authoritative */ }
+    selectorParitySummaryWritten = true;
   };
   // The real publisher supplies this immediately after canonical target
   // verification. Do not discover a composer when that target proof fails.
@@ -473,6 +577,12 @@ async function openComposer(page, options = {}) {
         preSelectorShapeSnapshotWritten = true;
         try { diagnostic.preSelectorShape(candidates, summary); } catch { /* diagnostics are non-authoritative */ }
       },
+      onSelectorParity: (sample) => {
+        selectorParitySummary = addSelectorParitySample(selectorParitySummary, sample);
+        if (selectorParitySnapshotWritten || !diagnostic?.selectorParity) return;
+        selectorParitySnapshotWritten = true;
+        try { diagnostic.selectorParity(sample); } catch { /* diagnostics are non-authoritative */ }
+      },
       onEligibilityShape: (candidates, summary) => {
         lastShapeSummary = summary;
         if (shapeSnapshots >= 3 || !diagnostic?.shape) return;
@@ -488,6 +598,7 @@ async function openComposer(page, options = {}) {
       emitDiagnostic(diagnostic, 'COMPOSER_ROOT_NO_TRANSITION', 'NO_ELIGIBLE_TRANSITION', finalEvidence);
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_TIMEOUT', 'ACQUISITION_TIMEOUT', finalEvidence);
       emitPreSelectorSummary();
+      emitSelectorParitySummary();
       diagnostic?.shapeSummary?.(lastShapeSummary || {});
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', finalEvidence, true);
       diagnosticSummaryWritten = true;
@@ -501,6 +612,7 @@ async function openComposer(page, options = {}) {
       trace('COMPOSER_ROOT_AMBIGUOUS');
       emitDiagnostic(diagnostic, 'COMPOSER_ROOT_AMBIGUOUS', 'AMBIGUOUS_TRANSITION', finalEvidence);
       emitPreSelectorSummary();
+      emitSelectorParitySummary();
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'AMBIGUOUS_TRANSITION', finalEvidence, true);
       diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be uniquely identified.');
@@ -516,12 +628,14 @@ async function openComposer(page, options = {}) {
     trace('COMPOSER_EDITOR_BOUND');
     emitDiagnostic(diagnostic, 'COMPOSER_EDITOR_BOUND', 'EDITOR_BOUND', finalEvidence);
     emitPreSelectorSummary();
+    emitSelectorParitySummary();
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
     return { handle, locator, editor: editor.handle };
   } catch (error) {
     if (!diagnosticSummaryWritten) {
       emitPreSelectorSummary();
+      emitSelectorParitySummary();
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'UNKNOWN_SAFE_FAILURE', finalEvidence, true);
     }
     if (error?.code === 'FACEBOOK_COMPOSER_OPENER_AMBIGUOUS') trace('COMPOSER_OPENER_AMBIGUOUS');
@@ -540,12 +654,14 @@ module.exports = {
   COMPOSER_ROOT_SELECTOR,
   EDITOR_SHAPE_MAX_CANDIDATES,
   EDITOR_ELIGIBILITY_REJECTION_REASONS,
+  SELECTOR_PARITY_RESULTS,
   GROUP_COMPOSER_STRUCTURAL_SELECTOR,
   findComposerOpener,
   snapshotComposerRoots,
   transitionResult,
   openComposer,
   inspectRootLocalEditorShapes,
+  inspectRootLocalSelectorParity,
   eligibleEditors,
   editorEligibilityReason,
   summarizeEditorShapes,

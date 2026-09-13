@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AK - root-local selector parity diagnostics
+
+- The Local Agent now records a bounded same-root parity sample before composer eligibility: DOM-native `querySelectorAll(COMPOSER_EDITOR_SELECTOR).length` and the exact retained root's Playwright-scoped count. A fixed enum classifies only count parity, and the terminal `EDITOR_SELECTOR_PARITY_SUMMARY` is retained with the final acquisition evidence under log pressure.
+- Optional aggregate branch counts cover only the existing contenteditable, textbox-role, and lexical branches. No selector, eligibility, root transition, timing, binding, text/media, marker, submit, retry, or browser behavior changed.
+
 ## Phase G5.7AH - pre-selector root-local shape capture
 
 - Before `COMPOSER_EDITOR_SELECTOR` is evaluated within an already structurally eligible composer root, the Local Agent now records one bounded, root-local `PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT` and its terminal `PRE_SELECTOR_EDITOR_SHAPE_SUMMARY`. This preserves safe evidence when the reviewed selector finds zero candidates.

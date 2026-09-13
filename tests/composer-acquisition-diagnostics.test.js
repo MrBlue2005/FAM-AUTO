@@ -6,8 +6,8 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function structuralNode(config = {}) {
   const attributes = {
@@ -156,7 +156,7 @@ test('per-task diagnostic files are isolated, whitelisted, and bounded', () => {
     const beta = fs.readFileSync(path.join(directory, 'task_beta.json'), 'utf8');
     const alphaData = JSON.parse(alpha);
     assert.equal(alphaData.task_id, 'task_alpha'); assert.equal(JSON.parse(beta).task_id, 'task_beta');
-    assert.ok(alphaData.records.length <= 3); assert.ok(Buffer.byteLength(alpha, 'utf8') <= 4096);
+    assert.ok(alphaData.records.length <= 4); assert.ok(Buffer.byteLength(alpha, 'utf8') <= 4096);
     assert.match(alpha, /COMPOSER_ACQUISITION_FAILED/);
     assert.match(alpha, /"potentialRootCount":1000/);
     assert.doesNotMatch(alpha, /secret html|private text|c_user|token|accountId|forbiddenCounter|forbiddenFlag/);
@@ -271,7 +271,7 @@ test('pre-selector snapshot, summary, and terminal failure survive diagnostic lo
     assert.ok(stages.includes('PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT'));
     assert.ok(stages.includes('PRE_SELECTOR_EDITOR_SHAPE_SUMMARY'));
     assert.ok(stages.includes('COMPOSER_ACQUISITION_FAILED'));
-    assert.equal(stages.length, 3);
+    assert.ok(stages.length <= 4);
     assert.doesNotMatch(saved, /never persist|cookie/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
@@ -289,6 +289,93 @@ test('pre-selector summaries are fixed, bounded, and task-isolated', () => {
   assert.equal(counts.contenteditableTrueCount, 1);
   assert.equal(counts.textareaCount, 1);
   assert.equal(counts.ariaMultilineCount, 1);
+});
+
+function parityHandle({ domCount = 0, playwrightCount = 0, attached = true, visible = true, throwOnEvaluate = false } = {}) {
+  let locatorCalls = 0;
+  const branchCounts = {
+    '[contenteditable="true"]': domCount,
+    '[role="textbox"]': domCount,
+    '[data-lexical-editor="true"]': domCount,
+  };
+  return {
+    handle: {
+      evaluate: async (callback, selector) => {
+        if (throwOnEvaluate) throw new Error('private runtime error');
+        return callback({
+          isConnected: attached,
+          querySelectorAll: (value) => Array.from({ length: value === selector ? domCount : branchCounts[value] || 0 }),
+        }, selector);
+      },
+      isVisible: async () => visible,
+      locator: (selector) => {
+        locatorCalls += 1;
+        assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
+        return { count: async () => playwrightCount };
+      },
+    },
+    locatorCalls: () => locatorCalls,
+  };
+}
+
+test('same-root selector parity classifies equal, zero, and divergent counts', async () => {
+  const cases = [
+    [1, 1, 'BOTH_NONZERO_EQUAL'],
+    [0, 0, 'BOTH_ZERO'],
+    [1, 0, 'DOM_NONZERO_PLAYWRIGHT_ZERO'],
+    [0, 1, 'DOM_ZERO_PLAYWRIGHT_NONZERO'],
+    [2, 1, 'BOTH_NONZERO_DIFFERENT'],
+  ];
+  for (const [domCount, playwrightCount, expected] of cases) {
+    const mock = parityHandle({ domCount, playwrightCount });
+    const sample = await inspectRootLocalSelectorParity(mock.handle);
+    assert.equal(sample.selectorParityResult, expected);
+    assert.equal(sample.domNativeCount, domCount);
+    assert.equal(sample.playwrightScopedCount, playwrightCount);
+    assert.equal(sample.rootAttached, true);
+    assert.equal(sample.rootVisible, true);
+    assert.equal(sample.sameRootReference, true);
+    assert.equal(mock.locatorCalls(), 1);
+  }
+});
+
+test('same-root selector parity classifies unavailable roots and safe evaluation errors', async () => {
+  const unavailable = await inspectRootLocalSelectorParity(null);
+  assert.equal(unavailable.selectorParityResult, 'ROOT_UNAVAILABLE');
+  assert.equal(unavailable.sameRootReference, false);
+  const detached = await inspectRootLocalSelectorParity(parityHandle({ attached: false }).handle);
+  assert.equal(detached.selectorParityResult, 'ROOT_UNAVAILABLE');
+  assert.equal(detached.sameRootReference, true);
+  const safeError = await inspectRootLocalSelectorParity(parityHandle({ throwOnEvaluate: true }).handle);
+  assert.equal(safeError.selectorParityResult, 'SAFE_EVALUATION_ERROR');
+  assert.equal(safeError.domNativeCount, 0);
+  assert.equal(safeError.playwrightScopedCount, 0);
+});
+
+test('selector parity records are bounded, private, and retain their terminal aggregate', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-selector-parity-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 1, maxBytes: 12000, now: () => '2026-09-13T00:00:00.000Z' });
+    const record = sink.forTask('selector_parity');
+    for (let index = 0; index < 12; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    record.selectorParity({ domNativeCount: 1, playwrightScopedCount: 0, rootAttached: true, rootVisible: true, sameRootReference: true, selectorParityResult: 'DOM_NONZERO_PLAYWRIGHT_ZERO', branchCounts: { contenteditableTrueCount: 1, roleTextboxCount: 1, lexicalSelectorCount: 1 }, text: 'never persist', selector: 'never persist' });
+    record.selectorParitySummary({ samples: 1, domNonzeroPlaywrightZeroCount: 1, privateValue: 10 });
+    record.summary('COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', {});
+    const saved = fs.readFileSync(path.join(directory, 'selector_parity.json'), 'utf8');
+    const data = JSON.parse(saved);
+    assert.ok(data.records.some((item) => item.stage === 'EDITOR_SELECTOR_PARITY_SUMMARY'));
+    assert.ok(data.records.some((item) => item.stage === 'COMPOSER_ACQUISITION_FAILED'));
+    const parity = data.records.find((item) => item.stage === 'EDITOR_SELECTOR_PARITY_SNAPSHOT')?.selectorParity;
+    assert.equal(parity?.sameRootReference, true);
+    assert.equal(parity?.selectorParityResult, 'DOM_NONZERO_PLAYWRIGHT_ZERO');
+    assert.equal(Object.hasOwn(parity || {}, 'text'), false);
+    assert.doesNotMatch(saved, /never persist|privateValue/);
+    const sanitized = sanitizeSelectorParity({ domNativeCount: 9999, selectorParityResult: 'untrusted', branchCounts: { roleTextboxCount: 2 }, cookie: 'never persist' });
+    assert.equal(sanitized.domNativeCount, 1000);
+    assert.equal(sanitized.selectorParityResult, 'SAFE_EVALUATION_ERROR');
+    assert.equal(sanitized.branchCounts.roleTextboxCount, 2);
+    assert.deepEqual(sanitizeSelectorParitySummary({ samples: 1, unknown: 9 }), { samples: 1, bothZeroCount: 0, bothNonzeroEqualCount: 0, bothNonzeroDifferentCount: 0, domNonzeroPlaywrightZeroCount: 0, domZeroPlaywrightNonzeroCount: 0, rootUnavailableCount: 0, safeEvaluationErrorCount: 0 });
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 function eligibilityRoot(configs) {

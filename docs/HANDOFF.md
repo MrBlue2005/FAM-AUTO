@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AK root-local selector parity diagnostics
+
+For each structurally eligible retained composer root, the Local Agent now samples the exact existing `COMPOSER_EDITOR_SELECTOR` through both root-local DOM and that same root's Playwright locator. It retains only bounded counts, root attached/visible booleans, a `sameRootReference` boolean, three existing selector-branch counts, and one fixed parity enum. `EDITOR_SELECTOR_PARITY_SUMMARY` aggregates the safe classifications and is protected with the pre-selector evidence and terminal acquisition result. It never retains matched nodes, DOM text, selectors beyond the reviewed static selector, IDs, classes, URLs, cookies, identities, credentials, or payload data; it changes no execution authority.
+
 ## G5.7AH pre-selector root-local shape capture
 
 For every structurally eligible composer root, the Local Agent captures one bounded `PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT` before applying `COMPOSER_EDITOR_SELECTOR`, then writes a terminal `PRE_SELECTOR_EDITOR_SHAPE_SUMMARY`. This makes a selector-zero result diagnosable without changing selector authority or execution behavior. The snapshot is still strictly root-local and includes only approved tag/role/contenteditable classes, bounded structural counts/depth, and boolean editability/visibility fields; it excludes DOM text, labels, HTML, selectors, IDs, URLs, cookies, identities, tokens, credentials, and task payload data. The sink protects one pre-selector snapshot, its summary, and the final `COMPOSER_ACQUISITION_FAILED` record from normal record-pressure pruning.
