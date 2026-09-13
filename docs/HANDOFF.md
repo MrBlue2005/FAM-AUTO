@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7U composer acquisition diagnostic instrumentation
+
+The real Local Agent has a local-only, task-correlated composer-acquisition diagnostic sink at `logs/local-agent-composer-diagnostics/<task-id>.json`. It records only timestamp, task ID, approved stage/reason class, bounded integer counters, and safe structural booleans. It never records HTML, Facebook text or labels, cookies, account IDs, tokens, credentials, task payloads, local paths, or selectors carrying dynamic content. Files are bounded to 64 records / 32 KiB per task, and the sink retains no more than 24 task files by pruning its oldest local diagnostic files.
+
+Acquisition records distinguish structural rejection, zero/multiple eligible editor, hidden/detached root, no transition, ambiguous transition, and accepted/bound root outcomes. A failure produces a final `COMPOSER_ACQUISITION_FAILED` summary. Sink failures are deliberately ignored so they cannot alter the candidate contract, selector set, target binding, exact retained root/editor, text/media/control behavior, marker ordering, submit path, or retry policy. These diagnostics are not sent to Supabase, hosted BFF endpoints, or managed-user UI.
+
 ## G5.7Q composer identity transition binding
 
 Composer proof no longer assumes the reviewed opener appends exactly one persistent `[role="dialog"]`. Before its non-publishing click, `openComposer()` snapshots each current dialog by its retained `ElementHandle`/DOM identity and a narrow state: attached, visible, and whether it contains exactly one create-post entry surface (`[contenteditable="true"][role="textbox"]` or `textarea`). After the click it performs a bounded, identity-based comparison and retains only the one exact eligible handle produced by the transition.

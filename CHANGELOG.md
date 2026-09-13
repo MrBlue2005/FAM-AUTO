@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7U - composer acquisition diagnostic instrumentation
+
+- The Local Agent now records bounded, per-task composer-acquisition diagnostics only in its local logs directory. Each record contains a timestamp, task ID, approved stage/reason class, bounded structural counters, and approved boolean evidence; it never contains HTML, Facebook text, labels, cookies, account IDs, tokens, credentials, selectors with dynamic content, media paths, or task payloads.
+- The sink retains at most 64 records / 32 KiB per task and at most 24 task files, pruning only its oldest local diagnostic files. It is observability-only: write/read/rotation errors are swallowed and cannot change composer selection, task status, marker ordering, or publication behavior.
+- Composer acquisition now records safe snapshot/rejection categories (structural, zero/multiple editor, hidden/detached, no/ambiguous transition), plus accepted-root/editor success and one bounded final failure summary. The candidate contract, opener binding, retained-handle semantics, and all publishing logic are unchanged.
+
 ## Phase G5.7S - observed Facebook composer modal contract
 
 - Composer acquisition now snapshots a bounded set of potential create-post roots: dialogs, `aria-modal` overlays, and Facebook composer/create-post pagelet roots. `role="dialog"` is an accepted signal, not a requirement.

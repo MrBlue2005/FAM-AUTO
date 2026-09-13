@@ -62,16 +62,17 @@ async function sameDomNode(left, right) {
 }
 
 async function rootSignals(handle) {
-  if (!handle || typeof handle.evaluate !== 'function') return { structural: false, actionRegion: false, excluded: true };
+  if (!handle || typeof handle.evaluate !== 'function') return { structural: false, actionRegion: false, excluded: true, hasRoleDialog: false, hasAriaModal: false, hasComposerPageletSignal: false };
   return handle.evaluate((node) => {
     const attr = (name) => String(node.getAttribute?.(name) || '');
     const ownPagelet = attr('data-pagelet');
     const ancestorPagelet = String(node.closest?.('[data-pagelet]')?.getAttribute?.('data-pagelet') || '');
     const rootText = `${attr('role')} ${attr('aria-modal')} ${ownPagelet} ${ancestorPagelet} ${attr('aria-label')} ${attr('data-testid')}`;
     const lower = rootText.toLowerCase();
-    const structural = attr('role') === 'dialog'
-      || attr('aria-modal') === 'true'
-      || /(composer|createpost)/i.test(`${ownPagelet} ${ancestorPagelet}`);
+    const hasRoleDialog = attr('role') === 'dialog';
+    const hasAriaModal = attr('aria-modal') === 'true';
+    const hasComposerPageletSignal = /(composer|createpost)/i.test(`${ownPagelet} ${ancestorPagelet}`);
+    const structural = hasRoleDialog || hasAriaModal || hasComposerPageletSignal;
     // A root must look like a create-post surface, rather than merely any
     // overlay that happens to contain a textbox.  Pagelet evidence is locale
     // independent; controls are supplemental evidence for the current FB UI.
@@ -88,8 +89,8 @@ async function rootSignals(handle) {
         '[role="button"][aria-label*="fotograf" i]',
       ].join(', ')));
     const excluded = /(comment|reply|ufi|search|settings|report)/i.test(lower);
-    return { structural, actionRegion, excluded };
-  }).catch(() => ({ structural: false, actionRegion: false, excluded: true }));
+    return { structural, actionRegion, excluded, hasRoleDialog, hasAriaModal, hasComposerPageletSignal };
+  }).catch(() => ({ structural: false, actionRegion: false, excluded: true, hasRoleDialog: false, hasAriaModal: false, hasComposerPageletSignal: false }));
 }
 
 async function eligibleEditors(handle) {
@@ -126,12 +127,20 @@ async function composerContract(handle) {
     attachedPromise,
     visiblePromise,
   ]);
-  if (attached !== true || visible !== true) return 'inactive';
+  if (attached !== true || visible !== true) return {
+    contract: 'inactive',
+    evidence: { isAttached: attached === true, isVisible: visible === true, hasRoleDialog: false, hasAriaModal: false, hasComposerPageletSignal: false, structurallyEligible: false, eligibleEditorCount: 0 },
+  };
   const signals = await rootSignals(handle);
-  if (!signals.structural || !signals.actionRegion || signals.excluded) return 'not-composer';
+  const structurallyEligible = signals.structural && signals.actionRegion && !signals.excluded;
+  if (!structurallyEligible) return {
+    contract: 'not-composer',
+    evidence: { isAttached: true, isVisible: true, ...signals, structurallyEligible: false, eligibleEditorCount: 0 },
+  };
   const editors = await eligibleEditors(handle);
-  if (editors.length === 1) return 'eligible';
-  return editors.length > 1 ? 'ambiguous' : 'not-composer';
+  const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length };
+  if (editors.length === 1) return { contract: 'eligible', evidence };
+  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence };
 }
 
 async function snapshotComposerRoots(page) {
@@ -142,9 +151,59 @@ async function snapshotComposerRoots(page) {
     const locator = roots.nth(index);
     const handle = await locator.elementHandle?.().catch(() => null);
     if (!handle) continue;
-    records.push({ handle, locator, contract: await composerContract(handle) });
+    const inspected = await composerContract(handle);
+    records.push({ handle, locator, ...inspected });
   }
   return records;
+}
+
+function diagnosticEvidence(records, transition = null) {
+  const counters = {
+    potentialRootCount: records.length,
+    visibleRootCount: records.filter((record) => record.evidence.isVisible).length,
+    structurallyEligibleRootCount: records.filter((record) => record.evidence.structurallyEligible).length,
+    rootsWithZeroEditor: records.filter((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount === 0).length,
+    rootsWithOneEditor: records.filter((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount === 1).length,
+    rootsWithMultipleEditors: records.filter((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount > 1).length,
+    newRootCount: transition?.newRootCount || 0,
+    removedRootCount: transition?.removedRootCount || 0,
+    transitionedRootCount: transition?.transitionedRootCount || 0,
+    eligibleTransitionCount: transition?.eligibleTransitionCount || 0,
+  };
+  const sample = records[0]?.evidence || {};
+  return {
+    counters,
+    flags: {
+      hasRoleDialog: records.some((record) => record.evidence.hasRoleDialog),
+      hasAriaModal: records.some((record) => record.evidence.hasAriaModal),
+      hasComposerPageletSignal: records.some((record) => record.evidence.hasComposerPageletSignal),
+      hasVisibleEditor: records.some((record) => record.evidence.eligibleEditorCount > 0),
+      editorCountIsOne: counters.rootsWithOneEditor === 1,
+      isVisible: Boolean(sample.isVisible),
+      isAttached: Boolean(sample.isAttached),
+      transitionDetected: Boolean(transition && transition.kind !== 'none'),
+    },
+  };
+}
+
+function emitDiagnostic(diagnostic, stage, reasonClass, evidence, summary = false) {
+  try {
+    if (summary) diagnostic?.summary?.(stage, reasonClass, evidence);
+    else diagnostic?.emit?.(stage, reasonClass, evidence);
+  } catch {
+    // Observability must not alter the reviewed composer contract.
+  }
+}
+
+function emitObservationDiagnostics(diagnostic, records, transition) {
+  const evidence = diagnosticEvidence(records, transition);
+  emitDiagnostic(diagnostic, 'COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', evidence);
+  if (records.some((record) => !record.evidence.isAttached)) emitDiagnostic(diagnostic, 'COMPOSER_ROOT_DETACHED', 'ROOT_DETACHED', evidence);
+  if (records.some((record) => record.evidence.isAttached && !record.evidence.isVisible)) emitDiagnostic(diagnostic, 'COMPOSER_ROOT_HIDDEN', 'ROOT_HIDDEN', evidence);
+  if (records.some((record) => record.evidence.isVisible && !record.evidence.structurallyEligible)) emitDiagnostic(diagnostic, 'COMPOSER_ROOT_STRUCTURAL_REJECTED', 'STRUCTURAL_REJECTED', evidence);
+  if (evidence.counters.rootsWithZeroEditor) emitDiagnostic(diagnostic, 'COMPOSER_ROOT_ZERO_EDITOR', 'ZERO_ELIGIBLE_EDITOR', evidence);
+  if (evidence.counters.rootsWithMultipleEditors) emitDiagnostic(diagnostic, 'COMPOSER_ROOT_MULTIPLE_EDITORS', 'MULTIPLE_ELIGIBLE_EDITORS', evidence);
+  return evidence;
 }
 
 async function findBeforeRecord(before, postRecord) {
@@ -165,17 +224,26 @@ async function transitionResult(before, after) {
     }
     if (!retained) removed += 1;
   }
+  let newRootCount = 0;
+  let transitionedRootCount = 0;
+  let eligibleTransitionCount = 0;
   for (const post of after) {
     const prior = await findBeforeRecord(before, post);
     const transitioned = !prior || prior.contract !== post.contract;
+    if (!prior) newRootCount += 1;
+    if (transitioned) transitionedRootCount += 1;
     if (post.contract === 'ambiguous' && transitioned) ambiguous = true;
-    if (post.contract === 'eligible' && (!prior || prior.contract !== 'eligible')) candidates.push({ post, prior });
+    if (post.contract === 'eligible' && (!prior || prior.contract !== 'eligible')) {
+      candidates.push({ post, prior });
+      eligibleTransitionCount += 1;
+    }
   }
-  if (ambiguous || candidates.length > 1) return { kind: 'ambiguous' };
-  if (!candidates.length) return { kind: 'none' };
+  const metrics = { newRootCount, removedRootCount: removed, transitionedRootCount, eligibleTransitionCount };
+  if (ambiguous || candidates.length > 1) return { kind: 'ambiguous', ...metrics };
+  if (!candidates.length) return { kind: 'none', ...metrics };
   const candidate = candidates[0];
-  if (!candidate.prior) return { kind: removed > 0 ? 'replacement' : 'new', record: candidate.post };
-  return { kind: 'reuse', record: candidate.post };
+  if (!candidate.prior) return { kind: removed > 0 ? 'replacement' : 'new', record: candidate.post, ...metrics };
+  return { kind: 'reuse', record: candidate.post, ...metrics };
 }
 
 async function waitForComposerTransition(page, before, options = {}) {
@@ -183,7 +251,9 @@ async function waitForComposerTransition(page, before, options = {}) {
   const pollMs = Number.isFinite(options.transitionPollMs) ? options.transitionPollMs : COMPOSER_TRANSITION_POLL_MS;
   const started = Date.now();
   do {
-    const result = await transitionResult(before, await snapshotComposerRoots(page));
+    const after = await snapshotComposerRoots(page);
+    const result = await transitionResult(before, after);
+    options.onObservation?.(after, result);
     if (result.kind !== 'none') return result;
     if (Date.now() - started >= timeoutMs) break;
     if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(pollMs);
@@ -194,39 +264,60 @@ async function waitForComposerTransition(page, before, options = {}) {
 
 async function openComposer(page, options = {}) {
   const trace = typeof options.trace === 'function' ? options.trace : () => {};
+  const diagnostic = options.diagnostic;
+  let finalEvidence = null;
+  let diagnosticSummaryWritten = false;
   // The real publisher supplies this immediately after canonical target
   // verification. Do not discover a composer when that target proof fails.
   if (typeof options.assertTargetReady === 'function') options.assertTargetReady();
   try {
+    emitDiagnostic(diagnostic, 'COMPOSER_DISCOVERY_START', 'DISCOVERY_STARTED');
     const composerButton = await findComposerOpener(page);
     trace('COMPOSER_OPENER_FOUND');
+    emitDiagnostic(diagnostic, 'COMPOSER_OPENER_FOUND', 'OPENER_FOUND');
     const before = await snapshotComposerRoots(page);
+    emitDiagnostic(diagnostic, 'COMPOSER_POTENTIAL_ROOTS_SNAPSHOT', 'SNAPSHOT', diagnosticEvidence(before));
 
     await composerButton.click();
-    const transition = await waitForComposerTransition(page, before, options);
+    emitDiagnostic(diagnostic, 'COMPOSER_OPENER_CLICKED', 'OPENER_CLICKED');
+    const transition = await waitForComposerTransition(page, before, {
+      ...options,
+      onObservation: (records, result) => { finalEvidence = emitObservationDiagnostics(diagnostic, records, result); },
+    });
     if (transition.kind === 'none') {
       trace('COMPOSER_OPEN_TIMEOUT');
+      emitDiagnostic(diagnostic, 'COMPOSER_ROOT_NO_TRANSITION', 'NO_ELIGIBLE_TRANSITION', finalEvidence);
+      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_TIMEOUT', 'ACQUISITION_TIMEOUT', finalEvidence);
+      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', finalEvidence, true);
+      diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_OPEN_FAILED', 'The selected group composer opener did not open a composer.');
     }
     trace('COMPOSER_TRANSITION_OBSERVED');
     trace('COMPOSER_ROOT_CANDIDATE_OBSERVED');
+    emitDiagnostic(diagnostic, 'COMPOSER_ROOT_CANDIDATE_SEEN', 'SNAPSHOT', finalEvidence);
     if (transition.kind === 'ambiguous') {
       trace('COMPOSER_TRANSITION_AMBIGUOUS');
       trace('COMPOSER_ROOT_AMBIGUOUS');
+      emitDiagnostic(diagnostic, 'COMPOSER_ROOT_AMBIGUOUS', 'AMBIGUOUS_TRANSITION', finalEvidence);
+      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'AMBIGUOUS_TRANSITION', finalEvidence, true);
+      diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be uniquely identified.');
     }
-    if (transition.kind === 'new') { trace('COMPOSER_UNIQUE_NEW'); trace('COMPOSER_ROOT_UNIQUE_NEW'); }
-    if (transition.kind === 'replacement') { trace('COMPOSER_UNIQUE_REPLACEMENT'); trace('COMPOSER_ROOT_UNIQUE_REPLACEMENT'); }
-    if (transition.kind === 'reuse') { trace('COMPOSER_UNIQUE_REUSE'); trace('COMPOSER_ROOT_UNIQUE_REUSE'); }
+    if (transition.kind === 'new') { trace('COMPOSER_UNIQUE_NEW'); trace('COMPOSER_ROOT_UNIQUE_NEW'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_NEW', 'TRANSITION_NEW', finalEvidence); }
+    if (transition.kind === 'replacement') { trace('COMPOSER_UNIQUE_REPLACEMENT'); trace('COMPOSER_ROOT_UNIQUE_REPLACEMENT'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_REPLACEMENT', 'TRANSITION_REPLACEMENT', finalEvidence); }
+    if (transition.kind === 'reuse') { trace('COMPOSER_UNIQUE_REUSE'); trace('COMPOSER_ROOT_UNIQUE_REUSE'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_REUSE', 'TRANSITION_REUSE', finalEvidence); }
     const { locator, handle } = transition.record;
     await locator.waitFor({ state: 'visible', timeout: 10000 });
     if (!handle) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be retained.');
 
+    emitDiagnostic(diagnostic, 'COMPOSER_ROOT_ACCEPTED', 'ROOT_ACCEPTED', finalEvidence);
     trace('COMPOSER_EDITOR_BOUND');
+    emitDiagnostic(diagnostic, 'COMPOSER_EDITOR_BOUND', 'EDITOR_BOUND', finalEvidence);
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
     return { handle, locator };
   } catch (error) {
+    if (!diagnosticSummaryWritten) emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'UNKNOWN_SAFE_FAILURE', finalEvidence, true);
     if (error?.code === 'FACEBOOK_COMPOSER_OPENER_AMBIGUOUS') trace('COMPOSER_OPENER_AMBIGUOUS');
     else if (error?.code === 'FACEBOOK_COMPOSER_UNVERIFIED') trace('COMPOSER_TRANSITION_AMBIGUOUS');
     else {

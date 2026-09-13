@@ -8,6 +8,7 @@ const { observeFacebookSession, requireNoExplicitNegativeSessionState } = requir
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
 const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, requirePreparedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
+const { createComposerAcquisitionDiagnosticSink } = require('./ComposerAcquisitionDiagnostics');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 const FACEBOOK_ROOT_URL = 'https://www.facebook.com/';
@@ -38,6 +39,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const verifyMedia = options.verifyMedia || inspectComposerMedia;
   const findPublishControl = options.findPublishControl || findScopedPublishControl;
   const verifyPublishControl = options.verifyPublishControl || ensureScopedPublishControl;
+  const composerDiagnostics = options.composerDiagnostics || createComposerAcquisitionDiagnosticSink();
   let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let traceStage = () => {};
 
   function requirePrepared(task) {
@@ -106,6 +108,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         const prepared = await preparePost(browser.page, post, {
           assertTargetReady: () => verifyTarget(browser.page.url(), targetCanonical),
           trace,
+          diagnostic: composerDiagnostics.forTask(task.task_id),
         });
         composer = preparedComposer(prepared);
         await verifyComposer(composer);
