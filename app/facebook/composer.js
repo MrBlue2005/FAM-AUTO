@@ -90,6 +90,25 @@ function summarizeEditorShapes(candidates = []) {
   };
 }
 
+function summarizePreSelectorEditorShapes(candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  return {
+    candidateCount: list.length,
+    visibleCandidateCount: list.filter((item) => item.visible).length,
+    roleTextboxCount: list.filter((item) => item.role === 'textbox').length,
+    contenteditablePresentCount: list.filter((item) => item.contenteditable !== 'inherited/absent').length,
+    contenteditableTrueCount: list.filter((item) => item.contenteditable === 'true').length,
+    plaintextOnlyCount: list.filter((item) => item.contenteditable === 'plaintext-only').length,
+    lexicalCount: list.filter((item) => item.hasDataLexicalEditor === true).length,
+    isContentEditableCount: list.filter((item) => item.isContentEditable === true).length,
+    ariaMultilineCount: list.filter((item) => item.ariaMultiline === true).length,
+    textareaCount: list.filter((item) => item.tagName === 'textarea').length,
+    editableAncestorCount: list.filter((item) => item.ancestorEditable === true).length,
+    inputCount: list.filter((item) => item.tagName === 'input').length,
+    otherRoleCount: list.filter((item) => item.role === 'other').length,
+  };
+}
+
 async function visibleEnabledCandidates(locator) {
   const candidates = [];
   const count = await locator.count();
@@ -257,7 +276,7 @@ async function eligibleEditors(handle, options = {}) {
   return candidates;
 }
 
-async function composerContract(handle) {
+async function composerContract(handle, options = {}) {
   const attachedPromise = typeof handle?.evaluate === 'function'
     ? handle.evaluate((node) => node.isConnected).catch(() => false)
     : Promise.resolve(false);
@@ -278,15 +297,20 @@ async function composerContract(handle) {
     contract: 'not-composer',
     evidence: { isAttached: true, isVisible: true, ...signals, structurallyEligible: false, eligibleEditorCount: 0 },
   };
+  // Capture the bounded structural shape before the reviewed selector filters
+  // it. This callback is diagnostic-only and cannot alter the contract.
+  const preSelectorShape = await inspectRootLocalEditorShapes(handle);
+  try { options.onPreSelectorShape?.(preSelectorShape.candidates, summarizePreSelectorEditorShapes(preSelectorShape.candidates)); } catch { /* diagnostics are non-authoritative */ }
   const editorEligibilityCandidates = [];
   const editors = await eligibleEditors(handle, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
+  try { options.onEligibilityShape?.(editorEligibilityCandidates, summarizeEditorShapes(editorEligibilityCandidates)); } catch { /* diagnostics are non-authoritative */ }
   const editorEvidence = editors[0]?.evidence || {};
   const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length, ...editorEvidence };
-  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0], editorEligibilityCandidates };
-  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null, editorEligibilityCandidates };
+  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0], editorEligibilityCandidates, preSelectorShape };
+  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null, editorEligibilityCandidates, preSelectorShape };
 }
 
-async function snapshotComposerRoots(page) {
+async function snapshotComposerRoots(page, options = {}) {
   const roots = page.locator(COMPOSER_ROOT_SELECTOR);
   const records = [];
   const count = await roots.count();
@@ -294,7 +318,7 @@ async function snapshotComposerRoots(page) {
     const locator = roots.nth(index);
     const handle = await locator.elementHandle?.().catch(() => null);
     if (!handle) continue;
-    const inspected = await composerContract(handle);
+    const inspected = await composerContract(handle, options);
     records.push({ handle, locator, ...inspected });
   }
   return records;
@@ -399,7 +423,10 @@ async function waitForComposerTransition(page, before, options = {}) {
   const pollMs = Number.isFinite(options.transitionPollMs) ? options.transitionPollMs : COMPOSER_TRANSITION_POLL_MS;
   const started = Date.now();
   do {
-    const after = await snapshotComposerRoots(page);
+    const after = await snapshotComposerRoots(page, {
+      onPreSelectorShape: options.onPreSelectorShape,
+      onEligibilityShape: options.onEligibilityShape,
+    });
     const result = await transitionResult(before, after);
     await options.onObservation?.(after, result);
     if (result.kind !== 'none') return result;
@@ -416,6 +443,14 @@ async function openComposer(page, options = {}) {
   let finalEvidence = null;
   let diagnosticSummaryWritten = false;
   let lastShapeSummary = null;
+  let lastPreSelectorShapeSummary = null;
+  let preSelectorShapeSnapshotWritten = false;
+  let preSelectorSummaryWritten = false;
+  const emitPreSelectorSummary = () => {
+    if (preSelectorSummaryWritten) return;
+    try { diagnostic?.preSelectorShapeSummary?.(lastPreSelectorShapeSummary || {}); } catch { /* diagnostics are non-authoritative */ }
+    preSelectorSummaryWritten = true;
+  };
   // The real publisher supplies this immediately after canonical target
   // verification. Do not discover a composer when that target proof fails.
   if (typeof options.assertTargetReady === 'function') options.assertTargetReady();
@@ -432,27 +467,29 @@ async function openComposer(page, options = {}) {
     let shapeSnapshots = 0;
     const transition = await waitForComposerTransition(page, before, {
       ...options,
+      onPreSelectorShape: (candidates, summary) => {
+        lastPreSelectorShapeSummary = summary;
+        if (preSelectorShapeSnapshotWritten || !diagnostic?.preSelectorShape) return;
+        preSelectorShapeSnapshotWritten = true;
+        try { diagnostic.preSelectorShape(candidates, summary); } catch { /* diagnostics are non-authoritative */ }
+      },
+      onEligibilityShape: (candidates, summary) => {
+        lastShapeSummary = summary;
+        if (shapeSnapshots >= 3 || !diagnostic?.shape) return;
+        shapeSnapshots += 1;
+        try { diagnostic.shape(candidates, summary); } catch { /* diagnostics are non-authoritative */ }
+      },
       onObservation: async (records, result) => {
         finalEvidence = emitObservationDiagnostics(diagnostic, records, result);
-        // At most three root-local snapshots are diagnostic-only; composer
-        // eligibility and transition decisions remain exactly as before.
-        if (shapeSnapshots < 3 && diagnostic?.shape) {
-          const root = records.find((record) => record.evidence.structurallyEligible && record.evidence.eligibleEditorCount === 0);
-          if (root) {
-            shapeSnapshots += 1;
-            const shape = summarizeEditorShapes(root.editorEligibilityCandidates || []);
-            lastShapeSummary = shape;
-            diagnostic.shape(root.editorEligibilityCandidates || [], shape);
-          }
-        }
       },
     });
     if (transition.kind === 'none') {
       trace('COMPOSER_OPEN_TIMEOUT');
       emitDiagnostic(diagnostic, 'COMPOSER_ROOT_NO_TRANSITION', 'NO_ELIGIBLE_TRANSITION', finalEvidence);
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_TIMEOUT', 'ACQUISITION_TIMEOUT', finalEvidence);
-      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', finalEvidence, true);
+      emitPreSelectorSummary();
       diagnostic?.shapeSummary?.(lastShapeSummary || {});
+      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', finalEvidence, true);
       diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_OPEN_FAILED', 'The selected group composer opener did not open a composer.');
     }
@@ -463,6 +500,7 @@ async function openComposer(page, options = {}) {
       trace('COMPOSER_TRANSITION_AMBIGUOUS');
       trace('COMPOSER_ROOT_AMBIGUOUS');
       emitDiagnostic(diagnostic, 'COMPOSER_ROOT_AMBIGUOUS', 'AMBIGUOUS_TRANSITION', finalEvidence);
+      emitPreSelectorSummary();
       emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'AMBIGUOUS_TRANSITION', finalEvidence, true);
       diagnosticSummaryWritten = true;
       throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be uniquely identified.');
@@ -477,11 +515,15 @@ async function openComposer(page, options = {}) {
     emitDiagnostic(diagnostic, 'COMPOSER_ROOT_ACCEPTED', 'ROOT_ACCEPTED', finalEvidence);
     trace('COMPOSER_EDITOR_BOUND');
     emitDiagnostic(diagnostic, 'COMPOSER_EDITOR_BOUND', 'EDITOR_BOUND', finalEvidence);
+    emitPreSelectorSummary();
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
     return { handle, locator, editor: editor.handle };
   } catch (error) {
-    if (!diagnosticSummaryWritten) emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'UNKNOWN_SAFE_FAILURE', finalEvidence, true);
+    if (!diagnosticSummaryWritten) {
+      emitPreSelectorSummary();
+      emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'UNKNOWN_SAFE_FAILURE', finalEvidence, true);
+    }
     if (error?.code === 'FACEBOOK_COMPOSER_OPENER_AMBIGUOUS') trace('COMPOSER_OPENER_AMBIGUOUS');
     else if (error?.code === 'FACEBOOK_COMPOSER_UNVERIFIED') trace('COMPOSER_TRANSITION_AMBIGUOUS');
     else {
@@ -507,4 +549,5 @@ module.exports = {
   eligibleEditors,
   editorEligibilityReason,
   summarizeEditorShapes,
+  summarizePreSelectorEditorShapes,
 };

@@ -18,6 +18,7 @@ const STAGES = new Set([
   'COMPOSER_ROOT_ACCEPTED', 'COMPOSER_EDITOR_BOUND',
   'COMPOSER_ACQUISITION_TIMEOUT', 'COMPOSER_ACQUISITION_FAILED',
   'EDITOR_SHAPE_SNAPSHOT', 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY',
+  'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -27,6 +28,7 @@ const REASON_CLASSES = new Set([
   'TRANSITION_REUSE', 'NO_ELIGIBLE_TRANSITION', 'AMBIGUOUS_TRANSITION',
   'ROOT_ACCEPTED', 'EDITOR_BOUND', 'ACQUISITION_TIMEOUT', 'UNKNOWN_SAFE_FAILURE',
   'EDITOR_SHAPE_SNAPSHOT', 'EDITOR_SHAPE_SUMMARY',
+  'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
 ]);
 
 const COUNTERS = new Set([
@@ -53,6 +55,13 @@ const ELIGIBILITY_REJECTION_REASONS = new Set([
 ]);
 const TERMINAL_STAGES = new Set([
   'COMPOSER_ROOT_ACCEPTED', 'COMPOSER_EDITOR_BOUND', 'COMPOSER_ACQUISITION_FAILED',
+]);
+const PRE_SELECTOR_SNAPSHOT_STAGE = 'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT';
+const PRE_SELECTOR_SUMMARY_STAGE = 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY';
+const PROTECTED_STAGES = new Set([
+  PRE_SELECTOR_SNAPSHOT_STAGE,
+  PRE_SELECTOR_SUMMARY_STAGE,
+  'COMPOSER_ACQUISITION_FAILED',
 ]);
 
 function safeTaskId(value) {
@@ -105,6 +114,16 @@ function sanitizeShapeSummary(value = {}) {
   return Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0]));
 }
 
+function sanitizePreSelectorShapeSummary(value = {}) {
+  const keys = [
+    'candidateCount', 'visibleCandidateCount', 'roleTextboxCount',
+    'contenteditablePresentCount', 'contenteditableTrueCount', 'plaintextOnlyCount',
+    'lexicalCount', 'isContentEditableCount', 'ariaMultilineCount', 'textareaCount',
+    'editableAncestorCount', 'inputCount', 'otherRoleCount',
+  ];
+  return Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0]));
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -129,10 +148,21 @@ function rotate(directory) {
   }
 }
 
+function removeOldestUnprotected(records) {
+  const index = records.findIndex((record) => !PROTECTED_STAGES.has(record.stage));
+  if (index < 0) return false;
+  records.splice(index, 1);
+  return true;
+}
+
 function createComposerAcquisitionDiagnosticSink(options = {}) {
   const directory = options.directory || path.join(logsPath, 'local-agent-composer-diagnostics');
   const now = options.now || (() => new Date().toISOString());
-  const maxRecords = Math.max(1, Math.min(Number(options.maxRecords) || MAX_RECORDS_PER_TASK, MAX_RECORDS_PER_TASK));
+  // These three protected records are the minimum useful evidence for a
+  // reviewed selector miss: its root-local shape, terminal aggregate, and
+  // terminal acquisition result.  Do not let a caller's tiny diagnostic cap
+  // make that evidence impossible to retain.
+  const maxRecords = Math.max(3, Math.min(Number(options.maxRecords) || MAX_RECORDS_PER_TASK, MAX_RECORDS_PER_TASK));
   const maxBytes = Math.max(1024, Math.min(Number(options.maxBytes) || MAX_FILE_BYTES, MAX_FILE_BYTES));
 
   function forTask(taskId) {
@@ -144,12 +174,20 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       try {
         const { counters, flags } = sanitizeEvidence(evidence);
         const record = { timestamp: now(), task_id: safeId, stage, reason_class: reasonClass, counters, flags };
-        if (shape?.candidates) record.editorShapeCandidates = shape.candidates.slice(0, MAX_EDITOR_SHAPE_CANDIDATES).map(sanitizeCandidate);
-        if (shape?.summary) record.editorShapeSummary = sanitizeShapeSummary(shape.summary);
+        if (shape?.preSelector === true) {
+          if (shape?.candidates) record.preSelectorEditorShapeCandidates = shape.candidates.slice(0, MAX_EDITOR_SHAPE_CANDIDATES).map(sanitizeCandidate);
+          if (shape?.summary) record.preSelectorEditorShapeSummary = sanitizePreSelectorShapeSummary(shape.summary);
+        } else {
+          if (shape?.candidates) record.editorShapeCandidates = shape.candidates.slice(0, MAX_EDITOR_SHAPE_CANDIDATES).map(sanitizeCandidate);
+          if (shape?.summary) record.editorShapeSummary = sanitizeShapeSummary(shape.summary);
+        }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY';
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
+        // One snapshot is sufficient to explain a selector miss. Keeping the
+        // first bounded sample reserves space for its terminal summary.
+        if (stage === PRE_SELECTOR_SNAPSHOT_STAGE && records.some((item) => item.stage === stage)) return;
         const previous = records[records.length - 1];
         // Repeated polling snapshots carry no additional safe diagnostic
         // meaning. Coalesce them so terminal evidence cannot be crowded out.
@@ -159,8 +197,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           && JSON.stringify(previous.counters) === JSON.stringify(counters)
           && JSON.stringify(previous.flags) === JSON.stringify(flags)) return;
         if (terminal) {
-          while (records.length >= maxRecords) records.shift();
-          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes) records.shift();
+          while (records.length >= maxRecords && removeOldestUnprotected(records)) { /* retain protected diagnostic evidence */ }
+          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes && removeOldestUnprotected(records)) { /* retain protected diagnostic evidence */ }
         }
         if (records.length < maxRecords) records.push(record);
         const value = { version: 1, task_id: safeId, records: records.slice(-maxRecords) };
@@ -176,6 +214,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       summary: (stage, reasonClass, evidence) => persist(stage, reasonClass, evidence, true),
       shape: (candidates, summary) => persist('EDITOR_SHAPE_SNAPSHOT', 'EDITOR_SHAPE_SNAPSHOT', {}, false, { candidates, summary }),
       shapeSummary: (summary) => persist('EDITOR_SHAPE_DIAGNOSTIC_SUMMARY', 'EDITOR_SHAPE_SUMMARY', {}, true, { summary }),
+      preSelectorShape: (candidates, summary) => persist(PRE_SELECTOR_SNAPSHOT_STAGE, 'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', {}, false, { candidates, summary, preSelector: true }),
+      preSelectorShapeSummary: (summary) => persist(PRE_SELECTOR_SUMMARY_STAGE, 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY', {}, true, { summary, preSelector: true }),
     });
   }
 
@@ -194,6 +234,7 @@ module.exports = {
   REASON_CLASSES,
   sanitizeCandidate,
   sanitizeShapeSummary,
+  sanitizePreSelectorShapeSummary,
   STAGES,
   createComposerAcquisitionDiagnosticSink,
 };

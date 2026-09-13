@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AH pre-selector root-local shape capture
+
+For every structurally eligible composer root, the Local Agent captures one bounded `PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT` before applying `COMPOSER_EDITOR_SELECTOR`, then writes a terminal `PRE_SELECTOR_EDITOR_SHAPE_SUMMARY`. This makes a selector-zero result diagnosable without changing selector authority or execution behavior. The snapshot is still strictly root-local and includes only approved tag/role/contenteditable classes, bounded structural counts/depth, and boolean editability/visibility fields; it excludes DOM text, labels, HTML, selectors, IDs, URLs, cookies, identities, tokens, credentials, and task payload data. The sink protects one pre-selector snapshot, its summary, and the final `COMPOSER_ACQUISITION_FAILED` record from normal record-pressure pruning.
+
 ## G5.7AD editor-eligibility rejection diagnostics
 
 When a structurally eligible retained composer root has zero accepted editors, its bounded root-local editor records now include one fixed, diagnostic-only `eligibilityRejectionReason`: `ACCEPTED`, `HIDDEN`, `PLAYWRIGHT_NOT_ENABLED`, `PLAYWRIGHT_NOT_EDITABLE`, `NOT_POST_SHAPE`, `COMMENT_REPLY_SEARCH_EXCLUDED`, or `OTHER_SAFE_REJECTION`. The reason follows the existing eligibility condition order and does not alter selectors, root discovery, editor acceptance, comment/reply/search exclusions, transition handling, text insertion, marker ordering, submit, or retry behavior. The terminal summary adds bounded counts for accepted, Playwright-enabled/editable, exclusion, post-shape, and other safe rejections. No private DOM data is retained.

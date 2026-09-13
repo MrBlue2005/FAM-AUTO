@@ -6,17 +6,45 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, openComposer, summarizeEditorShapes } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+
+function structuralNode(config = {}) {
+  const attributes = {
+    contenteditable: config.contenteditable,
+    role: config.role,
+    'data-lexical-editor': config.lexical === true ? 'true' : undefined,
+    'aria-multiline': config.ariaMultiline === true ? 'true' : undefined,
+    'aria-disabled': config.disabled === true ? 'true' : undefined,
+    'aria-readonly': config.readOnly === true ? 'true' : undefined,
+  };
+  return {
+    isConnected: config.attached !== false,
+    isContentEditable: config.isContentEditable === true,
+    disabled: config.disabled === true,
+    readOnly: config.readOnly === true,
+    tabIndex: config.tabIndex || 0,
+    tagName: config.tagName || 'DIV',
+    children: Array.from({ length: config.childElementCount || 0 }),
+    ownerDocument: { designMode: 'off', defaultView: { getComputedStyle: () => ({ display: config.visible === false ? 'none' : 'block', visibility: 'visible' }) } },
+    parentElement: { closest: () => config.ancestorEditable === true ? {} : null },
+    getBoundingClientRect: () => ({ width: 10, height: 10 }),
+    getAttribute: (name) => attributes[name] === undefined ? null : attributes[name],
+    hasAttribute: (name) => attributes[name] !== undefined,
+    querySelectorAll: () => Array.from({ length: config.descendantEditableCount || 0 }),
+  };
+}
 
 function root(id, editors, options = {}) {
-  return {
+  const item = {
     id, editors, visible: options.visible !== false, attached: options.attached !== false, isConnected: options.attached !== false,
     role: options.role === undefined ? 'dialog' : options.role,
     ariaModal: options.ariaModal === true, pagelet: options.pagelet || '', actionRegion: options.actionRegion !== false, editorOptions: options.editorOptions || {},
     getAttribute(name) { return ({ role: this.role, 'aria-modal': this.ariaModal ? 'true' : '', 'data-pagelet': this.pagelet, 'aria-label': '', 'data-testid': '' })[name] || ''; },
     closest() { return null; }, querySelector() { return this.actionRegion ? {} : null; },
   };
+  item.querySelectorAll = () => (options.preSelectorCandidates || []).map(structuralNode);
+  return item;
 }
 
 function fakePage(before, after) {
@@ -34,7 +62,7 @@ function fakePage(before, after) {
     return locator;
   };
   const handle = (item) => ({
-    _node: item, evaluate: async (fn, arg) => fn(item, arg?._node), isVisible: async () => item.visible,
+    _node: item, evaluate: async (fn, arg) => fn(item, arg), isVisible: async () => item.visible,
     locator: (selector) => { assert.equal(selector, COMPOSER_EDITOR_SELECTOR); return { count: async () => item.editors, nth: (index) => editor(item, index) }; },
   });
   const page = {
@@ -51,7 +79,14 @@ function fakePage(before, after) {
 
 function recorder() {
   const records = [];
-  return { records, diagnostic: { emit: (stage, reasonClass, evidence) => records.push({ stage, reasonClass, evidence }), summary: (stage, reasonClass, evidence) => records.push({ stage, reasonClass, evidence, summary: true }) } };
+  return { records, diagnostic: {
+    emit: (stage, reasonClass, evidence) => records.push({ stage, reasonClass, evidence }),
+    summary: (stage, reasonClass, evidence) => records.push({ stage, reasonClass, evidence, summary: true }),
+    shape: (candidates, summary) => records.push({ stage: 'EDITOR_SHAPE_SNAPSHOT', candidates, summary }),
+    shapeSummary: (summary) => records.push({ stage: 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY', summary }),
+    preSelectorShape: (candidates, summary) => records.push({ stage: 'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', candidates, summary }),
+    preSelectorShapeSummary: (summary) => records.push({ stage: 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY', summary }),
+  } };
 }
 
 async function acquire(before, after) {
@@ -181,6 +216,79 @@ test('editor-shape snapshots are root-local payloads, bounded, and retain termin
     assert.ok(data.records.filter((item) => item.editorShapeCandidates).every((item) => item.editorShapeCandidates.length <= 12));
     assert.doesNotMatch(saved, /never persist|innerText|selector/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('pre-selector root-local shape is captured even when the editor selector returns zero', async () => {
+  const result = await acquire(
+    [root('old', 0, { actionRegion: false })],
+    [root('old', 0, { actionRegion: false }), root('modal', 0, {
+      ariaModal: true,
+      // This bounded structural node is deliberately not matched by
+      // COMPOSER_EDITOR_SELECTOR; the snapshot must still explain the miss.
+      preSelectorCandidates: [{ tagName: 'DIV', tabIndex: 0, visible: true, attached: true }],
+    })],
+  );
+  await assert.rejects(result.run, { code: 'FACEBOOK_COMPOSER_OPEN_FAILED' });
+  const snapshot = result.capture.records.find((record) => record.stage === 'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT');
+  assert.equal(snapshot.candidates.length, 1);
+  assert.equal(snapshot.candidates[0].tagName, 'div');
+  assert.equal(snapshot.summary.candidateCount, 1);
+  assert.equal(snapshot.summary.contenteditablePresentCount, 0);
+  assert.ok(result.capture.records.some((record) => record.stage === 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY'));
+  assert.ok(result.capture.records.some((record) => record.stage === 'COMPOSER_ACQUISITION_FAILED'));
+});
+
+test('pre-selector and eligibility diagnostics both persist when the selector accepts an editor', async () => {
+  const result = await acquire(
+    [root('old', 0, { actionRegion: false })],
+    [root('old', 0, { actionRegion: false }), root('modal', 1, {
+      ariaModal: true,
+      editorOptions: { role: 'textbox', contenteditable: true, isContentEditable: true },
+      preSelectorCandidates: [{ tagName: 'DIV', role: 'textbox', contenteditable: 'true', isContentEditable: true, visible: true, attached: true }],
+    })],
+  );
+  await result.run;
+  const preSelector = result.capture.records.find((record) => record.stage === 'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT');
+  const eligibility = result.capture.records.find((record) => record.stage === 'EDITOR_SHAPE_SNAPSHOT');
+  assert.equal(preSelector.summary.roleTextboxCount, 1);
+  assert.equal(eligibility.candidates[0].eligibilityRejectionReason, 'ACCEPTED');
+  assert.ok(result.capture.records.some((record) => record.stage === 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY'));
+});
+
+test('pre-selector snapshot, summary, and terminal failure survive diagnostic log pressure without private data', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-pre-selector-retention-'));
+  try {
+    // Even an erroneously tiny caller cap cannot discard the three protected
+    // records needed to explain a reviewed selector miss.
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 1, maxBytes: 12000, now: () => '2026-09-13T00:00:00.000Z' });
+    const record = sink.forTask('task_pre_selector');
+    for (let index = 0; index < 12; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    record.preSelectorShape([{ tagName: 'div', role: null, visible: true, attached: true, reason: 'TABINDEX', text: 'never persist', cookie: 'never persist' }], { candidateCount: 1, visibleCandidateCount: 1 });
+    record.preSelectorShapeSummary({ candidateCount: 1, visibleCandidateCount: 1 });
+    record.summary('COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', { counters: { potentialRootCount: 1 } });
+    const saved = fs.readFileSync(path.join(directory, 'task_pre_selector.json'), 'utf8');
+    const stages = JSON.parse(saved).records.map((item) => item.stage);
+    assert.ok(stages.includes('PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT'));
+    assert.ok(stages.includes('PRE_SELECTOR_EDITOR_SHAPE_SUMMARY'));
+    assert.ok(stages.includes('COMPOSER_ACQUISITION_FAILED'));
+    assert.equal(stages.length, 3);
+    assert.doesNotMatch(saved, /never persist|cookie/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('pre-selector summaries are fixed, bounded, and task-isolated', () => {
+  const summary = sanitizePreSelectorShapeSummary({ candidateCount: 9999, roleTextboxCount: 2, unknown: 5 });
+  assert.equal(summary.candidateCount, 1000);
+  assert.equal(summary.roleTextboxCount, 2);
+  assert.equal(Object.hasOwn(summary, 'unknown'), false);
+  const source = [
+    { tagName: 'div', role: 'textbox', contenteditable: 'true', isContentEditable: true, ariaMultiline: true, visible: true },
+    { tagName: 'textarea', role: null, contenteditable: 'inherited/absent', ancestorEditable: true },
+  ];
+  const counts = summarizePreSelectorEditorShapes(source);
+  assert.equal(counts.contenteditableTrueCount, 1);
+  assert.equal(counts.textareaCount, 1);
+  assert.equal(counts.ariaMultilineCount, 1);
 });
 
 function eligibilityRoot(configs) {

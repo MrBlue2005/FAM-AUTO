@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AH - pre-selector root-local shape capture
+
+- Before `COMPOSER_EDITOR_SELECTOR` is evaluated within an already structurally eligible composer root, the Local Agent now records one bounded, root-local `PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT` and its terminal `PRE_SELECTOR_EDITOR_SHAPE_SUMMARY`. This preserves safe evidence when the reviewed selector finds zero candidates.
+- The snapshot retains only the already-approved redacted structural candidate fields and fixed aggregate counts. It is task-correlated and retained alongside the terminal acquisition failure under log pressure; no selector, eligibility, root binding, text/media, marker, submit, retry, browser, Facebook, or publish behavior changed.
+
 ## Phase G5.7AD - editor-eligibility rejection diagnostics
 
 - Root-local editor diagnostic candidates now retain one fixed rejection enum derived from the existing visibility, enabled, editable, post-shape, and comment/reply/search checks. The bounded terminal summary adds fixed reason counts.
