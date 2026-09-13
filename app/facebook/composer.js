@@ -13,7 +13,16 @@ const COMPOSER_ENTRY_LABELS = Object.freeze([
 ]);
 
 const GROUP_COMPOSER_STRUCTURAL_SELECTOR = '[role="main"] [data-pagelet="GroupFeed"] [role="textbox"][contenteditable="true"][aria-label]';
-const COMPOSER_EDITOR_SELECTOR = '[contenteditable="true"][role="textbox"], textarea';
+// This selector is evaluated only below an already retained, uniquely
+// transitioned composer root.  It intentionally describes possible text-entry
+// shapes rather than granting page-wide editor discovery authority.
+const COMPOSER_EDITOR_SELECTOR = [
+  '[contenteditable="true"]',
+  '[role="textbox"]',
+  'textarea',
+  '[data-lexical-editor="true"]',
+  '.ProseMirror[contenteditable="true"]',
+].join(', ');
 // Deliberately small root set.  A root is never selected for publishing merely
 // because it exists: it must make a unique pre/post-click transition into the
 // full composer contract below.
@@ -99,19 +108,36 @@ async function eligibleEditors(handle) {
   const candidates = [];
   for (let index = 0; index < count; index += 1) {
     const editor = editors.nth(index);
-    const [visible, enabled, metadata] = await Promise.all([
+    const [visible, enabled, editable, metadata] = await Promise.all([
       editor?.isVisible?.().catch(() => false),
       editor?.isEnabled?.().catch(() => false),
+      typeof editor?.isEditable === 'function' ? editor.isEditable().catch(() => false) : Promise.resolve(null),
       editor?.evaluate?.((node) => {
         const attr = (name) => String(node.getAttribute?.(name) || '');
         const text = `${attr('aria-label')} ${attr('placeholder')} ${attr('data-testid')} ${attr('data-pagelet')}`.toLowerCase();
         const context = String(node.closest?.('[data-pagelet], [aria-label], [data-testid]')?.getAttribute?.('data-pagelet') || '').toLowerCase();
         const contentEditable = attr('contenteditable') === 'true';
-        const textbox = attr('role') === 'textbox' || String(node.tagName || '').toLowerCase() === 'textarea';
-        return { postShape: contentEditable ? attr('role') === 'textbox' : textbox, excluded: /(comment|reply|ufi|search)/i.test(`${text} ${context}`) };
-      }).catch(() => ({ postShape: false, excluded: true })),
+        const inheritedEditable = node.isContentEditable === true;
+        const roleTextbox = attr('role') === 'textbox';
+        const isTextarea = String(node.tagName || '').toLowerCase() === 'textarea';
+        const lexical = attr('data-lexical-editor') === 'true'
+          || Boolean(node.closest?.('[data-lexical-editor="true"], .ProseMirror'));
+        return {
+          postShape: isTextarea || contentEditable || (roleTextbox && inheritedEditable) || (lexical && inheritedEditable),
+          contentEditable,
+          roleTextbox,
+          lexical,
+          isTextarea,
+          inheritedEditable,
+          excluded: /(comment|reply|ufi|search)/i.test(`${text} ${context}`),
+        };
+      }).catch(() => ({ postShape: false, excluded: true, contentEditable: false, roleTextbox: false, lexical: false, isTextarea: false, inheritedEditable: false })),
     ]);
-    if (visible === true && enabled === true && metadata?.postShape === true && metadata.excluded !== true) candidates.push(editor);
+    const isEditable = editable === null ? metadata?.inheritedEditable === true || metadata?.isTextarea === true : editable === true;
+    if (visible === true && enabled === true && isEditable && metadata?.postShape === true && metadata.excluded !== true) {
+      const exactHandle = await editor?.elementHandle?.().catch(() => null);
+      candidates.push({ locator: editor, handle: exactHandle || editor, evidence: { ...metadata, isEditable } });
+    }
   }
   return candidates;
 }
@@ -138,9 +164,10 @@ async function composerContract(handle) {
     evidence: { isAttached: true, isVisible: true, ...signals, structurallyEligible: false, eligibleEditorCount: 0 },
   };
   const editors = await eligibleEditors(handle);
-  const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length };
-  if (editors.length === 1) return { contract: 'eligible', evidence };
-  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence };
+  const editorEvidence = editors[0]?.evidence || {};
+  const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length, ...editorEvidence };
+  if (editors.length === 1) return { contract: 'eligible', evidence, editor: editors[0] };
+  return { contract: editors.length > 1 ? 'ambiguous' : 'not-composer', evidence, editor: null };
 }
 
 async function snapshotComposerRoots(page) {
@@ -179,6 +206,11 @@ function diagnosticEvidence(records, transition = null) {
       hasComposerPageletSignal: records.some((record) => record.evidence.hasComposerPageletSignal),
       hasVisibleEditor: records.some((record) => record.evidence.eligibleEditorCount > 0),
       editorCountIsOne: counters.rootsWithOneEditor === 1,
+      hasRoleTextbox: records.some((record) => record.evidence.roleTextbox === true),
+      hasContentEditable: records.some((record) => record.evidence.contentEditable === true || record.evidence.inheritedEditable === true),
+      hasLexicalSignal: records.some((record) => record.evidence.lexical === true),
+      isTextarea: records.some((record) => record.evidence.isTextarea === true),
+      isEditable: records.some((record) => record.evidence.isEditable === true),
       isVisible: Boolean(sample.isVisible),
       isAttached: Boolean(sample.isAttached),
       transitionDetected: Boolean(transition && transition.kind !== 'none'),
@@ -306,16 +338,16 @@ async function openComposer(page, options = {}) {
     if (transition.kind === 'new') { trace('COMPOSER_UNIQUE_NEW'); trace('COMPOSER_ROOT_UNIQUE_NEW'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_NEW', 'TRANSITION_NEW', finalEvidence); }
     if (transition.kind === 'replacement') { trace('COMPOSER_UNIQUE_REPLACEMENT'); trace('COMPOSER_ROOT_UNIQUE_REPLACEMENT'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_REPLACEMENT', 'TRANSITION_REPLACEMENT', finalEvidence); }
     if (transition.kind === 'reuse') { trace('COMPOSER_UNIQUE_REUSE'); trace('COMPOSER_ROOT_UNIQUE_REUSE'); emitDiagnostic(diagnostic, 'COMPOSER_ROOT_TRANSITION_REUSE', 'TRANSITION_REUSE', finalEvidence); }
-    const { locator, handle } = transition.record;
+    const { locator, handle, editor } = transition.record;
     await locator.waitFor({ state: 'visible', timeout: 10000 });
-    if (!handle) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be retained.');
+    if (!handle || !editor?.handle) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The opened Facebook composer cannot be retained.');
 
     emitDiagnostic(diagnostic, 'COMPOSER_ROOT_ACCEPTED', 'ROOT_ACCEPTED', finalEvidence);
     trace('COMPOSER_EDITOR_BOUND');
     emitDiagnostic(diagnostic, 'COMPOSER_EDITOR_BOUND', 'EDITOR_BOUND', finalEvidence);
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
-    return { handle, locator };
+    return { handle, locator, editor: editor.handle };
   } catch (error) {
     if (!diagnosticSummaryWritten) emitDiagnostic(diagnostic, 'COMPOSER_ACQUISITION_FAILED', 'UNKNOWN_SAFE_FAILURE', finalEvidence, true);
     if (error?.code === 'FACEBOOK_COMPOSER_OPENER_AMBIGUOUS') trace('COMPOSER_OPENER_AMBIGUOUS');

@@ -42,13 +42,17 @@ function fakePage(options = {}) {
     const editor = {
       visible: config.visible !== false,
       enabled: config.enabled !== false,
+      editable: config.editable !== false,
+      isContentEditable: config.isContentEditable === undefined ? config.contenteditable !== false : config.isContentEditable === true,
       getAttribute(name) {
-        return ({ 'contenteditable': config.contenteditable === false ? 'false' : 'true', role: config.role === undefined ? 'textbox' : config.role, 'aria-label': config.ariaLabel || '', placeholder: config.placeholder || '', 'data-testid': config.testId || '', 'data-pagelet': config.pagelet || '' })[name] || '';
+        return ({ 'contenteditable': config.contenteditable === false ? 'false' : 'true', role: config.role === undefined ? 'textbox' : config.role, 'aria-label': config.ariaLabel || '', placeholder: config.placeholder || '', 'data-testid': config.testId || '', 'data-pagelet': config.pagelet || '', 'data-lexical-editor': config.lexical === true ? 'true' : '' })[name] || '';
       },
-      closest() { return null; },
+      closest(selector) { return config.lexical === true && /lexical|ProseMirror/.test(String(selector || '')) ? {} : null; },
       tagName: config.tagName || 'DIV',
     };
-    return { isVisible: async () => editor.visible, isEnabled: async () => editor.enabled, evaluate: async (fn) => fn(editor) };
+    const locator = { isVisible: async () => editor.visible, isEnabled: async () => editor.enabled, isEditable: async () => editor.editable, evaluate: async (fn) => fn(editor) };
+    locator.elementHandle = async () => locator;
+    return locator;
   };
   const handleFor = (value) => ({
     _node: value,
@@ -216,6 +220,36 @@ test('a Facebook-like composer layer without dialog role or aria-modal is accept
   const layer = node('composer-layer', 1, { role: '', pagelet: 'CometComposerRoot' });
   const fixture = fakePage({ before: [old], after: [old, layer], labelled: { 'button:Write something...': [{}] } });
   assert.equal((await openComposer(fixture.page, openerOptions(fixture))).handle._node.id, 'composer-layer');
+});
+
+test('root-scoped alternate Facebook editor shapes retain exactly one editor handle', async () => {
+  const cases = [
+    ['contenteditable without role', { role: '', contenteditable: true }],
+    ['inherited role textbox', { role: 'textbox', contenteditable: false, isContentEditable: true }],
+    ['Lexical editable', { role: '', contenteditable: false, isContentEditable: true, lexical: true }],
+    ['textarea', { tagName: 'TEXTAREA', contenteditable: false, isContentEditable: false }],
+  ];
+  for (const [label, editorOptions] of cases) {
+    const fixture = fakePage({ before: [node('old')], after: [node(label, 1, { editorOptions })], labelled: { 'button:Scrie ceva...': [{}] } });
+    const composer = await openComposer(fixture.page, openerOptions(fixture));
+    assert.ok(composer.editor, label);
+    assert.equal(composer.handle._node.id, label);
+  }
+});
+
+test('hidden, disabled, non-editable, outside-root comment, and duplicate alternate editors fail closed', async () => {
+  const rejected = [
+    node('hidden-alt', 1, { editorOptions: { role: '', visible: false } }),
+    node('disabled-alt', 1, { editorOptions: { role: '', enabled: false } }),
+    node('not-editable-alt', 1, { editorOptions: { role: '', editable: false } }),
+    node('comment-outside-root', 1, { editorOptions: { role: '', ariaLabel: 'Write a comment...' } }),
+  ];
+  for (const root of rejected) {
+    const fixture = fakePage({ before: [node('old')], after: [node('old'), root], labelled: { 'button:Scrie ceva...': [{}] } });
+    await assert.rejects(openComposer(fixture.page, openerOptions(fixture, { transitionTimeoutMs: 0 })), { code: 'FACEBOOK_COMPOSER_OPEN_FAILED' });
+  }
+  const duplicate = fakePage({ before: [node('old')], after: [node('old'), node('two-alt', 2, { editorOptions: [{ role: '' }, { lexical: true, role: '', contenteditable: false, isContentEditable: true }] })], labelled: { 'button:Scrie ceva...': [{}] } });
+  await assert.rejects(openComposer(duplicate.page, openerOptions(duplicate)), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });
 });
 
 test('comment, reply, search, hidden, and unrelated modal textboxes are never composer roots', async () => {

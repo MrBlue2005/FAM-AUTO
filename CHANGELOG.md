@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7X - Facebook composer editor-shape support
+
+- Composer-root binding and identity-based transition proof are unchanged. Inside that one retained root only, the editor contract now accepts exactly one visible, enabled, editable text-entry surface: the classic contenteditable textbox, a contenteditable surface without a textbox role, an inherited-editable textbox, a Lexical/ProseMirror-style editable surface, or a textarea.
+- Hidden, disabled, non-editable, comment/reply/search-shaped, zero-editor, and multiple-editor candidates still fail closed. The exact editor handle is retained when the root is accepted and is used for text insertion and exact text verification; no generic composer-editor reacquisition was added.
+- Local diagnostics now include only safe editor-shape booleans and coalesce identical polling observations. Terminal accepted/bound or failure evidence is retained within the existing 64-record/32 KiB privacy bounds. No hosted task, deployment, Facebook navigation, Chromium launch, or publish action occurred.
+
 ## Phase G5.7U - composer acquisition diagnostic instrumentation
 
 - The Local Agent now records bounded, per-task composer-acquisition diagnostics only in its local logs directory. Each record contains a timestamp, task ID, approved stage/reason class, bounded structural counters, and approved boolean evidence; it never contains HTML, Facebook text, labels, cookies, account IDs, tokens, credentials, selectors with dynamic content, media paths, or task payloads.

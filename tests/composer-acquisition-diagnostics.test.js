@@ -13,7 +13,7 @@ function root(id, editors, options = {}) {
   return {
     id, editors, visible: options.visible !== false, attached: options.attached !== false, isConnected: options.attached !== false,
     role: options.role === undefined ? 'dialog' : options.role,
-    ariaModal: options.ariaModal === true, pagelet: options.pagelet || '', actionRegion: options.actionRegion !== false,
+    ariaModal: options.ariaModal === true, pagelet: options.pagelet || '', actionRegion: options.actionRegion !== false, editorOptions: options.editorOptions || {},
     getAttribute(name) { return ({ role: this.role, 'aria-modal': this.ariaModal ? 'true' : '', 'data-pagelet': this.pagelet, 'aria-label': '', 'data-testid': '' })[name] || ''; },
     closest() { return null; }, querySelector() { return this.actionRegion ? {} : null; },
   };
@@ -21,13 +21,21 @@ function root(id, editors, options = {}) {
 
 function fakePage(before, after) {
   const state = { roots: before, clicked: 0 };
-  const editor = (item) => ({
-    isVisible: async () => true, isEnabled: async () => true,
-    evaluate: async (fn) => fn({ getAttribute: (name) => ({ contenteditable: 'true', role: 'textbox', 'aria-label': '', placeholder: '', 'data-testid': '', 'data-pagelet': '' })[name] || '', closest: () => null, tagName: 'DIV' }),
-  });
+  const editor = (item, index) => {
+    const config = Array.isArray(item.editorOptions) ? (item.editorOptions[index] || {}) : item.editorOptions;
+    const node = {
+      isContentEditable: config.isContentEditable === undefined ? config.contenteditable !== false : config.isContentEditable === true,
+      getAttribute: (name) => ({ contenteditable: config.contenteditable === false ? 'false' : 'true', role: config.role === undefined ? 'textbox' : config.role, 'aria-label': config.ariaLabel || '', placeholder: '', 'data-testid': '', 'data-pagelet': '', 'data-lexical-editor': config.lexical === true ? 'true' : '' })[name] || '',
+      closest: (selector) => config.lexical === true && /lexical|ProseMirror/.test(String(selector || '')) ? {} : null,
+      tagName: config.tagName || 'DIV',
+    };
+    const locator = { isVisible: async () => config.visible !== false, isEnabled: async () => config.enabled !== false, isEditable: async () => config.editable !== false, evaluate: async (fn) => fn(node) };
+    locator.elementHandle = async () => locator;
+    return locator;
+  };
   const handle = (item) => ({
     _node: item, evaluate: async (fn, arg) => fn(item, arg?._node), isVisible: async () => item.visible,
-    locator: (selector) => { assert.equal(selector, COMPOSER_EDITOR_SELECTOR); return { count: async () => item.editors, nth: () => editor(item) }; },
+    locator: (selector) => { assert.equal(selector, COMPOSER_EDITOR_SELECTOR); return { count: async () => item.editors, nth: (index) => editor(item, index) }; },
   });
   const page = {
     getByRole: (role, options = {}) => ({ count: async () => role === 'button' && options.name === 'Scrie ceva...' ? 1 : 0, nth: () => ({ isVisible: async () => true, isEnabled: async () => true, click: async () => { state.clicked += 1; state.roots = after; } }) }),
@@ -79,6 +87,22 @@ test('ambiguous and accepted transitions emit their distinct safe outcomes', asy
   assert.ok(accepted.capture.records.some((record) => record.stage === 'COMPOSER_EDITOR_BOUND'));
 });
 
+test('the observed visible modal with one alternate contenteditable editor is accepted and safely classified', async () => {
+  const observed = await acquire(
+    [root('old', 0, { actionRegion: false })],
+    [root('old', 0, { actionRegion: false }), root('visible-modal', 1, { ariaModal: true, editorOptions: { role: '', contenteditable: true } })],
+  );
+  const composer = await observed.run;
+  assert.ok(composer.editor);
+  const observation = observed.capture.records.filter((record) => record.stage === 'COMPOSER_POST_CLICK_OBSERVATION').at(-1);
+  assert.equal(observation.evidence.counters.rootsWithZeroEditor, 0);
+  assert.equal(observation.evidence.counters.rootsWithOneEditor, 1);
+  assert.equal(observation.evidence.flags.hasContentEditable, true);
+  assert.equal(observation.evidence.flags.hasRoleTextbox, false);
+  assert.ok(observed.capture.records.some((record) => record.stage === 'COMPOSER_ROOT_ACCEPTED'));
+  assert.ok(observed.capture.records.some((record) => record.stage === 'COMPOSER_EDITOR_BOUND'));
+});
+
 test('per-task diagnostic files are isolated, whitelisted, and bounded', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-composer-diagnostic-'));
   try {
@@ -89,8 +113,8 @@ test('per-task diagnostic files are isolated, whitelisted, and bounded', () => {
       flags: { hasRoleDialog: true, forbiddenFlag: true },
       html: '<secret html>', text: 'private text', cookie: 'c_user=123', token: 'token', accountId: '123',
     });
-    for (let index = 0; index < 10; index += 1) first.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
-    first.summary('COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', { counters: { potentialRootCount: 1 } });
+    for (let index = 0; index < 10; index += 1) first.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index % 2 } });
+    first.summary('COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', { counters: { potentialRootCount: 99999 } });
     second.emit('COMPOSER_DISCOVERY_START', 'DISCOVERY_STARTED');
 
     const alpha = fs.readFileSync(path.join(directory, 'task_alpha.json'), 'utf8');
@@ -102,5 +126,18 @@ test('per-task diagnostic files are isolated, whitelisted, and bounded', () => {
     assert.match(alpha, /"potentialRootCount":1000/);
     assert.doesNotMatch(alpha, /secret html|private text|c_user|token|accountId|forbiddenCounter|forbiddenFlag/);
     assert.doesNotMatch(beta, /task_alpha/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('terminal acquisition evidence is retained when repeated snapshots approach the byte bound', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-composer-terminal-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, now: () => '2026-09-13T00:00:00.000Z', maxRecords: 64, maxBytes: 1200 });
+    const record = sink.forTask('task_terminal');
+    for (let index = 0; index < 64; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index }, flags: { hasRoleDialog: true, hasContentEditable: true } });
+    record.summary('COMPOSER_ACQUISITION_FAILED', 'NO_ELIGIBLE_TRANSITION', { counters: { potentialRootCount: 1 } });
+    const saved = fs.readFileSync(path.join(directory, 'task_terminal.json'), 'utf8');
+    assert.ok(Buffer.byteLength(saved, 'utf8') <= 1200);
+    assert.match(saved, /COMPOSER_ACQUISITION_FAILED/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

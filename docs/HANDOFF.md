@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7X Facebook composer editor-shape support
+
+The existing unique root-transition proof remains mandatory. Only inside that exact retained composer root, `eligibleEditors()` accepts one visible, enabled, editable editor from a bounded shape set: a classic contenteditable textbox, role-less contenteditable surface, inherited-editable textbox, Lexical/ProseMirror-style editable surface, or textarea. Comment/reply/search-shaped candidates, hidden/disabled/non-editable surfaces, zero candidates, and multiple candidates fail closed. The accepted exact editor handle is retained for text insertion and later exact-text verification; no page-wide editor lookup or generic composer-editor reacquisition is permitted.
+
+Composer-acquisition diagnostics additionally expose only safe structural editor-shape booleans. Repeated identical poll records are coalesced and terminal accepted/bound or failure evidence makes room within the existing 64-record / 32 KiB limits. The sink still records no HTML, text, labels, cookies, identities, tokens, credentials, task payloads, media paths, or selectors with dynamic content.
+
 ## G5.7U composer acquisition diagnostic instrumentation
 
 The real Local Agent has a local-only, task-correlated composer-acquisition diagnostic sink at `logs/local-agent-composer-diagnostics/<task-id>.json`. It records only timestamp, task ID, approved stage/reason class, bounded integer counters, and safe structural booleans. It never records HTML, Facebook text or labels, cookies, account IDs, tokens, credentials, task payloads, local paths, or selectors carrying dynamic content. Files are bounded to 64 records / 32 KiB per task, and the sink retains no more than 24 task files by pruning its oldest local diagnostic files.

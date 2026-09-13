@@ -46,11 +46,15 @@ async function ensureRetainedComposer(composer) {
 }
 
 async function readExactComposerText(composer) {
-  const handle = await ensureRetainedComposer(composer);
-  const editors = handle.locator?.('[contenteditable="true"][role="textbox"], textarea');
-  const count = await editors?.count?.().catch(() => 0);
-  if (count !== 1) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text field is ambiguous.');
-  const editor = editors.first();
+  await ensureRetainedComposer(composer);
+  const editor = composer?.editor;
+  if (!editor) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text field was not retained.');
+  const [attached, visible, editable] = await Promise.all([
+    editor.evaluate?.((node) => node.isConnected).catch(() => false),
+    editor.isVisible?.().catch(() => false),
+    typeof editor.isEditable === 'function' ? editor.isEditable().catch(() => false) : Promise.resolve(false),
+  ]);
+  if (attached !== true || visible !== true || editable !== true) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text field is unavailable.');
   let text = await editor.inputValue?.().catch(() => null);
   if (text === null || text === undefined) text = await editor.textContent?.().catch(() => null);
   if (text === null || text === undefined) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text cannot be read.');

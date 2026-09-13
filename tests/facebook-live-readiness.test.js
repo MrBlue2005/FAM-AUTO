@@ -15,6 +15,7 @@ function item(options = {}) {
   return {
     textContent: async () => options.text || '', getAttribute: async (name) => options[name] || null,
     isVisible: async () => options.visible !== false, isEnabled: async () => options.enabled !== false,
+    isEditable: async () => options.editable !== false, evaluate: async () => options.attached !== false,
     inputValue: async () => { if (options.input === undefined) throw new Error('not input'); return options.input; },
   };
 }
@@ -22,14 +23,13 @@ function collection(items) { return { count: async () => items.length, nth: (ind
 function composerModel(options = {}) {
   const attachments = options.attachments || [];
   const selectors = {
-    '[contenteditable="true"][role="textbox"], textarea': collection(options.editors || [item({ input: options.text ?? 'immutable snapshot' })]),
     'img, video': collection(attachments),
     '[aria-busy="true"], [role="progressbar"]': collection(options.busy ? [item()] : []),
     '[role="alert"]': collection(options.alerts || []),
     'button, [role="button"]': collection(options.buttons || []),
   };
   const handle = { evaluate: async () => options.attached !== false, isVisible: async () => options.visible !== false, locator: (selector) => selectors[selector] || collection([]) };
-  return { handle, locator: {} };
+  return { handle, locator: {}, editor: options.editor || item({ input: options.text ?? 'immutable snapshot' }) };
 }
 const task = (paths = []) => ({ payload: { post: { text: 'immutable snapshot' }, local_media_paths: paths } });
 

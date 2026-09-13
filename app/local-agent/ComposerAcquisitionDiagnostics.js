@@ -35,13 +35,17 @@ const COUNTERS = new Set([
 
 const FLAGS = new Set([
   'hasRoleDialog', 'hasAriaModal', 'hasComposerPageletSignal', 'hasVisibleEditor',
-  'editorCountIsOne', 'isVisible', 'isAttached', 'transitionDetected',
+  'editorCountIsOne', 'hasRoleTextbox', 'hasContentEditable', 'hasLexicalSignal',
+  'isTextarea', 'isEditable', 'isVisible', 'isAttached', 'transitionDetected',
 ]);
 
 const MAX_COUNTER = 1000;
 const MAX_RECORDS_PER_TASK = 64;
 const MAX_TASK_FILES = 24;
 const MAX_FILE_BYTES = 32 * 1024;
+const TERMINAL_STAGES = new Set([
+  'COMPOSER_ROOT_ACCEPTED', 'COMPOSER_EDITOR_BOUND', 'COMPOSER_ACQUISITION_FAILED',
+]);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -119,7 +123,19 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         const record = { timestamp: now(), task_id: safeId, stage, reason_class: reasonClass, counters, flags };
         rotate(directory);
         const records = readRecords(filePath);
-        if (summary && records.length >= maxRecords) records.splice(maxRecords - 1);
+        const terminal = summary || TERMINAL_STAGES.has(stage);
+        const previous = records[records.length - 1];
+        // Repeated polling snapshots carry no additional safe diagnostic
+        // meaning. Coalesce them so terminal evidence cannot be crowded out.
+        if (!terminal && previous
+          && previous.stage === stage
+          && previous.reason_class === reasonClass
+          && JSON.stringify(previous.counters) === JSON.stringify(counters)
+          && JSON.stringify(previous.flags) === JSON.stringify(flags)) return;
+        if (terminal) {
+          while (records.length >= maxRecords) records.shift();
+          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes) records.shift();
+        }
         if (records.length < maxRecords) records.push(record);
         const value = { version: 1, task_id: safeId, records: records.slice(-maxRecords) };
         if (Buffer.byteLength(JSON.stringify(value), 'utf8') <= maxBytes) atomicWrite(filePath, value);
