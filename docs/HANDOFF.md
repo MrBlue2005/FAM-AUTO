@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AN selector-parity retained-root pairing
+
+Selector parity now carries an opaque, deterministic pair captured from the same existing root candidate: `roots.nth(index)` is retained as the Playwright locator and that locator's immediately obtained `elementHandle()` is retained for DOM-native observation. The parity probe uses only this pair—never a global query, `.last()`, positional reconstruction, or a newly acquired root. It reports `sameRootReference: true` only for a proven pair. A missing, invalid, or detached pair is `ROOT_UNAVAILABLE`; it is not an ElementHandle/Locator API mismatch. This is diagnostic-only and leaves root acquisition, `COMPOSER_EDITOR_SELECTOR`, eligibility, transitions, polling, text/media, markers, submit, and retry untouched.
+
 ## G5.7AK root-local selector parity diagnostics
 
 For each structurally eligible retained composer root, the Local Agent now samples the exact existing `COMPOSER_EDITOR_SELECTOR` through both root-local DOM and that same root's Playwright locator. It retains only bounded counts, root attached/visible booleans, a `sameRootReference` boolean, three existing selector-branch counts, and one fixed parity enum. `EDITOR_SELECTOR_PARITY_SUMMARY` aggregates the safe classifications and is protected with the pre-selector evidence and terminal acquisition result. It never retains matched nodes, DOM text, selectors beyond the reviewed static selector, IDs, classes, URLs, cookies, identities, credentials, or payload data; it changes no execution authority.

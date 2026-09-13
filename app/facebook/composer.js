@@ -118,6 +118,19 @@ const SELECTOR_PARITY_RESULTS = Object.freeze([
   'ROOT_UNAVAILABLE',
   'SAFE_EVALUATION_ERROR',
 ]);
+const ROOT_PAIRING_PROOF = Symbol('root-pairing-proof');
+
+// A root locator is captured first, then its exact ElementHandle is obtained
+// from that locator in the same snapshot. Keep both representations together:
+// the handle is for native DOM observation and the locator is for Playwright's
+// scoped count. The opaque proof prevents a later caller from pairing an
+// arbitrary locator with a retained handle.
+function createRootPair(locator, handle) {
+  const proven = Boolean(locator && handle && typeof locator.locator === 'function' && typeof handle.evaluate === 'function');
+  // Keep the existing root contract independent from observational pairing:
+  // an unavailable parity probe must never remove a previously captured root.
+  return Object.freeze({ locator: locator || null, handle: handle || null, proof: proven ? ROOT_PAIRING_PROOF : null });
+}
 
 function boundedSelectorCount(value) {
   const count = Number(value);
@@ -133,8 +146,10 @@ function selectorParityResult(domNativeCount, playwrightScopedCount) {
 
 // This is deliberately a same-root observability probe. It neither changes
 // the reviewed selector nor returns an element that execution could bind.
-async function inspectRootLocalSelectorParity(handle) {
-  if (!handle || typeof handle.evaluate !== 'function' || typeof handle.locator !== 'function') {
+async function inspectRootLocalSelectorParity(rootPair) {
+  const handle = rootPair?.handle;
+  const locator = rootPair?.locator;
+  if (rootPair?.proof !== ROOT_PAIRING_PROOF || !handle || !locator || typeof handle.evaluate !== 'function' || typeof handle.isVisible !== 'function' || typeof locator.locator !== 'function') {
     return { domNativeCount: 0, playwrightScopedCount: 0, rootAttached: false, rootVisible: false, sameRootReference: false, selectorParityResult: 'ROOT_UNAVAILABLE', branchCounts: {} };
   }
   try {
@@ -146,7 +161,7 @@ async function inspectRootLocalSelectorParity(handle) {
         roleTextboxCount: root.querySelectorAll('[role="textbox"]').length,
         lexicalSelectorCount: root.querySelectorAll('[data-lexical-editor="true"]').length,
       }), COMPOSER_EDITOR_SELECTOR),
-      handle.locator(COMPOSER_EDITOR_SELECTOR).count(),
+      locator.locator(COMPOSER_EDITOR_SELECTOR).count(),
       handle.isVisible(),
     ]);
     const rootAttached = dom?.rootAttached === true;
@@ -367,7 +382,8 @@ async function eligibleEditors(handle, options = {}) {
   return candidates;
 }
 
-async function composerContract(handle, options = {}) {
+async function composerContract(rootPair, options = {}) {
+  const handle = rootPair?.handle;
   const attachedPromise = typeof handle?.evaluate === 'function'
     ? handle.evaluate((node) => node.isConnected).catch(() => false)
     : Promise.resolve(false);
@@ -394,7 +410,7 @@ async function composerContract(handle, options = {}) {
   try { options.onPreSelectorShape?.(preSelectorShape.candidates, summarizePreSelectorEditorShapes(preSelectorShape.candidates)); } catch { /* diagnostics are non-authoritative */ }
   // Compare the exact selector through DOM-native and Playwright-scoped paths
   // against this same retained root before eligibility evaluates candidates.
-  const selectorParity = await inspectRootLocalSelectorParity(handle);
+  const selectorParity = await inspectRootLocalSelectorParity(rootPair);
   try { options.onSelectorParity?.(selectorParity); } catch { /* diagnostics are non-authoritative */ }
   const editorEligibilityCandidates = [];
   const editors = await eligibleEditors(handle, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
@@ -413,7 +429,8 @@ async function snapshotComposerRoots(page, options = {}) {
     const locator = roots.nth(index);
     const handle = await locator.elementHandle?.().catch(() => null);
     if (!handle) continue;
-    const inspected = await composerContract(handle, options);
+    const rootPair = createRootPair(locator, handle);
+    const inspected = await composerContract(rootPair, options);
     records.push({ handle, locator, ...inspected });
   }
   return records;
@@ -662,6 +679,7 @@ module.exports = {
   openComposer,
   inspectRootLocalEditorShapes,
   inspectRootLocalSelectorParity,
+  createRootPair,
   eligibleEditors,
   editorEligibilityReason,
   summarizeEditorShapes,

@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AN - selector-parity retained-root pairing
+
+- Corrected diagnostic-only selector parity sampling to retain the exact root `Locator` that produced its `ElementHandle`. DOM-native counts use the retained handle and Playwright counts use the paired locator; pairing provenance is required before a sample can report `sameRootReference: true`.
+- Missing, invalid, or detached pairs now classify as `ROOT_UNAVAILABLE` without changing root acquisition, selector authority, editor eligibility, timing, text/media, marker, submit, or retry behavior.
+
 ## Phase G5.7AK - root-local selector parity diagnostics
 
 - The Local Agent now records a bounded same-root parity sample before composer eligibility: DOM-native `querySelectorAll(COMPOSER_EDITOR_SELECTOR).length` and the exact retained root's Playwright-scoped count. A fixed enum classifies only count parity, and the terminal `EDITOR_SELECTOR_PARITY_SUMMARY` is retained with the final acquisition evidence under log pressure.

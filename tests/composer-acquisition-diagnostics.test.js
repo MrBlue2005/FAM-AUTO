@@ -6,7 +6,7 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
+const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, createRootPair, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
 const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function structuralNode(config = {}) {
@@ -291,29 +291,34 @@ test('pre-selector summaries are fixed, bounded, and task-isolated', () => {
   assert.equal(counts.ariaMultilineCount, 1);
 });
 
-function parityHandle({ domCount = 0, playwrightCount = 0, attached = true, visible = true, throwOnEvaluate = false } = {}) {
+function parityRoot({ domCount = 0, playwrightCount = 0, attached = true, visible = true, throwOnEvaluate = false, missingLocator = false } = {}) {
   let locatorCalls = 0;
   const branchCounts = {
     '[contenteditable="true"]': domCount,
     '[role="textbox"]': domCount,
     '[data-lexical-editor="true"]': domCount,
   };
-  return {
-    handle: {
-      evaluate: async (callback, selector) => {
-        if (throwOnEvaluate) throw new Error('private runtime error');
-        return callback({
-          isConnected: attached,
-          querySelectorAll: (value) => Array.from({ length: value === selector ? domCount : branchCounts[value] || 0 }),
-        }, selector);
-      },
-      isVisible: async () => visible,
-      locator: (selector) => {
-        locatorCalls += 1;
-        assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
-        return { count: async () => playwrightCount };
-      },
+  const handle = {
+    evaluate: async (callback, selector) => {
+      if (throwOnEvaluate) throw new Error('private runtime error');
+      return callback({
+        isConnected: attached,
+        querySelectorAll: (value) => Array.from({ length: value === selector ? domCount : branchCounts[value] || 0 }),
+      }, selector);
     },
+    isVisible: async () => visible,
+  };
+  const locator = missingLocator ? null : {
+    locator: (selector) => {
+      locatorCalls += 1;
+      assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
+      return { count: async () => playwrightCount };
+    },
+  };
+  return {
+    handle,
+    locator,
+    rootPair: createRootPair(locator, handle),
     locatorCalls: () => locatorCalls,
   };
 }
@@ -327,8 +332,8 @@ test('same-root selector parity classifies equal, zero, and divergent counts', a
     [2, 1, 'BOTH_NONZERO_DIFFERENT'],
   ];
   for (const [domCount, playwrightCount, expected] of cases) {
-    const mock = parityHandle({ domCount, playwrightCount });
-    const sample = await inspectRootLocalSelectorParity(mock.handle);
+    const mock = parityRoot({ domCount, playwrightCount });
+    const sample = await inspectRootLocalSelectorParity(mock.rootPair);
     assert.equal(sample.selectorParityResult, expected);
     assert.equal(sample.domNativeCount, domCount);
     assert.equal(sample.playwrightScopedCount, playwrightCount);
@@ -343,13 +348,29 @@ test('same-root selector parity classifies unavailable roots and safe evaluation
   const unavailable = await inspectRootLocalSelectorParity(null);
   assert.equal(unavailable.selectorParityResult, 'ROOT_UNAVAILABLE');
   assert.equal(unavailable.sameRootReference, false);
-  const detached = await inspectRootLocalSelectorParity(parityHandle({ attached: false }).handle);
+  const detached = await inspectRootLocalSelectorParity(parityRoot({ attached: false }).rootPair);
   assert.equal(detached.selectorParityResult, 'ROOT_UNAVAILABLE');
   assert.equal(detached.sameRootReference, true);
-  const safeError = await inspectRootLocalSelectorParity(parityHandle({ throwOnEvaluate: true }).handle);
+  const missingLocator = await inspectRootLocalSelectorParity(parityRoot({ missingLocator: true }).rootPair);
+  assert.equal(missingLocator.selectorParityResult, 'ROOT_UNAVAILABLE');
+  assert.equal(missingLocator.sameRootReference, false);
+  const valid = parityRoot();
+  const invalidPair = await inspectRootLocalSelectorParity({ handle: valid.handle, locator: valid.locator });
+  assert.equal(invalidPair.selectorParityResult, 'ROOT_UNAVAILABLE');
+  assert.equal(invalidPair.sameRootReference, false);
+  const safeError = await inspectRootLocalSelectorParity(parityRoot({ throwOnEvaluate: true }).rootPair);
   assert.equal(safeError.selectorParityResult, 'SAFE_EVALUATION_ERROR');
   assert.equal(safeError.domNativeCount, 0);
   assert.equal(safeError.playwrightScopedCount, 0);
+});
+
+test('selector parity uses only the paired retained locator and never a generic reacquisition', async () => {
+  const mock = parityRoot({ domCount: 1, playwrightCount: 1 });
+  assert.equal(typeof mock.handle.locator, 'undefined');
+  const sample = await inspectRootLocalSelectorParity(mock.rootPair);
+  assert.equal(sample.sameRootReference, true);
+  assert.equal(sample.selectorParityResult, 'BOTH_NONZERO_EQUAL');
+  assert.equal(mock.locatorCalls(), 1);
 });
 
 test('selector parity records are bounded, private, and retain their terminal aggregate', () => {
