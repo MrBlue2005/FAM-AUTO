@@ -319,8 +319,12 @@ function safeEditorCandidate(metadata, runtime, eligibilityRejectionReason) {
   };
 }
 
-async function eligibleEditors(handle, options = {}) {
-  const editors = handle?.locator?.(COMPOSER_EDITOR_SELECTOR);
+async function eligibleEditors(rootLocator, options = {}) {
+  // Editor discovery must stay on the exact retained Playwright root Locator.
+  // The paired ElementHandle remains the authority for DOM-native structural
+  // inspection, but it must not be used as a locator root: that path can
+  // disagree with the already-proven paired Locator query.
+  const editors = rootLocator?.locator?.(COMPOSER_EDITOR_SELECTOR);
   const count = await editors?.count?.().catch(() => 0);
   const candidates = [];
   for (let index = 0; index < count; index += 1) {
@@ -413,7 +417,7 @@ async function composerContract(rootPair, options = {}) {
   const selectorParity = await inspectRootLocalSelectorParity(rootPair);
   try { options.onSelectorParity?.(selectorParity); } catch { /* diagnostics are non-authoritative */ }
   const editorEligibilityCandidates = [];
-  const editors = await eligibleEditors(handle, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
+  const editors = await eligibleEditors(rootPair.locator, { onCandidate: (candidate) => editorEligibilityCandidates.push(candidate) });
   try { options.onEligibilityShape?.(editorEligibilityCandidates, summarizeEditorShapes(editorEligibilityCandidates)); } catch { /* diagnostics are non-authoritative */ }
   const editorEvidence = editors[0]?.evidence || {};
   const evidence = { isAttached: true, isVisible: true, ...signals, structurallyEligible: true, eligibleEditorCount: editors.length, ...editorEvidence };

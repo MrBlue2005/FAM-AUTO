@@ -48,7 +48,7 @@ function root(id, editors, options = {}) {
 }
 
 function fakePage(before, after) {
-  const state = { roots: before, clicked: 0 };
+  const state = { roots: before, clicked: 0, retainedRootLocatorCalls: 0 };
   const editor = (item, index) => {
     const config = Array.isArray(item.editorOptions) ? (item.editorOptions[index] || {}) : item.editorOptions;
     const node = {
@@ -63,12 +63,20 @@ function fakePage(before, after) {
   };
   const handle = (item) => ({
     _node: item, evaluate: async (fn, arg) => fn(item, arg), isVisible: async () => item.visible,
-    locator: (selector) => { assert.equal(selector, COMPOSER_EDITOR_SELECTOR); return { count: async () => item.editors, nth: (index) => editor(item, index) }; },
+  });
+  const retainedRootLocator = (item) => ({
+    elementHandle: async () => handle(item),
+    waitFor: async () => { if (!item.visible) throw new Error('hidden'); },
+    locator: (selector) => {
+      state.retainedRootLocatorCalls += 1;
+      assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
+      return { count: async () => item.editors, nth: (index) => editor(item, index) };
+    },
   });
   const page = {
     getByRole: (role, options = {}) => ({ count: async () => role === 'button' && options.name === 'Scrie ceva...' ? 1 : 0, nth: () => ({ isVisible: async () => true, isEnabled: async () => true, click: async () => { state.clicked += 1; state.roots = after; } }) }),
     locator: (selector) => {
-      if (selector === COMPOSER_ROOT_SELECTOR) return { count: async () => state.roots.length, nth: (index) => ({ elementHandle: async () => handle(state.roots[index]), waitFor: async () => { if (!state.roots[index].visible) throw new Error('hidden'); } }) };
+      if (selector === COMPOSER_ROOT_SELECTOR) return { count: async () => state.roots.length, nth: (index) => retainedRootLocator(state.roots[index]) };
       assert.equal(selector, GROUP_COMPOSER_STRUCTURAL_SELECTOR);
       return { count: async () => 0, nth: () => null };
     },
@@ -120,6 +128,22 @@ test('ambiguous and accepted transitions emit their distinct safe outcomes', asy
   assert.equal(accepted.fixture.state.clicked, 1);
   assert.ok(accepted.capture.records.some((record) => record.stage === 'COMPOSER_ROOT_ACCEPTED'));
   assert.ok(accepted.capture.records.some((record) => record.stage === 'COMPOSER_EDITOR_BOUND'));
+});
+
+test('a parity-positive editor is discovered only through its retained root Locator and is bound exactly once', async () => {
+  const result = await acquire(
+    [root('old', 0, { actionRegion: false })],
+    [root('old', 0, { actionRegion: false }), root('modal', 1, {
+      ariaModal: true,
+      editorOptions: { role: 'textbox', contenteditable: true, lexical: true, isContentEditable: true },
+      preSelectorCandidates: [{ tagName: 'DIV', role: 'textbox', contenteditable: 'true', hasDataLexicalEditor: true, isContentEditable: true, visible: true, attached: true }],
+    })],
+  );
+  const composer = await result.run;
+  assert.ok(composer.editor);
+  assert.ok(result.fixture.state.retainedRootLocatorCalls > 0);
+  assert.ok(result.capture.records.some((record) => record.stage === 'COMPOSER_ROOT_ACCEPTED'));
+  assert.ok(result.capture.records.some((record) => record.stage === 'COMPOSER_EDITOR_BOUND'));
 });
 
 test('the observed visible modal with one alternate contenteditable editor is accepted and safely classified', async () => {

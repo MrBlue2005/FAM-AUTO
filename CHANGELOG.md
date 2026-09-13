@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AQ - retained-root Locator editor discovery
+
+- Editor discovery now uses the exact Playwright `Locator` retained with the composer root pair. The paired `ElementHandle` remains limited to DOM-native identity and structural evaluation; it is no longer used as a locator root.
+- The reviewed selector and every existing visibility, enabled, editable, post-shape, exclusion, unique-editor, retained-editor, marker, submit, and retry safeguard are unchanged.
+
 ## Phase G5.7AN - selector-parity retained-root pairing
 
 - Corrected diagnostic-only selector parity sampling to retain the exact root `Locator` that produced its `ElementHandle`. DOM-native counts use the retained handle and Playwright counts use the paired locator; pairing provenance is required before a sample can report `sameRootReference: true`.

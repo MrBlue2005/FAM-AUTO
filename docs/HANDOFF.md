@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AQ retained-root Locator editor discovery
+
+After a composer root has been retained as a proven `{ locator, handle }` pair, scoped editor discovery uses only `locator.locator(COMPOSER_EDITOR_SELECTOR)`. The `handle` remains available for DOM-native identity, structural, and parity evaluation, but is not used as a Playwright locator root. This closes the observed handle-vs-locator discovery split without changing the selector, eligibility order, transition proof, exact editor binding, text/media/publish scope, marker ordering, submit, or retry behavior.
+
 ## G5.7AN selector-parity retained-root pairing
 
 Selector parity now carries an opaque, deterministic pair captured from the same existing root candidate: `roots.nth(index)` is retained as the Playwright locator and that locator's immediately obtained `elementHandle()` is retained for DOM-native observation. The parity probe uses only this pair—never a global query, `.last()`, positional reconstruction, or a newly acquired root. It reports `sameRootReference: true` only for a proven pair. A missing, invalid, or detached pair is `ROOT_UNAVAILABLE`; it is not an ElementHandle/Locator API mismatch. This is diagnostic-only and leaves root acquisition, `COMPOSER_EDITOR_SELECTOR`, eligibility, transitions, polling, text/media, markers, submit, and retry untouched.

@@ -58,14 +58,14 @@ function fakePage(options = {}) {
     _node: value,
     evaluate: async (fn, arg) => fn(value, arg?._node),
     isVisible: async () => value.visible,
-    locator: (selector) => {
-      assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
-      return collection(Array.from({ length: value.editors }, (_, index) => editorFor(value, index)));
-    },
   });
   const rootLocator = (value) => ({
     elementHandle: async () => handleFor(value),
     waitFor: async () => { if (!value.visible) throw new Error('hidden'); },
+    locator: (selector) => {
+      assert.equal(selector, COMPOSER_EDITOR_SELECTOR);
+      return collection(Array.from({ length: value.editors }, (_, index) => editorFor(value, index)));
+    },
   });
   const opener = (entry = {}) => ({
     isVisible: async () => entry.visible !== false,
