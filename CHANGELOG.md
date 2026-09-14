@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AZ - retained-editor post-paste synchronization
+
+- After the immutable text is pasted, the real adapter polls only the already-retained editor for at most two seconds, with a fixed 100 ms interval. It passes immediately only when the existing NFC/CRLF-to-LF/NBSP-to-space/trim normalization produces an exact immutable-text match; empty, shorter, duplicated, longer, or same-length-different text still fails closed.
+- A timeout writes the existing private `CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY` for the final read, with bounded read count, null match position, elapsed-settle value, and final length relation. No selector, editor reacquisition, media/control check, lease, marker, submit, retry, or publication behavior changed.
+
 ## Phase G5.7AW - privacy-safe content-mismatch diagnostics
 
 - A `FACEBOOK_CONTENT_MISMATCH` now writes one local, terminal-safe `CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY`. It contains only bounded normalized lengths, line/newline and surrounding-whitespace counts, fixed insertion/read enums, length relation, raw-stage lengths, and 16-hex-character SHA-256 prefixes for the existing post-raw normalization stages.

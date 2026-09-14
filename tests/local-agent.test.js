@@ -18,6 +18,7 @@ const { createChromiumSafePreflightExecutor } = require('../app/local-agent/Chro
 const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
 const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
+const { verifyComposerText } = require('../app/local-agent/FacebookLiveReadiness');
 const { normalizeExpectedFacebookAccountId } = require('../app/local-agent/FacebookIdentityConfig');
 const { getAuthenticatedFacebookAccountId } = require('../app/local-agent/FacebookSessionIdentity');
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
@@ -535,6 +536,19 @@ test('live executor seam fails before publish on pre-marker or marker failure an
   await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'EXECUTION_OUTCOME_UNKNOWN' }); assert.equal(fixture.calls.filter((call) => call === 'SUBMIT').length, 1);
   fixture = liveSeamFixture(); let checks = 0;
   const cancelled = await fixture.execute(liveFixture(), { transport: fixture.transport, isCancellationRequested: async () => (++checks >= 3) }); assert.equal(cancelled.cancelled, true); assert.equal(fixture.calls.includes('SUBMIT'), false);
+});
+
+test('a retained-editor synchronization timeout remains before marker persistence and submit', async () => {
+  const editor = {
+    evaluate: async () => true, isVisible: async () => true, isEditable: async () => true,
+    inputValue: async () => 'AB',
+  };
+  const composer = { handle: { evaluate: async () => true, isVisible: async () => true }, editor };
+  const fixture = liveSeamFixture({ publisher: {
+    prepare: async () => verifyComposerText(composer, 'A\nB', { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: async () => {} }),
+  } });
+  await assert.rejects(fixture.execute(liveFixture(), { transport: fixture.transport }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  assert.deepEqual(fixture.calls, []);
 });
 
 test('live executor reconnect states never resubmit and CloudAgentService holds the profile lock through completion persistence', async () => {

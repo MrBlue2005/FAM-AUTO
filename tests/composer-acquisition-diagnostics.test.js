@@ -437,7 +437,8 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
       expectedTrailingWhitespaceCount: 1, actualTrailingWhitespaceCount: 0,
       expectedNewlineCount: 1, actualNewlineCount: 0,
       lengthRelation: 'EMPTY', insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1,
-      verificationReadTiming: 'FIRST_VERIFICATION_READ',
+      verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC', matchedOnReadNumber: null,
+      settleDurationMs: 2000, finalLengthRelation: 'EMPTY',
       normalizationStages: {
         raw: { expected: { length: 22 }, actual: { length: 0 } },
         nfc: { expected: { length: 22, sha256Prefix: '0123456789abcdef' }, actual: { length: 0, sha256Prefix: 'fedcba9876543210' } },
@@ -453,6 +454,10 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
     assert.ok(summary);
     assert.equal(summary.contentMismatch.lengthRelation, 'EMPTY');
     assert.equal(summary.contentMismatch.insertionMethod, 'CLIPBOARD_PASTE');
+    assert.equal(summary.contentMismatch.verificationReadTiming, 'BOUNDED_POST_PASTE_SYNC');
+    assert.equal(summary.contentMismatch.matchedOnReadNumber, null);
+    assert.equal(summary.contentMismatch.settleDurationMs, 2000);
+    assert.equal(summary.contentMismatch.finalLengthRelation, 'EMPTY');
     assert.equal(summary.contentMismatch.normalizationStages.final.expected.length, 20);
     assert.ok(data.records.length <= 4);
     assert.doesNotMatch(saved, /PRIVATE_FACEBOOK_COMPOSER_TEXT|never persist|cookie/);
@@ -460,6 +465,7 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
     assert.equal(sanitized.expectedNormalizedLength, 1000);
     assert.equal(sanitized.lengthRelation, 'EXACT_LENGTH');
     assert.equal(sanitized.insertionMethod, 'OTHER_FIXED_METHOD');
+    assert.equal(sanitized.matchedOnReadNumber, null);
     assert.equal(Object.hasOwn(sanitized, 'unknown'), false);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

@@ -34,6 +34,13 @@ function normalizeComposerText(value) {
 const CONTENT_HASH_PREFIX_LENGTH = 16;
 const TEXT_INSERTION_METHOD = 'CLIPBOARD_PASTE';
 const VERIFICATION_READ_TIMING = 'FIRST_VERIFICATION_READ';
+// Clipboard paste updates Facebook's Lexical-backed editor asynchronously on
+// some page shapes. Keep this deliberately short and bounded: it is only a
+// pre-marker observation of the already-retained editor, never a retry or a
+// new editor lookup.
+const COMPOSER_TEXT_SETTLE_TIMEOUT_MS = 2000;
+const COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS = 100;
+const COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS = 5000;
 
 function composerTextStages(value) {
   const raw = String(value ?? '');
@@ -87,6 +94,9 @@ function contentMismatchDiagnostic(expectedValue, actualValue, options = {}) {
     insertionMethod: options.insertionMethod || TEXT_INSERTION_METHOD,
     verificationReadCount: Number.isSafeInteger(options.verificationReadCount) && options.verificationReadCount > 0 ? options.verificationReadCount : 1,
     verificationReadTiming: options.verificationReadTiming || VERIFICATION_READ_TIMING,
+    matchedOnReadNumber: Number.isSafeInteger(options.matchedOnReadNumber) && options.matchedOnReadNumber > 0 ? options.matchedOnReadNumber : null,
+    settleDurationMs: Math.max(0, Math.min(COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS, Number.isFinite(Number(options.settleDurationMs)) ? Math.trunc(Number(options.settleDurationMs)) : 0)),
+    finalLengthRelation: contentLengthRelation(expected.final, actual.final),
     normalizationStages: {
       raw: { expected: { length: expected.raw.length }, actual: { length: actual.raw.length } },
       nfc: { expected: stage(expected.nfc), actual: stage(actual.nfc) },
@@ -128,14 +138,59 @@ async function readComposerText(composer) {
   return String(text);
 }
 
+function boundedPositiveInteger(value, fallback, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(maximum, Math.trunc(number)));
+}
+
+function postPasteSynchronizationOptions(options = {}) {
+  const timeoutMs = boundedPositiveInteger(options.settleTimeoutMs, COMPOSER_TEXT_SETTLE_TIMEOUT_MS, COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS);
+  const pollIntervalMs = Math.max(1, boundedPositiveInteger(options.pollIntervalMs, COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS, COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS));
+  return {
+    enabled: options.synchronizeAfterPaste === true,
+    timeoutMs,
+    pollIntervalMs,
+    maxReads: timeoutMs === 0 ? 1 : Math.floor(timeoutMs / pollIntervalMs) + 1,
+    wait: typeof options.wait === 'function' ? options.wait : (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    now: typeof options.now === 'function' ? options.now : () => Date.now(),
+  };
+}
+
 async function verifyComposerText(composer, expectedText, options = {}) {
-  const actualText = await readComposerText(composer);
-  if (normalizeComposerText(expectedText) !== normalizeComposerText(actualText)) {
-    // This sink is deliberately optional and best-effort: emitting its fixed,
-    // hashed summary must never alter the exact existing mismatch behavior.
-    try { options.diagnostic?.contentMismatchSummary?.(contentMismatchDiagnostic(expectedText, actualText, options)); } catch { /* observability only */ }
-    throw failure('FACEBOOK_CONTENT_MISMATCH', 'Facebook composer text does not match the immutable task snapshot.');
+  const expectedNormalized = normalizeComposerText(expectedText);
+  const synchronization = postPasteSynchronizationOptions(options);
+  const startedAt = synchronization.now();
+  let actualText = '';
+  let verificationReadCount = 0;
+
+  while (verificationReadCount < synchronization.maxReads) {
+    actualText = await readComposerText(composer);
+    verificationReadCount += 1;
+    if (expectedNormalized === normalizeComposerText(actualText)) {
+      return {
+        verificationReadCount,
+        matchedOnReadNumber: verificationReadCount,
+        settleDurationMs: Math.max(0, Math.min(synchronization.timeoutMs, synchronization.now() - startedAt)),
+      };
+    }
+    if (!synchronization.enabled || verificationReadCount >= synchronization.maxReads) break;
+    await synchronization.wait(synchronization.pollIntervalMs);
   }
+
+  // This sink is deliberately optional and best-effort: emitting its fixed,
+  // hashed final-read summary must never alter the exact mismatch behavior.
+  const settleDurationMs = Math.max(0, Math.min(synchronization.timeoutMs, synchronization.now() - startedAt));
+  try {
+    options.diagnostic?.contentMismatchSummary?.(contentMismatchDiagnostic(expectedText, actualText, {
+      ...options,
+      verificationReadCount,
+      matchedOnReadNumber: null,
+      settleDurationMs,
+      verificationReadTiming: options.verificationReadTiming || (synchronization.enabled ? 'BOUNDED_POST_PASTE_SYNC' : VERIFICATION_READ_TIMING),
+    }));
+  } catch { /* observability only */ }
+  throw failure('FACEBOOK_CONTENT_MISMATCH', 'Facebook composer text does not match the immutable task snapshot.');
 }
 
 function expectedMediaNames(task) {
@@ -209,6 +264,8 @@ module.exports = {
   CONTENT_HASH_PREFIX_LENGTH,
   TEXT_INSERTION_METHOD,
   VERIFICATION_READ_TIMING,
+  COMPOSER_TEXT_SETTLE_TIMEOUT_MS,
+  COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS,
   requirePreparedComposer,
   ensureRetainedComposer,
   verifyComposerText,

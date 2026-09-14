@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7AZ retained-editor post-paste synchronization
+
+Immediately after `writePostText()` completes its clipboard paste, real live execution performs a short bounded exact-match observation of that same retained editor before it permits composer preparation to continue. The default bound is two seconds with a 100 ms poll interval. Every read uses the unchanged NFC, CRLF-to-LF, NBSP-to-space, trim, and exact-equality contract; there is no partial-match acceptance, editor lookup, page-wide fallback, correction, or retry. A match passes immediately. A timeout remains `FACEBOOK_CONTENT_MISMATCH` before media/control readiness, lease renewal, `ATTEMPT_STARTED`, submit, or any click.
+
+On mismatch, the existing local-only protected summary reports the final retained-editor read rather than the initial read, with bounded `verificationReadCount`, null `matchedOnReadNumber`, `settleDurationMs`, and `finalLengthRelation`, in addition to the existing privacy-safe lengths, hashes, and structural counters. It never persists text or browser/session data.
+
 ## G5.7AW privacy-safe content-mismatch diagnostics
 
 When retained-composer verification raises `FACEBOOK_CONTENT_MISMATCH`, the Local Agent may write exactly one terminal `CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY` in its existing local composer-diagnostics file. It records only bounded expected/actual normalized lengths, short 16-hex SHA-256 prefixes, line/newline and leading/trailing-whitespace counts, a fixed length-relation enum, `CLIPBOARD_PASTE`, a fixed verification-read timing/count, raw-stage lengths, and safe length/hash pairs for NFC, CRLF-to-LF, NBSP-to-space, and final normalized stages. It never writes composer text, task text, DOM text, cookies, identities, credentials, tokens, media paths, or task payloads. The summary is protected from ordinary bounded-log pressure.

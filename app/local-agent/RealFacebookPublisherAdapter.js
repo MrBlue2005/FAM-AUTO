@@ -133,7 +133,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         });
         composer = preparedComposer(prepared);
         await verifyComposer(composer);
-        await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
+        await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: 'CLIPBOARD_PASTE', synchronizeAfterPaste: true, verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC' });
         await verifyMedia(composer, task);
         trace('COMPOSER_READY');
         preparedTaskId = task.task_id;

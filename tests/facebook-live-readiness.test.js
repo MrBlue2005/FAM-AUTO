@@ -33,6 +33,14 @@ function composerModel(options = {}) {
   const handle = { evaluate: async () => options.attached !== false, isVisible: async () => options.visible !== false, locator: (selector) => selectors[selector] || collection([]) };
   return { handle, locator: {}, editor: options.editor || item({ input: options.text ?? 'immutable snapshot' }) };
 }
+function sequenceComposerModel(values) {
+  let reads = 0;
+  const editor = item({ input: '' });
+  editor.inputValue = async () => values[Math.min(reads++, values.length - 1)];
+  return { composer: composerModel({ editor }), reads: () => reads };
+}
+const immediateWait = async () => {};
+const synchronized = { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: immediateWait };
 const task = (paths = []) => ({ payload: { post: { text: 'immutable snapshot' }, local_media_paths: paths } });
 
 test('canonical group target permits only exact www.facebook.com group paths and a trailing slash', () => {
@@ -94,6 +102,65 @@ test('content mismatch diagnostics record bounded structural counters and stage 
   assert.equal(result.normalizationStages.final.expected.sha256Prefix.length, CONTENT_HASH_PREFIX_LENGTH);
   assert.deepEqual(Object.keys(result.normalizationStages), ['raw', 'nfc', 'crlfToLf', 'nbspToSpace', 'final']);
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_EXPECTED|PRIVATE_ACTUAL/);
+});
+
+test('retained editor post-paste synchronization passes immediately when the first exact read is available', async () => {
+  const { composer, reads } = sequenceComposerModel(['A\nB']);
+  const result = await verifyComposerText(composer, 'A\nB', synchronized);
+  assert.equal(result.verificationReadCount, 1);
+  assert.equal(result.matchedOnReadNumber, 1);
+  assert.ok(result.settleDurationMs >= 0 && result.settleDurationMs <= 20);
+  assert.equal(reads(), 1);
+});
+
+test('retained editor post-paste synchronization waits only for a later exact newline state', async () => {
+  const { composer, reads } = sequenceComposerModel(['AB', 'A\nB']);
+  const result = await verifyComposerText(composer, 'A\nB', synchronized);
+  assert.equal(result.verificationReadCount, 2);
+  assert.equal(result.matchedOnReadNumber, 2);
+  assert.equal(reads(), 2);
+});
+
+test('retained editor synchronization fails closed on stable missing newline and records only the final safe read summary', async () => {
+  const records = [];
+  const { composer, reads } = sequenceComposerModel(['AB']);
+  await assert.rejects(verifyComposerText(composer, 'A\nB', { ...synchronized, diagnostic: { contentMismatchSummary: (value) => records.push(value) } }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  assert.equal(reads(), 3);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].verificationReadCount, 3);
+  assert.equal(records[0].matchedOnReadNumber, null);
+  assert.equal(records[0].verificationReadTiming, 'BOUNDED_POST_PASTE_SYNC');
+  assert.equal(records[0].lengthRelation, 'SHORTER');
+  assert.equal(records[0].finalLengthRelation, 'SHORTER');
+  assert.equal(records[0].expectedNewlineCount, 1);
+  assert.equal(records[0].actualNewlineCount, 0);
+  assert.doesNotMatch(JSON.stringify(records), /A\\nB|AB/);
+});
+
+test('retained editor synchronization accepts empty or shorter first reads only after the exact state appears', async () => {
+  for (const firstRead of ['', 'A']) {
+    const { composer, reads } = sequenceComposerModel([firstRead, 'AB']);
+    const result = await verifyComposerText(composer, 'AB', synchronized);
+    assert.equal(result.matchedOnReadNumber, 2);
+    assert.equal(reads(), 2);
+  }
+});
+
+test('retained editor synchronization rejects duplicated, longer, and one-character mismatched text without correction', async () => {
+  for (const [actual, relation] of [['ABAB', 'DOUBLE_LENGTH'], ['ABC', 'LONGER'], ['AC', 'EXACT_LENGTH']]) {
+    const records = [];
+    const { composer } = sequenceComposerModel(['A', actual]);
+    await assert.rejects(verifyComposerText(composer, 'AB', { ...synchronized, diagnostic: { contentMismatchSummary: (value) => records.push(value) } }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+    assert.equal(records[0].lengthRelation, relation);
+    assert.equal(records[0].finalLengthRelation, relation);
+  }
+});
+
+test('retained editor synchronization preserves exact CRLF/LF normalization equality', async () => {
+  const { composer, reads } = sequenceComposerModel(['A\nB']);
+  const result = await verifyComposerText(composer, 'A\r\nB', synchronized);
+  assert.equal(result.matchedOnReadNumber, 1);
+  assert.equal(reads(), 1);
 });
 
 test('media requires exact count, ready state, and exposed filename ordering', async () => {

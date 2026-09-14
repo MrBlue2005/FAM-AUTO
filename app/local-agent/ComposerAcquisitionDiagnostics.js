@@ -76,7 +76,7 @@ const CONTENT_MISMATCH_INSERTION_METHODS = new Set([
   'CLIPBOARD_PASTE', 'FILL', 'TYPE', 'PRESS_INSERT_TEXT', 'DOM_SETTER', 'OTHER_FIXED_METHOD',
 ]);
 const CONTENT_MISMATCH_READ_TIMINGS = new Set([
-  'IMMEDIATELY_AFTER_INSERTION', 'AFTER_EXISTING_SETTLE', 'FIRST_VERIFICATION_READ',
+  'IMMEDIATELY_AFTER_INSERTION', 'AFTER_EXISTING_SETTLE', 'FIRST_VERIFICATION_READ', 'BOUNDED_POST_PASTE_SYNC',
 ]);
 const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const PROTECTED_STAGES = new Set([
@@ -188,6 +188,7 @@ function sanitizeContentMismatchStage(value = {}) {
 
 function sanitizeContentMismatch(value = {}) {
   const count = (key) => boundedInteger(value[key]) || 0;
+  const duration = Number(value.settleDurationMs);
   const stages = value.normalizationStages || {};
   return {
     expectedNormalizedLength: count('expectedNormalizedLength'),
@@ -206,6 +207,9 @@ function sanitizeContentMismatch(value = {}) {
     insertionMethod: CONTENT_MISMATCH_INSERTION_METHODS.has(value.insertionMethod) ? value.insertionMethod : 'OTHER_FIXED_METHOD',
     verificationReadCount: Math.max(1, count('verificationReadCount')),
     verificationReadTiming: CONTENT_MISMATCH_READ_TIMINGS.has(value.verificationReadTiming) ? value.verificationReadTiming : 'FIRST_VERIFICATION_READ',
+    matchedOnReadNumber: Number.isInteger(value.matchedOnReadNumber) && value.matchedOnReadNumber > 0 ? Math.min(MAX_COUNTER, value.matchedOnReadNumber) : null,
+    settleDurationMs: Number.isFinite(duration) && duration >= 0 ? Math.min(5000, Math.trunc(duration)) : 0,
+    finalLengthRelation: CONTENT_MISMATCH_LENGTH_RELATIONS.has(value.finalLengthRelation) ? value.finalLengthRelation : (CONTENT_MISMATCH_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EXACT_LENGTH'),
     normalizationStages: {
       raw: sanitizeContentMismatchStage(stages.raw),
       nfc: sanitizeContentMismatchStage(stages.nfc),
