@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7BL retained-composer zero-media diagnostics
+
+`inspectComposerMedia()` keeps its existing exact retained-root selector (`img, video`) and fail-closed count policy. Before that unchanged decision, it now best-effort records one protected local `ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY` for the exact task. The summary uses only the retained composer root and whitelisted structural information: candidate tag, visibility/attachment, bucketed intrinsic dimensions, source scheme enum, attribute-presence/ancestor booleans, bounded depth, safe candidate category, aggregate counters, and a fixed count/evaluation result enum.
+
+No source URL, alt or aria text, filename, class, ID, DOM path, text, cookie, token, account identity, or browser data is retained. The diagnostic category is not an acceptance rule: expected-media count, `img, video` selector, busy/upload checks, text validation, publish-control checks, lease/marker ordering, submit, retry, and publication semantics are unchanged. The protected terminal summary survives ordinary diagnostic-log pressure.
+
 ## G5.7BI retained contenteditable visual-text reader
 
 Exact immutable text verification now reads only the already-bound retained editor. Textarea and input controls retain their value reader. For a retained contenteditable surface, a local DOM walk reconstructs visible plain text: text nodes concatenate, `<br>` emits one line break, and non-empty block descendants create one boundary only when another visible sibling follows. Inline descendants add no boundary; empty wrappers add none; adjacent structural boundaries are deduplicated. This addresses Lexical/Facebook layouts where `textContent` omits a visually rendered newline.

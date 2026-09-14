@@ -21,6 +21,7 @@ const STAGES = new Set([
   'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
   'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY',
+  'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -33,6 +34,7 @@ const REASON_CLASSES = new Set([
   'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
   'CONTENT_MISMATCH',
+  'ZERO_MEDIA_INSPECTION',
 ]);
 
 const COUNTERS = new Set([
@@ -82,11 +84,22 @@ const CONTENT_MISMATCH_READERS = new Set([
   'CONTENTEDITABLE_VISUAL_TEXT', 'TEXTAREA_VALUE', 'INPUT_VALUE',
 ]);
 const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
+const ZERO_MEDIA_INSPECTION_SUMMARY_STAGE = 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY';
+const MEDIA_TAG_NAMES = new Set(['IMG', 'VIDEO', 'OTHER']);
+const MEDIA_DIMENSION_BUCKETS = new Set(['ZERO', 'SMALL', 'MEDIUM', 'LARGE', 'UNKNOWN']);
+const MEDIA_SRC_SCHEMES = new Set(['BLOB', 'DATA', 'HTTPS', 'OTHER', 'NONE']);
+const MEDIA_ROLES = new Set([null, 'presentation', 'img', 'button', 'other']);
+const MEDIA_CATEGORIES = new Set([
+  'POSSIBLE_UPLOAD_ATTACHMENT', 'UI_AVATAR_OR_ICON', 'DECORATIVE_OR_PRESENTATION',
+  'VIDEO_CANDIDATE', 'UNKNOWN_MEDIA_CANDIDATE',
+]);
+const ZERO_MEDIA_INSPECTION_RESULTS = new Set(['OK', 'COUNT_OPERATION_FAILED', 'EVALUATION_FAILED']);
 const PROTECTED_STAGES = new Set([
   PRE_SELECTOR_SNAPSHOT_STAGE,
   PRE_SELECTOR_SUMMARY_STAGE,
   SELECTOR_PARITY_SUMMARY_STAGE,
   CONTENT_MISMATCH_SUMMARY_STAGE,
+  ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -225,6 +238,38 @@ function sanitizeContentMismatch(value = {}) {
   };
 }
 
+function sanitizeMediaCandidate(value = {}) {
+  const bool = (key) => value[key] === true;
+  return {
+    tagName: MEDIA_TAG_NAMES.has(value.tagName) ? value.tagName : 'OTHER',
+    visible: bool('visible'), attached: bool('attached'),
+    naturalWidth: MEDIA_DIMENSION_BUCKETS.has(value.naturalWidth) ? value.naturalWidth : 'UNKNOWN',
+    naturalHeight: MEDIA_DIMENSION_BUCKETS.has(value.naturalHeight) ? value.naturalHeight : 'UNKNOWN',
+    hasSrc: bool('hasSrc'), srcScheme: MEDIA_SRC_SCHEMES.has(value.srcScheme) ? value.srcScheme : 'NONE',
+    hasAlt: bool('hasAlt'), hasAriaHidden: bool('hasAriaHidden'),
+    role: MEDIA_ROLES.has(value.role) ? value.role : 'other',
+    ancestorButton: bool('ancestorButton'), ancestorPresentation: bool('ancestorPresentation'),
+    ancestorEditable: bool('ancestorEditable'), candidateDepth: boundedInteger(value.candidateDepth) || 0,
+    mediaCategory: MEDIA_CATEGORIES.has(value.mediaCategory) ? value.mediaCategory : 'UNKNOWN_MEDIA_CANDIDATE',
+  };
+}
+
+function sanitizeZeroMediaInspection(value = {}) {
+  const count = (key) => boundedInteger(value[key]) || 0;
+  return {
+    rawMediaSelectorCount: count('rawMediaSelectorCount'),
+    visibleMediaCandidateCount: count('visibleMediaCandidateCount'),
+    possibleUploadAttachmentCount: count('possibleUploadAttachmentCount'),
+    uiAvatarOrIconCount: count('uiAvatarOrIconCount'),
+    decorativeCount: count('decorativeCount'),
+    videoCandidateCount: count('videoCandidateCount'),
+    unknownCount: count('unknownCount'),
+    countOperationSucceeded: value.countOperationSucceeded === true,
+    inspectionResult: ZERO_MEDIA_INSPECTION_RESULTS.has(value.inspectionResult) ? value.inspectionResult : 'EVALUATION_FAILED',
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, MAX_EDITOR_SHAPE_CANDIDATES).map(sanitizeMediaCandidate) : [],
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -277,6 +322,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         const record = { timestamp: now(), task_id: safeId, stage, reason_class: reasonClass, counters, flags };
         if (shape?.contentMismatch === true) {
           record.contentMismatch = sanitizeContentMismatch(shape.value);
+        } else if (shape?.zeroMediaInspection === true) {
+          record.zeroMediaInspection = sanitizeZeroMediaInspection(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -289,7 +336,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -326,6 +373,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       selectorParity: (value) => persist(SELECTOR_PARITY_SNAPSHOT_STAGE, 'EDITOR_SELECTOR_PARITY_SNAPSHOT', {}, false, { value, selectorParity: true }),
       selectorParitySummary: (summary) => persist(SELECTOR_PARITY_SUMMARY_STAGE, 'EDITOR_SELECTOR_PARITY_SUMMARY', {}, true, { summary, selectorParity: true }),
       contentMismatchSummary: (value) => persist(CONTENT_MISMATCH_SUMMARY_STAGE, 'CONTENT_MISMATCH', {}, true, { value, contentMismatch: true }),
+      zeroMediaInspectionSummary: (value) => persist(ZERO_MEDIA_INSPECTION_SUMMARY_STAGE, 'ZERO_MEDIA_INSPECTION', {}, true, { value, zeroMediaInspection: true }),
     });
   }
 
@@ -348,6 +396,8 @@ module.exports = {
   sanitizeSelectorParity,
   sanitizeSelectorParitySummary,
   sanitizeContentMismatch,
+  sanitizeMediaCandidate,
+  sanitizeZeroMediaInspection,
   STAGES,
   createComposerAcquisitionDiagnosticSink,
 };

@@ -88,7 +88,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     verifyTarget(browser.page.url(), targetCanonical);
     await verifyComposer(composer);
     await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
-    await verifyMedia(composer, task);
+    await verifyMedia(composer, task, { diagnostic: taskDiagnostics });
     publishButton = await findPublishControl(composer);
     return { sessionReady: true, targetReady: true, composerReady: true };
   }
@@ -135,7 +135,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         textInsertionMethod = prepared?.insertionMethod || textInsertionMethod;
         await verifyComposer(composer);
         await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, synchronizeAfterPaste: true, verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC' });
-        await verifyMedia(composer, task);
+        await verifyMedia(composer, task, { diagnostic: taskDiagnostics });
         trace('COMPOSER_READY');
         preparedTaskId = task.task_id;
       } catch (error) { await cleanup(); throw error; }
@@ -151,7 +151,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       verifyTarget(browser.page.url(), targetCanonical);
       await verifyComposer(composer);
       await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
-      await verifyMedia(composer, task);
+      await verifyMedia(composer, task, { diagnostic: taskDiagnostics });
       await verifyPublishControl(publishButton, composer);
     },
     async submit(task) {

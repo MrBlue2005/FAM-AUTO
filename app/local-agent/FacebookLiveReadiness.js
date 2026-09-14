@@ -44,6 +44,8 @@ const COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS = 5000;
 const CONTENTEDITABLE_VISUAL_TEXT = 'CONTENTEDITABLE_VISUAL_TEXT';
 const TEXTAREA_VALUE = 'TEXTAREA_VALUE';
 const INPUT_VALUE = 'INPUT_VALUE';
+const RETAINED_COMPOSER_MEDIA_SELECTOR = 'img, video';
+const MAX_MEDIA_DIAGNOSTIC_CANDIDATES = 12;
 
 function composerTextStages(value) {
   const raw = String(value ?? '');
@@ -269,11 +271,113 @@ function expectedMediaNames(task) {
   return (Array.isArray(task?.payload?.local_media_paths) ? task.payload.local_media_paths : []).map((item) => path.basename(String(item))).filter(Boolean);
 }
 
-async function inspectComposerMedia(composer, task) {
+function emptyMediaInspection(rawMediaSelectorCount, countOperationSucceeded, inspectionResult) {
+  return {
+    rawMediaSelectorCount: Number.isSafeInteger(rawMediaSelectorCount) && rawMediaSelectorCount >= 0 ? rawMediaSelectorCount : 0,
+    visibleMediaCandidateCount: 0,
+    possibleUploadAttachmentCount: 0,
+    uiAvatarOrIconCount: 0,
+    decorativeCount: 0,
+    videoCandidateCount: 0,
+    unknownCount: 0,
+    countOperationSucceeded,
+    inspectionResult,
+    candidates: [],
+  };
+}
+
+// Observability only: this is evaluated on the exact retained composer root,
+// uses the same selector as policy, and intentionally returns no text, URLs,
+// labels, class names, ids, filenames, or DOM paths.
+async function inspectRetainedComposerMediaCandidates(handle, rawMediaSelectorCount) {
+  if (!Number.isSafeInteger(rawMediaSelectorCount) || rawMediaSelectorCount < 0) {
+    return emptyMediaInspection(rawMediaSelectorCount, false, 'COUNT_OPERATION_FAILED');
+  }
+  try {
+    const inspection = await handle.evaluate((root, selector) => {
+      const maxCandidates = 12;
+      const bounded = (value) => Math.max(0, Math.min(1000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
+      const tag = (node) => node?.tagName === 'IMG' ? 'IMG' : node?.tagName === 'VIDEO' ? 'VIDEO' : 'OTHER';
+      const scheme = (value) => {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return 'NONE';
+        if (raw.startsWith('blob:')) return 'BLOB';
+        if (raw.startsWith('data:')) return 'DATA';
+        if (raw.startsWith('https:')) return 'HTTPS';
+        return 'OTHER';
+      };
+      const dimension = (value) => {
+        if (!Number.isFinite(Number(value))) return 'UNKNOWN';
+        const size = Number(value);
+        if (size <= 0) return 'ZERO';
+        if (size <= 48) return 'SMALL';
+        if (size <= 256) return 'MEDIUM';
+        return 'LARGE';
+      };
+      const visible = (node) => {
+        try {
+          const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node);
+          const rect = node.getBoundingClientRect?.();
+          return Boolean(node.isConnected && rect && rect.width > 0 && rect.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden' && style?.opacity !== '0');
+        } catch { return false; }
+      };
+      const role = (node) => {
+        const value = String(node.getAttribute?.('role') || '').toLowerCase();
+        return ['', 'presentation', 'img', 'button'].includes(value) ? (value || null) : 'other';
+      };
+      const depth = (node) => {
+        let current = node; let result = 0;
+        while (current && current !== root && result < 1000) { current = current.parentElement; result += 1; }
+        return bounded(result);
+      };
+      const candidates = Array.from(root.querySelectorAll(selector));
+      const counts = {
+        rawMediaSelectorCount: bounded(candidates.length), visibleMediaCandidateCount: 0,
+        possibleUploadAttachmentCount: 0, uiAvatarOrIconCount: 0, decorativeCount: 0,
+        videoCandidateCount: 0, unknownCount: 0,
+      };
+      const summarized = candidates.map((node) => {
+        const tagName = tag(node);
+        const visibleValue = visible(node);
+        const srcScheme = scheme(node.getAttribute?.('src'));
+        const naturalWidth = tagName === 'IMG' ? dimension(node.naturalWidth) : 'UNKNOWN';
+        const naturalHeight = tagName === 'IMG' ? dimension(node.naturalHeight) : 'UNKNOWN';
+        const ancestorButton = Boolean(node.closest?.('button, [role="button"]'));
+        const ancestorPresentation = Boolean(node.closest?.('[role="presentation"], [aria-hidden="true"]'));
+        const ancestorEditable = Boolean(node.closest?.('[contenteditable="true"], [contenteditable="plaintext-only"]'));
+        let mediaCategory = 'UNKNOWN_MEDIA_CANDIDATE';
+        if (tagName === 'VIDEO') mediaCategory = 'VIDEO_CANDIDATE';
+        else if (ancestorPresentation || node.getAttribute?.('aria-hidden') !== null) mediaCategory = 'DECORATIVE_OR_PRESENTATION';
+        else if (srcScheme === 'BLOB' || srcScheme === 'DATA') mediaCategory = 'POSSIBLE_UPLOAD_ATTACHMENT';
+        else if (ancestorButton || naturalWidth === 'SMALL' || naturalHeight === 'SMALL') mediaCategory = 'UI_AVATAR_OR_ICON';
+        if (visibleValue) counts.visibleMediaCandidateCount += 1;
+        if (mediaCategory === 'POSSIBLE_UPLOAD_ATTACHMENT') counts.possibleUploadAttachmentCount += 1;
+        else if (mediaCategory === 'UI_AVATAR_OR_ICON') counts.uiAvatarOrIconCount += 1;
+        else if (mediaCategory === 'DECORATIVE_OR_PRESENTATION') counts.decorativeCount += 1;
+        else if (mediaCategory === 'VIDEO_CANDIDATE') counts.videoCandidateCount += 1;
+        else counts.unknownCount += 1;
+        return {
+          tagName, visible: visibleValue, attached: node.isConnected === true,
+          naturalWidth, naturalHeight, hasSrc: srcScheme !== 'NONE', srcScheme,
+          hasAlt: node.hasAttribute?.('alt') === true, hasAriaHidden: node.hasAttribute?.('aria-hidden') === true,
+          role: role(node), ancestorButton, ancestorPresentation, ancestorEditable,
+          candidateDepth: depth(node), mediaCategory,
+        };
+      });
+      return { ...counts, candidates: summarized.slice(0, maxCandidates) };
+    }, RETAINED_COMPOSER_MEDIA_SELECTOR);
+    return { ...emptyMediaInspection(rawMediaSelectorCount, true, 'OK'), ...inspection, rawMediaSelectorCount };
+  } catch {
+    return emptyMediaInspection(rawMediaSelectorCount, true, 'EVALUATION_FAILED');
+  }
+}
+
+async function inspectComposerMedia(composer, task, options = {}) {
   const handle = await ensureRetainedComposer(composer);
   const expected = expectedMediaNames(task);
-  const attachments = handle.locator?.('img, video');
+  const attachments = handle.locator?.(RETAINED_COMPOSER_MEDIA_SELECTOR);
   const count = await attachments?.count?.().catch(() => -1);
+  try { await options.diagnostic?.zeroMediaInspectionSummary?.(await inspectRetainedComposerMediaCandidates(handle, count)); } catch { /* observability only */ }
   if (count !== expected.length) throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media does not match the immutable task snapshot.');
   const busy = await handle.locator?.('[aria-busy="true"], [role="progressbar"]').count?.().catch(() => 0);
   if (busy > 0) throw failure('FACEBOOK_MEDIA_NOT_READY', 'Facebook composer media is still processing.');
@@ -338,6 +442,7 @@ module.exports = {
   CONTENTEDITABLE_VISUAL_TEXT,
   TEXTAREA_VALUE,
   INPUT_VALUE,
+  RETAINED_COMPOSER_MEDIA_SELECTOR,
   VERIFICATION_READ_TIMING,
   COMPOSER_TEXT_SETTLE_TIMEOUT_MS,
   COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS,
@@ -346,6 +451,7 @@ module.exports = {
   visualPlainTextFromContenteditable,
   verifyComposerText,
   inspectComposerMedia,
+  inspectRetainedComposerMediaCandidates,
   findScopedPublishControl,
   ensureScopedPublishControl,
 };

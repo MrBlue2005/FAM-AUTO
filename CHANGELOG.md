@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BL - retained-composer zero-media diagnostics
+
+- The existing retained-composer `img, video` inspection now writes a protected, local-only `ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY` before its unchanged media acceptance decision. It records only bounded structural candidate data and aggregates: tag/dimension/source-scheme enums, visibility/attachment and ancestor booleans, safe category, and fixed count/evaluation result enums.
+- The summary never persists URLs, labels, filenames, classes, IDs, DOM paths, text, cookies, tokens, or account data. It is strictly observability: selector, expected-media policy, busy/error checks, text verification, publish-control discovery, marker ordering, submit, retry, and publication behavior are unchanged.
+
 ## Phase G5.7BI - retained contenteditable visual-text reader
 
 - Immutable verification of the exact retained contenteditable editor now reconstructs visible plain-text line boundaries from text nodes, `<br>`, and non-empty block descendants, without editor reacquisition or page-wide DOM access. Inline spans remain concatenated and duplicate/empty structural boundaries are suppressed.

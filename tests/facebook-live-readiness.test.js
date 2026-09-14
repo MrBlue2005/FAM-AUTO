@@ -13,6 +13,7 @@ const {
   TEXTAREA_VALUE,
   visualPlainTextFromContenteditable,
   inspectComposerMedia,
+  inspectRetainedComposerMediaCandidates,
   findScopedPublishControl,
 } = require('../app/local-agent/FacebookLiveReadiness');
 
@@ -51,6 +52,33 @@ function visualEditor(root) {
     tagName: 'DIV',
     input: undefined,
   });
+}
+function mediaInspectionHandle(configs, { throws = false } = {}) {
+  const root = {
+    querySelectorAll: (selector) => {
+      assert.equal(selector, 'img, video');
+      return configs.map((config) => {
+        const attributes = config.attributes || {};
+        const node = {
+          tagName: config.tagName || 'IMG', isConnected: config.attached !== false,
+          naturalWidth: config.naturalWidth, naturalHeight: config.naturalHeight,
+          ownerDocument: { defaultView: { getComputedStyle: () => ({ display: config.display || 'block', visibility: config.visibility || 'visible', opacity: config.opacity || '1' }) } },
+          getBoundingClientRect: () => ({ width: config.width === undefined ? 24 : config.width, height: config.height === undefined ? 24 : config.height }),
+          getAttribute: (name) => Object.hasOwn(attributes, name) ? attributes[name] : null,
+          hasAttribute: (name) => Object.hasOwn(attributes, name),
+          closest: (selectorValue) => {
+            if (/button/.test(selectorValue) && config.ancestorButton) return {};
+            if (/presentation|aria-hidden/.test(selectorValue) && config.ancestorPresentation) return {};
+            if (/contenteditable/.test(selectorValue) && config.ancestorEditable) return {};
+            return null;
+          },
+          parentElement: root,
+        };
+        return node;
+      });
+    },
+  };
+  return { evaluate: async (callback, selector) => { if (throws) throw new Error('private evaluation failure'); return callback(root, selector); } };
 }
 const immediateWait = async () => {};
 const synchronized = { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: immediateWait };
@@ -234,6 +262,49 @@ test('media requires exact count, ready state, and exposed filename ordering', a
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item({ 'data-filename': 'wrong.jpg' }), item({ 'data-file-name': 'two.png' })] }), task(['C:/safe/one.jpg', 'C:/safe/two.png'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item()] , busy: true }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_NOT_READY' });
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [], alerts: [item({ text: 'Upload failed' })] }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+});
+
+test('retained-composer media diagnostics classify structural candidates without media policy decisions', async () => {
+  const noMedia = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([]), 0);
+  assert.equal(noMedia.rawMediaSelectorCount, 0);
+  assert.equal(noMedia.countOperationSucceeded, true);
+  assert.equal(noMedia.candidates.length, 0);
+
+  const avatar = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([{ naturalWidth: 32, naturalHeight: 32, attributes: { src: 'https://private.invalid/avatar' } }]), 1);
+  assert.equal(avatar.candidates[0].mediaCategory, 'UI_AVATAR_OR_ICON');
+  assert.equal(avatar.uiAvatarOrIconCount, 1);
+
+  const decorative = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([{ naturalWidth: 80, naturalHeight: 80, ancestorPresentation: true, attributes: { src: 'https://private.invalid/icon', 'aria-hidden': 'true' } }]), 1);
+  assert.equal(decorative.candidates[0].mediaCategory, 'DECORATIVE_OR_PRESENTATION');
+  assert.equal(decorative.decorativeCount, 1);
+
+  const upload = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([{ naturalWidth: 640, naturalHeight: 480, attributes: { src: 'blob:private-upload' } }]), 1);
+  assert.equal(upload.candidates[0].mediaCategory, 'POSSIBLE_UPLOAD_ATTACHMENT');
+  assert.equal(upload.possibleUploadAttachmentCount, 1);
+
+  const video = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([{ tagName: 'VIDEO', attributes: { src: 'data:private-video' } }]), 1);
+  assert.equal(video.candidates[0].mediaCategory, 'VIDEO_CANDIDATE');
+  assert.equal(video.videoCandidateCount, 1);
+
+  const mixed = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([
+    { naturalWidth: 32, naturalHeight: 32, attributes: { src: 'https://private.invalid/avatar' } },
+    { naturalWidth: 640, naturalHeight: 480, attributes: { src: 'data:private-upload' } },
+  ]), 2);
+  assert.equal(mixed.uiAvatarOrIconCount, 1);
+  assert.equal(mixed.possibleUploadAttachmentCount, 1);
+  assert.equal(mixed.rawMediaSelectorCount, 2);
+  assert.doesNotMatch(JSON.stringify(mixed), /private\.invalid|private-upload|src=|class|cookie/i);
+});
+
+test('retained-composer media diagnostics fail closed to fixed safe enums and never inspect outside the retained root', async () => {
+  const countFailure = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([{ attributes: { src: 'blob:outside' } }]), -1);
+  assert.equal(countFailure.countOperationSucceeded, false);
+  assert.equal(countFailure.inspectionResult, 'COUNT_OPERATION_FAILED');
+  assert.deepEqual(countFailure.candidates, []);
+  const evaluationFailure = await inspectRetainedComposerMediaCandidates(mediaInspectionHandle([], { throws: true }), 1);
+  assert.equal(evaluationFailure.countOperationSucceeded, true);
+  assert.equal(evaluationFailure.inspectionResult, 'EVALUATION_FAILED');
+  assert.deepEqual(evaluationFailure.candidates, []);
 });
 
 test('publish control is exactly one visible enabled control inside the retained composer', async () => {

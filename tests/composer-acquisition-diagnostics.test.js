@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, createRootPair, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary, sanitizeContentMismatch } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary, sanitizeContentMismatch, sanitizeZeroMediaInspection } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function structuralNode(config = {}) {
   const attributes = {
@@ -478,6 +478,32 @@ test('content mismatch diagnostics retain the fixed retained-editor multiline in
   const sanitized = sanitizeContentMismatch({ insertionMethod: 'RETAINED_EDITOR_SHIFT_ENTER', reader: 'TEXTAREA_VALUE' });
   assert.equal(sanitized.insertionMethod, 'RETAINED_EDITOR_SHIFT_ENTER');
   assert.equal(sanitized.reader, 'TEXTAREA_VALUE');
+});
+
+test('zero-media terminal summary is private, bounded, and retained under pressure', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-zero-media-retention-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 1, maxBytes: 12000, now: () => '2026-09-14T00:00:00.000Z' });
+    const record = sink.forTask('zero_media');
+    for (let index = 0; index < 12; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    record.zeroMediaInspectionSummary({
+      rawMediaSelectorCount: 2, visibleMediaCandidateCount: 2, possibleUploadAttachmentCount: 1,
+      uiAvatarOrIconCount: 1, decorativeCount: 0, videoCandidateCount: 0, unknownCount: 0,
+      countOperationSucceeded: true, inspectionResult: 'OK',
+      candidates: [{ tagName: 'IMG', visible: true, attached: true, naturalWidth: 'SMALL', naturalHeight: 'SMALL', hasSrc: true, srcScheme: 'HTTPS', hasAlt: true, hasAriaHidden: false, role: 'img', ancestorButton: false, ancestorPresentation: false, ancestorEditable: true, candidateDepth: 7, mediaCategory: 'UI_AVATAR_OR_ICON', src: 'https://private.invalid/image', alt: 'private text', className: 'private-class', id: 'private-id' }],
+    });
+    const saved = fs.readFileSync(path.join(directory, 'zero_media.json'), 'utf8');
+    const summary = JSON.parse(saved).records.find((item) => item.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY');
+    assert.ok(summary);
+    assert.equal(summary.zeroMediaInspection.rawMediaSelectorCount, 2);
+    assert.equal(summary.zeroMediaInspection.candidates[0].mediaCategory, 'UI_AVATAR_OR_ICON');
+    assert.ok(JSON.parse(saved).records.length <= 4);
+    assert.doesNotMatch(saved, /private\.invalid|private text|private-class|private-id/);
+    const failure = sanitizeZeroMediaInspection({ rawMediaSelectorCount: 9999, countOperationSucceeded: false, inspectionResult: 'untrusted', candidates: [{ src: 'private' }] });
+    assert.equal(failure.rawMediaSelectorCount, 1000);
+    assert.equal(failure.inspectionResult, 'EVALUATION_FAILED');
+    assert.equal(failure.candidates[0].srcScheme, 'NONE');
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 function eligibilityRoot(configs) {
