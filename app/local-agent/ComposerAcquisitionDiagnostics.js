@@ -22,6 +22,7 @@ const STAGES = new Set([
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
   'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY',
   'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY',
+  'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -35,6 +36,7 @@ const REASON_CLASSES = new Set([
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
   'CONTENT_MISMATCH',
   'ZERO_MEDIA_INSPECTION',
+  'PUBLISH_CONTROL_DISCOVERY',
 ]);
 
 const COUNTERS = new Set([
@@ -85,6 +87,20 @@ const CONTENT_MISMATCH_READERS = new Set([
 ]);
 const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const ZERO_MEDIA_INSPECTION_SUMMARY_STAGE = 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY';
+const PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE = 'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY';
+const MAX_PUBLISH_CONTROL_CANDIDATES = 16;
+const MAX_PUBLISH_CONTROL_SNAPSHOTS = 3;
+const PUBLISH_CONTROL_TAG_NAMES = new Set(['BUTTON', 'INPUT', 'DIV', 'SPAN', 'A', 'OTHER']);
+const PUBLISH_CONTROL_ROLES = new Set([null, 'button', 'submit', 'other']);
+const PUBLISH_CONTROL_TYPES = new Set([null, 'submit', 'button', 'reset', 'other']);
+const PUBLISH_CONTROL_TEXT_CLASSES = new Set([
+  'MATCHES_ALLOWED_PUBLISH_LABEL', 'NON_PUBLISH_TEXT', 'EMPTY_OR_UNAVAILABLE_TEXT',
+  'MULTIPLE_LABEL_SIGNAL', 'SAFE_TEXT_EVALUATION_ERROR',
+]);
+const PUBLISH_CONTROL_REJECTIONS = new Set([
+  'ACCEPTED', 'HIDDEN', 'DISABLED', 'WRONG_ROLE', 'WRONG_ELEMENT_TYPE',
+  'LABEL_NOT_ALLOWED', 'AMBIGUOUS', 'DETACHED', 'OTHER_SAFE_REJECTION',
+]);
 const MEDIA_TAG_NAMES = new Set(['IMG', 'VIDEO', 'OTHER']);
 const MEDIA_DIMENSION_BUCKETS = new Set(['ZERO', 'SMALL', 'MEDIUM', 'LARGE', 'UNKNOWN']);
 const MEDIA_SRC_SCHEMES = new Set(['BLOB', 'DATA', 'HTTPS', 'OTHER', 'NONE']);
@@ -100,6 +116,7 @@ const PROTECTED_STAGES = new Set([
   SELECTOR_PARITY_SUMMARY_STAGE,
   CONTENT_MISMATCH_SUMMARY_STAGE,
   ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
+  PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE,
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -273,6 +290,37 @@ function sanitizeZeroMediaInspection(value = {}) {
   };
 }
 
+function sanitizePublishControlCandidate(value = {}) {
+  const bool = (key) => value[key] === true;
+  return {
+    tagName: PUBLISH_CONTROL_TAG_NAMES.has(value.tagName) ? value.tagName : 'OTHER',
+    role: PUBLISH_CONTROL_ROLES.has(value.role) ? value.role : 'other',
+    visible: bool('visible'), enabled: bool('enabled'), attached: bool('attached'),
+    type: PUBLISH_CONTROL_TYPES.has(value.type) ? value.type : 'other',
+    ancestorForm: bool('ancestorForm'), ariaDisabled: bool('ariaDisabled'),
+    tabIndex: Math.max(-1, Math.min(1000, Number.isFinite(Number(value.tabIndex)) ? Math.trunc(Number(value.tabIndex)) : 0)),
+    candidateDepth: boundedInteger(value.candidateDepth) || 0,
+    textClassification: PUBLISH_CONTROL_TEXT_CLASSES.has(value.textClassification) ? value.textClassification : 'SAFE_TEXT_EVALUATION_ERROR',
+    rejection: PUBLISH_CONTROL_REJECTIONS.has(value.rejection) ? value.rejection : 'OTHER_SAFE_REJECTION',
+  };
+}
+
+function sanitizePublishControlDiscovery(value = {}) {
+  const count = (key) => boundedInteger(value[key]) || 0;
+  const keys = [
+    'rawCandidateCount', 'visibleCandidateCount', 'enabledCandidateCount',
+    'labelMatchedCount', 'acceptedCandidateCount', 'hiddenCount', 'disabledCount',
+    'wrongRoleCount', 'wrongElementTypeCount', 'labelNotAllowedCount',
+    'ambiguousCount', 'detachedCount', 'otherSafeRejectionCount',
+  ];
+  return {
+    ...Object.fromEntries(keys.map((key) => [key, count(key)])),
+    candidates: Array.isArray(value.candidates)
+      ? value.candidates.slice(0, MAX_PUBLISH_CONTROL_CANDIDATES).map(sanitizePublishControlCandidate)
+      : [],
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -307,10 +355,6 @@ function removeOldestUnprotected(records) {
 function createComposerAcquisitionDiagnosticSink(options = {}) {
   const directory = options.directory || path.join(logsPath, 'local-agent-composer-diagnostics');
   const now = options.now || (() => new Date().toISOString());
-  // These four protected records are the minimum useful evidence for a
-  // reviewed selector miss: its root-local shape, both terminal aggregates,
-  // and terminal acquisition result. Do not let a tiny caller cap make that
-  // evidence impossible to retain.
   const maxRecords = Math.max(4, Math.min(Number(options.maxRecords) || MAX_RECORDS_PER_TASK, MAX_RECORDS_PER_TASK));
   const maxBytes = Math.max(1024, Math.min(Number(options.maxBytes) || MAX_FILE_BYTES, MAX_FILE_BYTES));
 
@@ -327,6 +371,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.contentMismatch = sanitizeContentMismatch(shape.value);
         } else if (shape?.zeroMediaInspection === true) {
           record.zeroMediaInspection = sanitizeZeroMediaInspection(shape.value);
+        } else if (shape?.publishControlDiscovery === true) {
+          record.publishControlDiscovery = sanitizePublishControlDiscovery(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -339,12 +385,18 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
         if (stage === PRE_SELECTOR_SNAPSHOT_STAGE && records.some((item) => item.stage === stage)) return;
         if (stage === SELECTOR_PARITY_SNAPSHOT_STAGE && records.some((item) => item.stage === stage)) return;
+        if (stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE) {
+          const previousPublishSummary = [...records].reverse().find((item) => item.stage === stage);
+          if (previousPublishSummary
+            && JSON.stringify(previousPublishSummary.publishControlDiscovery) === JSON.stringify(record.publishControlDiscovery)) return;
+          if (records.filter((item) => item.stage === stage).length >= MAX_PUBLISH_CONTROL_SNAPSHOTS) return;
+        }
         const previous = records[records.length - 1];
         // Repeated polling snapshots carry no additional safe diagnostic
         // meaning. Coalesce them so terminal evidence cannot be crowded out.
@@ -377,6 +429,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       selectorParitySummary: (summary) => persist(SELECTOR_PARITY_SUMMARY_STAGE, 'EDITOR_SELECTOR_PARITY_SUMMARY', {}, true, { summary, selectorParity: true }),
       contentMismatchSummary: (value) => persist(CONTENT_MISMATCH_SUMMARY_STAGE, 'CONTENT_MISMATCH', {}, true, { value, contentMismatch: true }),
       zeroMediaInspectionSummary: (value) => persist(ZERO_MEDIA_INSPECTION_SUMMARY_STAGE, 'ZERO_MEDIA_INSPECTION', {}, true, { value, zeroMediaInspection: true }),
+      publishControlDiscoverySummary: (value) => persist(PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE, 'PUBLISH_CONTROL_DISCOVERY', {}, true, { value, publishControlDiscovery: true }),
     });
   }
 
@@ -401,6 +454,10 @@ module.exports = {
   sanitizeContentMismatch,
   sanitizeMediaCandidate,
   sanitizeZeroMediaInspection,
+  sanitizePublishControlCandidate,
+  sanitizePublishControlDiscovery,
+  MAX_PUBLISH_CONTROL_CANDIDATES,
+  MAX_PUBLISH_CONTROL_SNAPSHOTS,
   STAGES,
   createComposerAcquisitionDiagnosticSink,
 };

@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7BU retained-composer publish-control diagnostics
+
+The real adapter now records a best-effort, local-only protected `PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY` immediately before its existing retained-composer publish-control resolver. It inspects only the exact already-retained composer root; there is no page-wide control query, dialog reacquisition, or fallback. Each summary has bounded aggregate counters and at most 16 structural candidates, each with fixed tag/role/type, visibility/enablement/attachment/form/ARIA/tab/depth booleans or bounded values, plus fixed text-classification and rejection enums. Repeated identical summaries coalesce and at most three distinct snapshots are retained.
+
+Raw control text, accessible names, titles, IDs, class names, DOM paths, URLs, cookies, tokens, account identities, HTML, and task payload content are never persisted. The control selector, recognized Romanian/English labels, localization assumptions, visibility and enablement predicates, ambiguity handling, retained-root scoping, text/media checks, lease and `ATTEMPT_STARTED` order, click, submit, and retry behavior are unchanged. Diagnostics are ignored on failure and cannot affect the pre-marker path.
+
 ## G5.7BR retained-composer classified media count
 
 `inspectComposerMedia()` still obtains `img, video` only from the exact paired retained-root Locator and preserves that raw count solely for diagnostics. It now evaluates the same retained root's safe structural media categories before immutable equality: possible uploads, videos, and unknown candidates are attachment-relevant; decorative/presentation and avatar/icon UI are excluded. Unknown or unavailable classification fails closed. For zero-media snapshots, decorative or avatar UI therefore cannot impersonate uploads; real/possible, video, and unknown media still reject the snapshot.

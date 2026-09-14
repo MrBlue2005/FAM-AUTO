@@ -46,6 +46,13 @@ const TEXTAREA_VALUE = 'TEXTAREA_VALUE';
 const INPUT_VALUE = 'INPUT_VALUE';
 const RETAINED_COMPOSER_MEDIA_SELECTOR = 'img, video';
 const MAX_MEDIA_DIAGNOSTIC_CANDIDATES = 12;
+// The resolver's selector and labels stay unchanged. Diagnostic-only probing
+// is retained-composer-scoped and can never supply a control for submission.
+const PUBLISH_CONTROL_SELECTOR = 'button, [role="button"]';
+const PUBLISH_CONTROL_DIAGNOSTIC_SELECTOR = 'button, [role], input, [type="submit"]';
+const PUBLISH_CONTROL_LABEL = /^(posteaz[ăa]|public[ăa]|post|publish)$/i;
+const MAX_PUBLISH_CONTROL_DIAGNOSTIC_CANDIDATES = 16;
+const MAX_PUBLISH_CONTROL_DIAGNOSTIC_SCAN = 1000;
 
 function composerTextStages(value) {
   const raw = String(value ?? '');
@@ -434,9 +441,105 @@ async function inspectComposerMedia(composer, task, options = {}) {
   return { attachmentCount: classifiedCount, filenameEvidence: named.length === expected.length };
 }
 
-async function findScopedPublishControl(composer) {
+function safePublishControlTextClassification(label, text) {
+  const normalizedLabel = String(label || '').trim();
+  const normalizedText = String(text || '').trim();
+  const effective = normalizedLabel || normalizedText;
+  if (!effective) return { textClassification: 'EMPTY_OR_UNAVAILABLE_TEXT', matchesCurrentLabel: false };
+  const labelMatches = PUBLISH_CONTROL_LABEL.test(normalizedLabel);
+  const textMatches = PUBLISH_CONTROL_LABEL.test(normalizedText);
+  const matchesCurrentLabel = PUBLISH_CONTROL_LABEL.test(effective);
+  if (normalizedLabel && normalizedText && normalizedLabel !== normalizedText && (labelMatches || textMatches)) {
+    return { textClassification: 'MULTIPLE_LABEL_SIGNAL', matchesCurrentLabel };
+  }
+  return { textClassification: matchesCurrentLabel ? 'MATCHES_ALLOWED_PUBLISH_LABEL' : 'NON_PUBLISH_TEXT', matchesCurrentLabel };
+}
+
+function publishControlStructuralCandidate(node) {
+  const attribute = (name) => { try { return node?.getAttribute?.(name); } catch { return null; } };
+  const tagName = String(node?.tagName || 'OTHER').toUpperCase();
+  const roleValue = String(attribute('role') || '').trim().toLowerCase();
+  const typeValue = String(attribute('type') || '').trim().toLowerCase();
+  let candidateDepth = 0;
+  try { let current = node; while (current?.parentElement && candidateDepth < 1000) { candidateDepth += 1; current = current.parentElement; } } catch { candidateDepth = 0; }
+  return {
+    tagName: ['BUTTON', 'INPUT', 'DIV', 'SPAN', 'A'].includes(tagName) ? tagName : 'OTHER',
+    role: roleValue === 'button' ? 'button' : roleValue === 'submit' ? 'submit' : roleValue || null,
+    type: ['submit', 'button', 'reset'].includes(typeValue) ? typeValue : typeValue || null,
+    attached: node?.isConnected === true,
+    ancestorForm: Boolean(node?.closest?.('form')),
+    ariaDisabled: String(attribute('aria-disabled') || '').toLowerCase() === 'true',
+    tabIndex: Number.isFinite(Number(node?.tabIndex)) ? Math.trunc(Number(node.tabIndex)) : 0,
+    candidateDepth,
+  };
+}
+
+async function inspectScopedPublishControlCandidates(composer) {
   const handle = await ensureRetainedComposer(composer);
-  const candidates = handle.locator?.('button, [role="button"]');
+  let candidates; let count = 0;
+  try {
+    candidates = handle.locator?.(PUBLISH_CONTROL_DIAGNOSTIC_SELECTOR);
+    count = await candidates?.count?.();
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('invalid retained control count');
+  } catch {
+    return { rawCandidateCount: 0, visibleCandidateCount: 0, enabledCandidateCount: 0, labelMatchedCount: 0, acceptedCandidateCount: 0, hiddenCount: 0, disabledCount: 0, wrongRoleCount: 0, wrongElementTypeCount: 0, labelNotAllowedCount: 0, ambiguousCount: 0, detachedCount: 0, otherSafeRejectionCount: 1, candidates: [] };
+  }
+
+  const inspected = [];
+  const scanCount = Math.min(count, MAX_PUBLISH_CONTROL_DIAGNOSTIC_SCAN);
+  for (let index = 0; index < scanCount; index += 1) {
+    const candidate = candidates.nth(index);
+    let structure; let visible = false; let enabled = false; let text = ''; let label = ''; let textClassification = 'SAFE_TEXT_EVALUATION_ERROR'; let matchesCurrentLabel = false;
+    try {
+      [structure, visible, enabled, text, label] = await Promise.all([
+        candidate.evaluate?.(publishControlStructuralCandidate), candidate.isVisible?.().catch(() => false),
+        candidate.isEnabled?.().catch(() => false), candidate.textContent?.().catch(() => ''),
+        candidate.getAttribute?.('aria-label').catch(() => ''),
+      ]);
+      const classified = safePublishControlTextClassification(label, text);
+      textClassification = classified.textClassification;
+      matchesCurrentLabel = classified.matchesCurrentLabel;
+    } catch {
+      structure = { tagName: 'OTHER', role: 'other', type: 'other', attached: false, ancestorForm: false, ariaDisabled: false, tabIndex: 0, candidateDepth: 0 };
+    }
+    structure = structure && typeof structure === 'object'
+      ? structure
+      : { tagName: 'OTHER', role: 'other', type: 'other', attached: false, ancestorForm: false, ariaDisabled: false, tabIndex: 0, candidateDepth: 0 };
+    const record = { ...structure, visible: visible === true, enabled: enabled === true, textClassification, rejection: 'OTHER_SAFE_REJECTION', matchesCurrentLabel };
+    if (record.attached !== true) record.rejection = 'DETACHED';
+    else if (!['BUTTON', 'INPUT', 'DIV', 'SPAN', 'A'].includes(record.tagName)) record.rejection = 'WRONG_ELEMENT_TYPE';
+    else if (!(record.tagName === 'BUTTON' || record.role === 'button')) record.rejection = 'WRONG_ROLE';
+    else if (record.visible !== true) record.rejection = 'HIDDEN';
+    else if (record.textClassification === 'SAFE_TEXT_EVALUATION_ERROR') record.rejection = 'OTHER_SAFE_REJECTION';
+    else if (!record.matchesCurrentLabel) record.rejection = 'LABEL_NOT_ALLOWED';
+    else if (record.enabled !== true) record.rejection = 'DISABLED';
+    else record.rejection = 'ACCEPTED';
+    inspected.push(record);
+  }
+  const currentMatches = inspected.filter((record) => record.attached === true && (record.tagName === 'BUTTON' || record.role === 'button') && record.visible === true && record.matchesCurrentLabel === true);
+  if (currentMatches.length > 1) currentMatches.forEach((record) => { record.rejection = 'AMBIGUOUS'; });
+  const countBy = (rejection) => inspected.filter((record) => record.rejection === rejection).length;
+  return {
+    rawCandidateCount: Math.min(count, MAX_PUBLISH_CONTROL_DIAGNOSTIC_SCAN),
+    visibleCandidateCount: inspected.filter((record) => record.visible).length,
+    enabledCandidateCount: inspected.filter((record) => record.enabled).length,
+    labelMatchedCount: currentMatches.length, acceptedCandidateCount: countBy('ACCEPTED'),
+    hiddenCount: countBy('HIDDEN'), disabledCount: countBy('DISABLED'), wrongRoleCount: countBy('WRONG_ROLE'),
+    wrongElementTypeCount: countBy('WRONG_ELEMENT_TYPE'), labelNotAllowedCount: countBy('LABEL_NOT_ALLOWED'),
+    ambiguousCount: countBy('AMBIGUOUS'), detachedCount: countBy('DETACHED'),
+    otherSafeRejectionCount: countBy('OTHER_SAFE_REJECTION'),
+    // `matchesCurrentLabel` is transient classification input only. Never
+    // return it: persisted candidates are restricted to the fixed safe shape.
+    candidates: inspected.slice(0, MAX_PUBLISH_CONTROL_DIAGNOSTIC_CANDIDATES).map(({ matchesCurrentLabel: _ignored, ...candidate }) => candidate),
+  };
+}
+
+async function findScopedPublishControl(composer, options = {}) {
+  const handle = await ensureRetainedComposer(composer);
+  // The inspection is local-only and best-effort; it cannot influence this
+  // unchanged resolver, its retained root, or the later click boundary.
+  try { await options.diagnostic?.publishControlDiscoverySummary?.(await inspectScopedPublishControlCandidates(composer)); } catch { /* observability only */ }
+  const candidates = handle.locator?.(PUBLISH_CONTROL_SELECTOR);
   const count = await candidates?.count?.().catch(() => 0);
   const matches = [];
   for (let index = 0; index < count; index += 1) {
@@ -484,6 +587,7 @@ module.exports = {
   verifyComposerText,
   inspectComposerMedia,
   inspectRetainedComposerMediaCandidates,
+  inspectScopedPublishControlCandidates,
   findScopedPublishControl,
   ensureScopedPublishControl,
 };

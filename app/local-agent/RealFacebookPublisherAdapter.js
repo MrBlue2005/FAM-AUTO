@@ -89,7 +89,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     await verifyComposer(composer);
     await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
     await verifyMedia(composer, task, { diagnostic: taskDiagnostics });
-    publishButton = await findPublishControl(composer);
+    publishButton = await findPublishControl(composer, { diagnostic: taskDiagnostics });
     return { sessionReady: true, targetReady: true, composerReady: true };
   }
 

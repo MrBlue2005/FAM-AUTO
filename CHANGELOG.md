@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BU - retained-composer publish-control diagnostics
+
+- Added a protected, local-only `PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY` immediately before existing scoped publish-control resolution. It observes only the already-retained composer and records bounded structural/rejection categories and aggregate counters; identical snapshots coalesce and candidates are capped at 16.
+- The diagnostic never stores raw control text or accessible names, titles, IDs, classes, DOM paths, URLs, cookies, tokens, account data, HTML, or task payload content. Publish selector/labels/localization, retained-root scope, visibility/enabled and ambiguity policies, text/media logic, markers, click, submit, retry, and publication behavior are unchanged.
+
 ## Phase G5.7BR - retained-composer classified media count
 
 - Retained-composer media readiness now uses a structural, exact-root classification for immutable attachment equality. `POSSIBLE_UPLOAD_ATTACHMENT`, `VIDEO_CANDIDATE`, and `UNKNOWN_MEDIA_CANDIDATE` remain attachment-relevant; decorative/presentation and avatar/icon UI candidates are diagnostic-only and do not make a zero-media snapshot fail.

@@ -14,6 +14,7 @@ const {
   visualPlainTextFromContenteditable,
   inspectComposerMedia,
   inspectRetainedComposerMediaCandidates,
+  inspectScopedPublishControlCandidates,
   findScopedPublishControl,
 } = require('../app/local-agent/FacebookLiveReadiness');
 
@@ -39,6 +40,46 @@ function composerModel(options = {}) {
   if (options.handleHasLocator !== false) handle.locator = (selector) => selectors[selector] || collection([]);
   const locator = { locator: (selector) => selectors[selector] || collection([]) };
   return { handle, locator, editor: options.editor || item({ input: options.text ?? 'immutable snapshot' }) };
+}
+function publishControlItem(config = {}) {
+  const attributes = {
+    role: config.role ?? null,
+    type: config.type ?? null,
+    'aria-label': config.label ?? null,
+    'aria-disabled': config.ariaDisabled === true ? 'true' : null,
+  };
+  const node = {
+    tagName: config.tagName || 'BUTTON', isConnected: config.attached !== false,
+    tabIndex: config.tabIndex ?? 0,
+    parentElement: config.parentElement || null,
+    getAttribute: (name) => attributes[name] ?? null,
+    closest: (selector) => selector === 'form' && config.ancestorForm === true ? {} : null,
+  };
+  return {
+    _tagName: node.tagName, _role: config.role ?? null,
+    textContent: async () => config.text ?? '',
+    getAttribute: async (name) => attributes[name] ?? null,
+    isVisible: async () => config.visible !== false,
+    isEnabled: async () => config.enabled !== false,
+    evaluate: async (callback) => callback(node),
+  };
+}
+function publishComposer(controls = [], outsideControls = []) {
+  const retained = {
+    evaluate: async (callback) => callback({ isConnected: true }),
+    isVisible: async () => true,
+    locator: (selector) => {
+      if (selector === 'button, [role], input, [type="submit"]') return collection(controls);
+      if (selector === 'button, [role="button"]') return collection(controls.filter((control) => {
+        const tag = String(control._tagName || '').toUpperCase();
+        return tag === 'BUTTON' || control._role === 'button';
+      }));
+      return collection([]);
+    },
+  };
+  // Outside controls intentionally have no route into the retained root.
+  void outsideControls;
+  return { handle: retained, locator: { locator: () => collection([]) }, editor: item({ input: 'immutable snapshot' }) };
 }
 function sequenceComposerModel(values) {
   let reads = 0;
@@ -411,4 +452,47 @@ test('publish control is exactly one visible enabled control inside the retained
   await assert.rejects(findScopedPublishControl(composerModel({ buttons: [] })), { code: 'FACEBOOK_PUBLISH_CONTROL_MISSING' });
   await assert.rejects(findScopedPublishControl(composerModel({ buttons: [inside, outside] })), { code: 'FACEBOOK_PUBLISH_CONTROL_AMBIGUOUS' });
   await assert.rejects(findScopedPublishControl(composerModel({ buttons: [item({ text: 'Post', enabled: false })] })), { code: 'FACEBOOK_PUBLISH_CONTROL_MISSING' });
+});
+
+test('retained-composer publish-control diagnostics classify bounded candidates without changing resolution', async () => {
+  const accepted = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Post' })]));
+  assert.equal(accepted.rawCandidateCount, 1);
+  assert.equal(accepted.acceptedCandidateCount, 1);
+  assert.equal(accepted.candidates[0].rejection, 'ACCEPTED');
+  assert.equal(accepted.candidates[0].textClassification, 'MATCHES_ALLOWED_PUBLISH_LABEL');
+
+  const disabled = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Post', enabled: false })]));
+  assert.equal(disabled.disabledCount, 1);
+  assert.equal(disabled.candidates[0].rejection, 'DISABLED');
+
+  const wrongLabel = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Save draft' })]));
+  assert.equal(wrongLabel.labelNotAllowedCount, 1);
+  assert.equal(wrongLabel.candidates[0].rejection, 'LABEL_NOT_ALLOWED');
+
+  const wrongRole = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ tagName: 'DIV', role: 'dialog', text: 'Post' })]));
+  assert.equal(wrongRole.wrongRoleCount, 1);
+  assert.equal(wrongRole.candidates[0].rejection, 'WRONG_ROLE');
+
+  const hidden = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Post', visible: false })]));
+  assert.equal(hidden.hiddenCount, 1);
+  assert.equal(hidden.candidates[0].rejection, 'HIDDEN');
+
+  const ambiguous = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Post' }), publishControlItem({ text: 'Publish' })]));
+  assert.equal(ambiguous.labelMatchedCount, 2);
+  assert.equal(ambiguous.acceptedCandidateCount, 0);
+  assert.equal(ambiguous.ambiguousCount, 2);
+
+  const empty = await inspectScopedPublishControlCandidates(publishComposer([]));
+  assert.equal(empty.rawCandidateCount, 0);
+  assert.equal(empty.candidates.length, 0);
+});
+
+test('publish-control diagnostics remain retained-root-only and never store raw DOM text', async () => {
+  const summary = await inspectScopedPublishControlCandidates(publishComposer([
+    publishControlItem({ text: 'Private target text', label: 'secret aria label', tagName: 'SPAN', role: 'other' }),
+  ], [publishControlItem({ text: 'Post' })]));
+  assert.equal(summary.rawCandidateCount, 1);
+  assert.equal(summary.candidates[0].rejection, 'WRONG_ROLE');
+  assert.doesNotMatch(JSON.stringify(summary), /Private target text|secret aria label|cookie|https?:/i);
+  assert.equal(summary.candidates[0].tagName, 'SPAN');
 });

@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, createRootPair, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary, sanitizeContentMismatch, sanitizeZeroMediaInspection } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary, sanitizeContentMismatch, sanitizeZeroMediaInspection, sanitizePublishControlCandidate, sanitizePublishControlDiscovery } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function structuralNode(config = {}) {
   const attributes = {
@@ -612,4 +612,54 @@ test('eligibility rejection enum is whitelisted and does not retain private cand
   assert.equal(candidate.eligibilityRejectionReason, 'COMMENT_REPLY_SEARCH_EXCLUDED');
   assert.doesNotMatch(JSON.stringify(candidate), /private|c_user/);
   assert.equal(sanitizeCandidate({ eligibilityRejectionReason: 'not-an-enum' }).eligibilityRejectionReason, 'OTHER_SAFE_REJECTION');
+});
+
+test('publish-control diagnostic summary is bounded, private, and retained under pressure', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-publish-control-retention-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 32000, now: () => '2026-09-15T00:00:00.000Z' });
+    const record = sink.forTask('publish_control');
+    for (let index = 0; index < 12; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    const summary = {
+      rawCandidateCount: 24, visibleCandidateCount: 20, enabledCandidateCount: 19,
+      labelMatchedCount: 2, acceptedCandidateCount: 0, hiddenCount: 1, disabledCount: 1,
+      wrongRoleCount: 4, wrongElementTypeCount: 2, labelNotAllowedCount: 10,
+      ambiguousCount: 2, detachedCount: 1, otherSafeRejectionCount: 3,
+      candidates: Array.from({ length: 20 }, (_, index) => ({
+        tagName: index === 0 ? 'BUTTON' : 'DIV', role: index === 0 ? 'button' : 'other',
+        visible: true, enabled: true, attached: true, type: 'submit', ancestorForm: true,
+        ariaDisabled: false, tabIndex: 0, candidateDepth: 8,
+        textClassification: 'MATCHES_ALLOWED_PUBLISH_LABEL', rejection: index === 0 ? 'ACCEPTED' : 'LABEL_NOT_ALLOWED',
+        text: 'private publish text', ariaLabel: 'private aria label', id: 'private-id', className: 'private-class', path: 'private-path',
+      })),
+    };
+    record.publishControlDiscoverySummary(summary);
+    record.publishControlDiscoverySummary(summary); // coalesced duplicate
+    record.publishControlDiscoverySummary({ ...summary, disabledCount: 2 });
+    record.publishControlDiscoverySummary({ ...summary, hiddenCount: 2 });
+    record.publishControlDiscoverySummary({ ...summary, wrongRoleCount: 5 }); // capped at three snapshots
+    const saved = fs.readFileSync(path.join(directory, 'publish_control.json'), 'utf8');
+    const data = JSON.parse(saved);
+    const summaries = data.records.filter((item) => item.stage === 'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY');
+    assert.equal(summaries.length, 3);
+    assert.ok(summaries.every((item) => item.publishControlDiscovery.candidates.length <= 16));
+    assert.doesNotMatch(saved, /private publish text|private aria label|private-id|private-class|private-path/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('publish-control sanitizer permits only fixed structural and rejection categories', () => {
+  const candidate = sanitizePublishControlCandidate({
+    tagName: 'BUTTON', role: 'button', visible: true, enabled: true, attached: true,
+    type: 'submit', ancestorForm: true, ariaDisabled: false, tabIndex: 99999,
+    candidateDepth: 99999, textClassification: 'MATCHES_ALLOWED_PUBLISH_LABEL', rejection: 'ACCEPTED',
+    text: 'private', ariaLabel: 'private', url: 'https://private.invalid', cookie: 'c_user=1',
+  });
+  assert.equal(candidate.tagName, 'BUTTON');
+  assert.equal(candidate.rejection, 'ACCEPTED');
+  assert.equal(candidate.tabIndex, 1000);
+  assert.doesNotMatch(JSON.stringify(candidate), /private|c_user/);
+  const summary = sanitizePublishControlDiscovery({ rawCandidateCount: 9999, candidates: [{ rejection: 'not-valid', text: 'private' }] });
+  assert.equal(summary.rawCandidateCount, 1000);
+  assert.equal(summary.candidates[0].rejection, 'OTHER_SAFE_REJECTION');
+  assert.doesNotMatch(JSON.stringify(summary), /private/);
 });
