@@ -489,6 +489,7 @@ test('zero-media terminal summary is private, bounded, and retained under pressu
     record.zeroMediaInspectionSummary({
       rawMediaSelectorCount: 2, visibleMediaCandidateCount: 2, possibleUploadAttachmentCount: 1,
       uiAvatarOrIconCount: 1, decorativeCount: 0, videoCandidateCount: 0, unknownCount: 0,
+      classifiedAttachmentCount: 1, ignoredDecorativeCount: 0, ignoredUiAvatarOrIconCount: 1,
       countOperationSucceeded: true, inspectionResult: 'OK',
       candidates: [{ tagName: 'IMG', visible: true, attached: true, naturalWidth: 'SMALL', naturalHeight: 'SMALL', hasSrc: true, srcScheme: 'HTTPS', hasAlt: true, hasAriaHidden: false, role: 'img', ancestorButton: false, ancestorPresentation: false, ancestorEditable: true, candidateDepth: 7, mediaCategory: 'UI_AVATAR_OR_ICON', src: 'https://private.invalid/image', alt: 'private text', className: 'private-class', id: 'private-id' }],
     });
@@ -496,6 +497,8 @@ test('zero-media terminal summary is private, bounded, and retained under pressu
     const summary = JSON.parse(saved).records.find((item) => item.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY');
     assert.ok(summary);
     assert.equal(summary.zeroMediaInspection.rawMediaSelectorCount, 2);
+    assert.equal(summary.zeroMediaInspection.classifiedAttachmentCount, 1);
+    assert.equal(summary.zeroMediaInspection.ignoredUiAvatarOrIconCount, 1);
     assert.equal(summary.zeroMediaInspection.candidates[0].mediaCategory, 'UI_AVATAR_OR_ICON');
     assert.ok(JSON.parse(saved).records.length <= 4);
     assert.doesNotMatch(saved, /private\.invalid|private text|private-class|private-id/);

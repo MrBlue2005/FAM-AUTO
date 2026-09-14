@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BR - retained-composer classified media count
+
+- Retained-composer media readiness now uses a structural, exact-root classification for immutable attachment equality. `POSSIBLE_UPLOAD_ATTACHMENT`, `VIDEO_CANDIDATE`, and `UNKNOWN_MEDIA_CANDIDATE` remain attachment-relevant; decorative/presentation and avatar/icon UI candidates are diagnostic-only and do not make a zero-media snapshot fail.
+- Unknown candidates and failed retained-root inspection remain fail-closed. Busy/progress and upload-error checks still run after a successful classified-count equality. The terminal-safe summary adds classified and ignored-category counts without storing media URLs or other private DOM data.
+
 ## Phase G5.7BO - retained-composer Locator media count
 
 - Retained-composer media readiness now performs its existing `img, video` count through the paired exact-root Locator rather than calling Locator traversal on the ElementHandle. The ElementHandle remains in place for root identity, visibility, and structural diagnostics.

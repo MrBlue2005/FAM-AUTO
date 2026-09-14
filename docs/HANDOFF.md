@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7BR retained-composer classified media count
+
+`inspectComposerMedia()` still obtains `img, video` only from the exact paired retained-root Locator and preserves that raw count solely for diagnostics. It now evaluates the same retained root's safe structural media categories before immutable equality: possible uploads, videos, and unknown candidates are attachment-relevant; decorative/presentation and avatar/icon UI are excluded. Unknown or unavailable classification fails closed. For zero-media snapshots, decorative or avatar UI therefore cannot impersonate uploads; real/possible, video, and unknown media still reject the snapshot.
+
+The existing busy/progress and upload-error checks execute only after classified equality passes. The protected summary adds bounded `classifiedAttachmentCount`, `ignoredDecorativeCount`, and `ignoredUiAvatarOrIconCount`; it retains the existing redaction guarantees. Text, target, publish-control, lease/marker order, submit, retry, and all page-wide-fallback prohibitions are unchanged.
+
 ## G5.7BO retained-composer Locator media count
 
 `inspectComposerMedia()` now uses the exact paired retained composer `Locator` for its unchanged scoped `img, video` count. The paired `ElementHandle` remains the authority for root identity/visibility and the local structural diagnostic evaluation. A missing, invalid, or throwing Locator count fails closed as `FACEBOOK_MEDIA_COUNT_UNAVAILABLE`, after recording the existing safe `COUNT_OPERATION_FAILED` summary; it never falls back to a new root or page-wide lookup. Expected-count equality, candidate categories, text, publish control, marker order, submit, and retry semantics are unchanged.

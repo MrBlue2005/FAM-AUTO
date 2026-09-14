@@ -280,6 +280,9 @@ function emptyMediaInspection(rawMediaSelectorCount, countOperationSucceeded, in
     decorativeCount: 0,
     videoCandidateCount: 0,
     unknownCount: 0,
+    classifiedAttachmentCount: 0,
+    ignoredDecorativeCount: 0,
+    ignoredUiAvatarOrIconCount: 0,
     countOperationSucceeded,
     inspectionResult,
     candidates: [],
@@ -334,7 +337,8 @@ async function inspectRetainedComposerMediaCandidates(handle, rawMediaSelectorCo
       const counts = {
         rawMediaSelectorCount: bounded(candidates.length), visibleMediaCandidateCount: 0,
         possibleUploadAttachmentCount: 0, uiAvatarOrIconCount: 0, decorativeCount: 0,
-        videoCandidateCount: 0, unknownCount: 0,
+        videoCandidateCount: 0, unknownCount: 0, classifiedAttachmentCount: 0,
+        ignoredDecorativeCount: 0, ignoredUiAvatarOrIconCount: 0,
       };
       const summarized = candidates.map((node) => {
         const tagName = tag(node);
@@ -364,6 +368,9 @@ async function inspectRetainedComposerMediaCandidates(handle, rawMediaSelectorCo
           candidateDepth: depth(node), mediaCategory,
         };
       });
+      counts.classifiedAttachmentCount = counts.possibleUploadAttachmentCount + counts.videoCandidateCount + counts.unknownCount;
+      counts.ignoredDecorativeCount = counts.decorativeCount;
+      counts.ignoredUiAvatarOrIconCount = counts.uiAvatarOrIconCount;
       return { ...counts, candidates: summarized.slice(0, maxCandidates) };
     }, RETAINED_COMPOSER_MEDIA_SELECTOR);
     return { ...emptyMediaInspection(rawMediaSelectorCount, true, 'OK'), ...inspection, rawMediaSelectorCount };
@@ -389,8 +396,21 @@ async function inspectComposerMedia(composer, task, options = {}) {
     try { await options.diagnostic?.zeroMediaInspectionSummary?.(await inspectRetainedComposerMediaCandidates(handle, -1)); } catch { /* observability only */ }
     throw failure('FACEBOOK_MEDIA_COUNT_UNAVAILABLE', 'Facebook composer media count is unavailable.');
   }
-  try { await options.diagnostic?.zeroMediaInspectionSummary?.(await inspectRetainedComposerMediaCandidates(handle, count)); } catch { /* observability only */ }
-  if (count !== expected.length) throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media does not match the immutable task snapshot.');
+  const inspection = await inspectRetainedComposerMediaCandidates(handle, count);
+  try { await options.diagnostic?.zeroMediaInspectionSummary?.(inspection); } catch { /* observability only */ }
+  if (inspection.countOperationSucceeded !== true || inspection.inspectionResult !== 'OK') {
+    throw failure('FACEBOOK_MEDIA_COUNT_UNAVAILABLE', 'Facebook composer media classification is unavailable.');
+  }
+  // A category we cannot identify is never treated as decorative evidence.
+  if (inspection.unknownCount > 0) throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media classification is uncertain.');
+  const classifiedCount = inspection.classifiedAttachmentCount;
+  if (classifiedCount !== expected.length) throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media does not match the immutable task snapshot.');
+  // For non-zero snapshots, filename evidence must still be bound to the same
+  // attachment collection.  Decorative/avatar UI makes that association
+  // ambiguous, so fail closed instead of treating it as an upload.
+  if (expected.length > 0 && count !== classifiedCount) {
+    throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media cannot be unambiguously matched to the immutable task snapshot.');
+  }
   const busy = await rootLocator?.locator?.('[aria-busy="true"], [role="progressbar"]').count?.().catch(() => 0);
   if (busy > 0) throw failure('FACEBOOK_MEDIA_NOT_READY', 'Facebook composer media is still processing.');
   const alerts = await rootLocator?.locator?.('[role="alert"]').allTextContents?.().catch(() => []);
@@ -411,7 +431,7 @@ async function inspectComposerMedia(composer, task, options = {}) {
   if (named.length && (named.length !== expected.length || named.some((name, index) => name !== expected[index]))) {
     throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media identity does not match the immutable task snapshot.');
   }
-  return { attachmentCount: count, filenameEvidence: named.length === expected.length };
+  return { attachmentCount: classifiedCount, filenameEvidence: named.length === expected.length };
 }
 
 async function findScopedPublishControl(composer) {

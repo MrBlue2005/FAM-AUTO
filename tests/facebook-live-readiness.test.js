@@ -83,11 +83,22 @@ function mediaInspectionHandle(configs, { throws = false } = {}) {
   };
   return { evaluate: async (callback, selector) => { if (throws) throw new Error('private evaluation failure'); return callback(root, selector); } };
 }
-function pairedMediaComposer(configs, { countThrows = false } = {}) {
+function pairedMediaComposer(configs, { countThrows = false, busy = false, alerts = [] } = {}) {
   const handle = mediaInspectionHandle(configs);
   handle.isVisible = async () => true;
-  const attachments = countThrows ? { count: async () => { throw new Error('count unavailable'); } } : collection(configs.map(() => item()));
-  return { handle, locator: { locator: (selector) => selector === 'img, video' ? attachments : collection([]) }, editor: item({ input: 'immutable snapshot' }) };
+  const attachments = countThrows ? { count: async () => { throw new Error('count unavailable'); } } : collection(configs.map((config) => item(config.attributes || {})));
+  return {
+    handle,
+    locator: {
+      locator: (selector) => {
+        if (selector === 'img, video') return attachments;
+        if (selector === '[aria-busy="true"], [role="progressbar"]') return collection(busy ? [item()] : []);
+        if (selector === '[role="alert"]') return collection(alerts.map((text) => ({ text })));
+        return collection([]);
+      },
+    },
+    editor: item({ input: 'immutable snapshot' }),
+  };
 }
 const immediateWait = async () => {};
 const synchronized = { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: immediateWait };
@@ -265,12 +276,12 @@ test('retained editor synchronization preserves exact CRLF/LF normalization equa
   assert.equal(reads(), 1);
 });
 
-test('media requires exact count, ready state, and exposed filename ordering', async () => {
-  const exact = composerModel({ attachments: [item({ 'data-filename': 'one.jpg' }), item({ 'data-file-name': 'two.png' })] });
-  await inspectComposerMedia(exact, task(['C:/safe/one.jpg', 'C:/safe/two.png']));
-  await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item({ 'data-filename': 'wrong.jpg' }), item({ 'data-file-name': 'two.png' })] }), task(['C:/safe/one.jpg', 'C:/safe/two.png'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
-  await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item()] , busy: true }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_NOT_READY' });
-  await assert.rejects(inspectComposerMedia(composerModel({ attachments: [], alerts: [item({ text: 'Upload failed' })] }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+test('media requires classified exact count, ready state, and exposed filename ordering', async () => {
+  const upload = (attributes) => ({ naturalWidth: 640, naturalHeight: 480, attributes: { src: 'blob:private-upload', ...attributes } });
+  await inspectComposerMedia(pairedMediaComposer([upload({ 'data-filename': 'one.jpg' }), upload({ 'data-file-name': 'two.png' })]), task(['C:/safe/one.jpg', 'C:/safe/two.png']));
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([upload({ 'data-filename': 'wrong.jpg' }), upload({ 'data-file-name': 'two.png' })]), task(['C:/safe/one.jpg', 'C:/safe/two.png'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([upload({ 'data-filename': 'one.jpg' })], { busy: true }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_NOT_READY' });
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([upload({ 'data-filename': 'one.jpg' })], { alerts: ['Upload failed'] }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
 });
 
 test('zero-media count uses the paired retained Locator when the ElementHandle has no Locator API', async () => {
@@ -284,13 +295,60 @@ test('zero-media count uses the paired retained Locator when the ElementHandle h
   assert.equal(records[0].inspectionResult, 'OK');
 });
 
-test('paired retained Locator preserves fail-closed zero-media mismatch before any side effect', async () => {
+test('paired retained Locator ignores the observed six decorative retained-composer candidates for a zero-media snapshot', async () => {
   const records = [];
-  const composer = pairedMediaComposer([{ naturalWidth: 24, naturalHeight: 24, attributes: { src: 'https://private.invalid/avatar' } }]);
-  await assert.rejects(inspectComposerMedia(composer, task([]), { diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) } }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  const decorative = () => ({ naturalWidth: 24, naturalHeight: 24, ancestorPresentation: true, attributes: { src: 'https://private.invalid/icon', 'aria-hidden': 'true' } });
+  await inspectComposerMedia(pairedMediaComposer(Array.from({ length: 6 }, decorative)), task([]), {
+    diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) },
+  });
   assert.equal(records.length, 1);
-  assert.equal(records[0].rawMediaSelectorCount, 1);
+  assert.equal(records[0].rawMediaSelectorCount, 6);
   assert.equal(records[0].countOperationSucceeded, true);
+  assert.equal(records[0].decorativeCount, 6);
+  assert.equal(records[0].classifiedAttachmentCount, 0);
+  assert.equal(records[0].ignoredDecorativeCount, 6);
+  assert.equal(records[0].ignoredUiAvatarOrIconCount, 0);
+});
+
+test('retained-composer classified media count fails closed for mixed decorative and possible upload evidence', async () => {
+  const records = [];
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([
+    ...Array.from({ length: 5 }, () => ({ naturalWidth: 24, naturalHeight: 24, ancestorPresentation: true, attributes: { src: 'https://private.invalid/icon', 'aria-hidden': 'true' } })),
+    { naturalWidth: 640, naturalHeight: 480, attributes: { src: 'blob:private-upload' } },
+  ]), task([]), { diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) } }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  assert.equal(records[0].classifiedAttachmentCount, 1);
+  assert.equal(records[0].possibleUploadAttachmentCount, 1);
+  assert.equal(records[0].ignoredDecorativeCount, 5);
+});
+
+test('retained-composer classified media count fails closed for unknown and video candidates', async () => {
+  const unknown = [];
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([{ naturalWidth: 640, naturalHeight: 480, attributes: { src: 'https://private.invalid/unknown' } }]), task([]), {
+    diagnostic: { zeroMediaInspectionSummary: async (value) => unknown.push(value) },
+  }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  assert.equal(unknown[0].unknownCount, 1);
+  assert.equal(unknown[0].classifiedAttachmentCount, 1);
+
+  const video = [];
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([{ tagName: 'VIDEO', attributes: { src: 'https://private.invalid/video' } }]), task([]), {
+    diagnostic: { zeroMediaInspectionSummary: async (value) => video.push(value) },
+  }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  assert.equal(video[0].videoCandidateCount, 1);
+  assert.equal(video[0].classifiedAttachmentCount, 1);
+});
+
+test('retained-composer classified media count ignores avatar and decorative UI but still checks busy and upload-error state', async () => {
+  const configs = [
+    ...Array.from({ length: 3 }, () => ({ naturalWidth: 24, naturalHeight: 24, ancestorButton: true, attributes: { src: 'https://private.invalid/avatar' } })),
+    ...Array.from({ length: 2 }, () => ({ naturalWidth: 80, naturalHeight: 80, ancestorPresentation: true, attributes: { src: 'https://private.invalid/icon', 'aria-hidden': 'true' } })),
+  ];
+  const records = [];
+  await inspectComposerMedia(pairedMediaComposer(configs), task([]), { diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) } });
+  assert.equal(records[0].classifiedAttachmentCount, 0);
+  assert.equal(records[0].ignoredUiAvatarOrIconCount, 3);
+  assert.equal(records[0].ignoredDecorativeCount, 2);
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer(configs, { busy: true }), task([])), { code: 'FACEBOOK_MEDIA_NOT_READY' });
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer(configs, { alerts: ['Upload failed'] }), task([])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
 });
 
 test('paired retained Locator count errors fail closed with an explicit media-count classification', async () => {
@@ -332,7 +390,7 @@ test('retained-composer media diagnostics classify structural candidates without
   assert.equal(mixed.uiAvatarOrIconCount, 1);
   assert.equal(mixed.possibleUploadAttachmentCount, 1);
   assert.equal(mixed.rawMediaSelectorCount, 2);
-  assert.doesNotMatch(JSON.stringify(mixed), /private\.invalid|private-upload|src=|class|cookie/i);
+  assert.doesNotMatch(JSON.stringify(mixed), /private\.invalid|private-upload|src=|cookie/i);
 });
 
 test('retained-composer media diagnostics fail closed to fixed safe enums and never inspect outside the retained root', async () => {
