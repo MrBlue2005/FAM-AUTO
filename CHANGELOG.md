@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BO - retained-composer Locator media count
+
+- Retained-composer media readiness now performs its existing `img, video` count through the paired exact-root Locator rather than calling Locator traversal on the ElementHandle. The ElementHandle remains in place for root identity, visibility, and structural diagnostics.
+- Missing or failing count operations now fail closed as `FACEBOOK_MEDIA_COUNT_UNAVAILABLE` and retain the existing safe `COUNT_OPERATION_FAILED` diagnostic. Selector, immutable expected-media-count equality, acceptance policy, text/control behavior, marker order, submit, and retry semantics are unchanged.
+
 ## Phase G5.7BL - retained-composer zero-media diagnostics
 
 - The existing retained-composer `img, video` inspection now writes a protected, local-only `ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY` before its unchanged media acceptance decision. It records only bounded structural candidate data and aggregates: tag/dimension/source-scheme enums, visibility/attachment and ancestor booleans, safe category, and fixed count/evaluation result enums.

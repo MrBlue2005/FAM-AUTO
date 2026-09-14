@@ -30,13 +30,15 @@ function collection(items) { return { count: async () => items.length, nth: (ind
 function composerModel(options = {}) {
   const attachments = options.attachments || [];
   const selectors = {
-    'img, video': collection(attachments),
+    'img, video': options.mediaCountThrows ? { count: async () => { throw new Error('count unavailable'); } } : collection(attachments),
     '[aria-busy="true"], [role="progressbar"]': collection(options.busy ? [item()] : []),
     '[role="alert"]': collection(options.alerts || []),
     'button, [role="button"]': collection(options.buttons || []),
   };
-  const handle = { evaluate: async () => options.attached !== false, isVisible: async () => options.visible !== false, locator: (selector) => selectors[selector] || collection([]) };
-  return { handle, locator: {}, editor: options.editor || item({ input: options.text ?? 'immutable snapshot' }) };
+  const handle = { evaluate: async () => options.attached !== false, isVisible: async () => options.visible !== false };
+  if (options.handleHasLocator !== false) handle.locator = (selector) => selectors[selector] || collection([]);
+  const locator = { locator: (selector) => selectors[selector] || collection([]) };
+  return { handle, locator, editor: options.editor || item({ input: options.text ?? 'immutable snapshot' }) };
 }
 function sequenceComposerModel(values) {
   let reads = 0;
@@ -55,6 +57,7 @@ function visualEditor(root) {
 }
 function mediaInspectionHandle(configs, { throws = false } = {}) {
   const root = {
+    isConnected: true,
     querySelectorAll: (selector) => {
       assert.equal(selector, 'img, video');
       return configs.map((config) => {
@@ -79,6 +82,12 @@ function mediaInspectionHandle(configs, { throws = false } = {}) {
     },
   };
   return { evaluate: async (callback, selector) => { if (throws) throw new Error('private evaluation failure'); return callback(root, selector); } };
+}
+function pairedMediaComposer(configs, { countThrows = false } = {}) {
+  const handle = mediaInspectionHandle(configs);
+  handle.isVisible = async () => true;
+  const attachments = countThrows ? { count: async () => { throw new Error('count unavailable'); } } : collection(configs.map(() => item()));
+  return { handle, locator: { locator: (selector) => selector === 'img, video' ? attachments : collection([]) }, editor: item({ input: 'immutable snapshot' }) };
 }
 const immediateWait = async () => {};
 const synchronized = { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: immediateWait };
@@ -262,6 +271,36 @@ test('media requires exact count, ready state, and exposed filename ordering', a
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item({ 'data-filename': 'wrong.jpg' }), item({ 'data-file-name': 'two.png' })] }), task(['C:/safe/one.jpg', 'C:/safe/two.png'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [item()] , busy: true }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_NOT_READY' });
   await assert.rejects(inspectComposerMedia(composerModel({ attachments: [], alerts: [item({ text: 'Upload failed' })] }), task(['C:/safe/one.jpg'])), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+});
+
+test('zero-media count uses the paired retained Locator when the ElementHandle has no Locator API', async () => {
+  const records = [];
+  const composer = pairedMediaComposer([]);
+  assert.equal(typeof composer.handle.locator, 'undefined');
+  await inspectComposerMedia(composer, task([]), { diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) } });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].rawMediaSelectorCount, 0);
+  assert.equal(records[0].countOperationSucceeded, true);
+  assert.equal(records[0].inspectionResult, 'OK');
+});
+
+test('paired retained Locator preserves fail-closed zero-media mismatch before any side effect', async () => {
+  const records = [];
+  const composer = pairedMediaComposer([{ naturalWidth: 24, naturalHeight: 24, attributes: { src: 'https://private.invalid/avatar' } }]);
+  await assert.rejects(inspectComposerMedia(composer, task([]), { diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) } }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].rawMediaSelectorCount, 1);
+  assert.equal(records[0].countOperationSucceeded, true);
+});
+
+test('paired retained Locator count errors fail closed with an explicit media-count classification', async () => {
+  const records = [];
+  await assert.rejects(inspectComposerMedia(pairedMediaComposer([], { countThrows: true }), task([]), {
+    diagnostic: { zeroMediaInspectionSummary: async (value) => records.push(value) },
+  }), { code: 'FACEBOOK_MEDIA_COUNT_UNAVAILABLE' });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].countOperationSucceeded, false);
+  assert.equal(records[0].inspectionResult, 'COUNT_OPERATION_FAILED');
 });
 
 test('retained-composer media diagnostics classify structural candidates without media policy decisions', async () => {

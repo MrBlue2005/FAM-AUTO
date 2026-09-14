@@ -375,13 +375,25 @@ async function inspectRetainedComposerMediaCandidates(handle, rawMediaSelectorCo
 async function inspectComposerMedia(composer, task, options = {}) {
   const handle = await ensureRetainedComposer(composer);
   const expected = expectedMediaNames(task);
-  const attachments = handle.locator?.(RETAINED_COMPOSER_MEDIA_SELECTOR);
-  const count = await attachments?.count?.().catch(() => -1);
+  // The ElementHandle is retained for exact DOM identity and structural
+  // inspection. Playwright traversal/count APIs belong only to its paired
+  // Locator, captured from the same accepted composer root.
+  const rootLocator = composer?.locator;
+  let attachments; let count;
+  try {
+    attachments = rootLocator?.locator?.(RETAINED_COMPOSER_MEDIA_SELECTOR);
+    if (!attachments || typeof attachments.count !== 'function') throw new Error('retained composer locator unavailable');
+    count = await attachments.count();
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('retained composer media count unavailable');
+  } catch {
+    try { await options.diagnostic?.zeroMediaInspectionSummary?.(await inspectRetainedComposerMediaCandidates(handle, -1)); } catch { /* observability only */ }
+    throw failure('FACEBOOK_MEDIA_COUNT_UNAVAILABLE', 'Facebook composer media count is unavailable.');
+  }
   try { await options.diagnostic?.zeroMediaInspectionSummary?.(await inspectRetainedComposerMediaCandidates(handle, count)); } catch { /* observability only */ }
   if (count !== expected.length) throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media does not match the immutable task snapshot.');
-  const busy = await handle.locator?.('[aria-busy="true"], [role="progressbar"]').count?.().catch(() => 0);
+  const busy = await rootLocator?.locator?.('[aria-busy="true"], [role="progressbar"]').count?.().catch(() => 0);
   if (busy > 0) throw failure('FACEBOOK_MEDIA_NOT_READY', 'Facebook composer media is still processing.');
-  const alerts = await handle.locator?.('[role="alert"]').allTextContents?.().catch(() => []);
+  const alerts = await rootLocator?.locator?.('[role="alert"]').allTextContents?.().catch(() => []);
   if ((alerts || []).some((value) => /upload.{0,30}(failed|error)|couldn.t upload/i.test(String(value)))) {
     throw failure('FACEBOOK_MEDIA_MISMATCH', 'Facebook composer media upload failed.');
   }

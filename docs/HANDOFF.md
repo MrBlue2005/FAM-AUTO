@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7BO retained-composer Locator media count
+
+`inspectComposerMedia()` now uses the exact paired retained composer `Locator` for its unchanged scoped `img, video` count. The paired `ElementHandle` remains the authority for root identity/visibility and the local structural diagnostic evaluation. A missing, invalid, or throwing Locator count fails closed as `FACEBOOK_MEDIA_COUNT_UNAVAILABLE`, after recording the existing safe `COUNT_OPERATION_FAILED` summary; it never falls back to a new root or page-wide lookup. Expected-count equality, candidate categories, text, publish control, marker order, submit, and retry semantics are unchanged.
+
 ## G5.7BL retained-composer zero-media diagnostics
 
 `inspectComposerMedia()` keeps its existing exact retained-root selector (`img, video`) and fail-closed count policy. Before that unchanged decision, it now best-effort records one protected local `ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY` for the exact task. The summary uses only the retained composer root and whitelisted structural information: candidate tag, visibility/attachment, bucketed intrinsic dimensions, source scheme enum, attribute-presence/ancestor booleans, bounded depth, safe candidate category, aggregate counters, and a fixed count/evaluation result enum.
