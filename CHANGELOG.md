@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BY - retained-composer Locator for publish controls
+
+- Scoped publish-control traversal and its local diagnostic now use the exact paired retained composer `Locator`. The retained `ElementHandle` continues to provide identity, attachment, visibility, and structural checks; no new root, dialog, or page-wide query is introduced.
+- The selector, labels/localization, role, visibility, enabled and ambiguity rules, local diagnostic privacy boundary, marker order, click, submit, retry, and publication semantics are unchanged.
+
 ## Phase G5.7BU - retained-composer publish-control diagnostics
 
 - Added a protected, local-only `PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY` immediately before existing scoped publish-control resolution. It observes only the already-retained composer and records bounded structural/rejection categories and aggregate counters; identical snapshots coalesce and candidates are capped at 16.

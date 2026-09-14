@@ -478,7 +478,9 @@ async function inspectScopedPublishControlCandidates(composer) {
   const handle = await ensureRetainedComposer(composer);
   let candidates; let count = 0;
   try {
-    candidates = handle.locator?.(PUBLISH_CONTROL_DIAGNOSTIC_SELECTOR);
+    // The paired Locator was captured with this exact ElementHandle when the
+    // composer root was accepted. It is the only Playwright traversal root.
+    candidates = composer?.locator?.locator?.(PUBLISH_CONTROL_DIAGNOSTIC_SELECTOR);
     count = await candidates?.count?.();
     if (!Number.isSafeInteger(count) || count < 0) throw new Error('invalid retained control count');
   } catch {
@@ -535,11 +537,11 @@ async function inspectScopedPublishControlCandidates(composer) {
 }
 
 async function findScopedPublishControl(composer, options = {}) {
-  const handle = await ensureRetainedComposer(composer);
+  await ensureRetainedComposer(composer);
   // The inspection is local-only and best-effort; it cannot influence this
   // unchanged resolver, its retained root, or the later click boundary.
   try { await options.diagnostic?.publishControlDiscoverySummary?.(await inspectScopedPublishControlCandidates(composer)); } catch { /* observability only */ }
-  const candidates = handle.locator?.(PUBLISH_CONTROL_SELECTOR);
+  const candidates = composer?.locator?.locator?.(PUBLISH_CONTROL_SELECTOR);
   const count = await candidates?.count?.().catch(() => 0);
   const matches = [];
   for (let index = 0; index < count; index += 1) {

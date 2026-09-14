@@ -35,6 +35,7 @@ function composerModel(options = {}) {
     '[aria-busy="true"], [role="progressbar"]': collection(options.busy ? [item()] : []),
     '[role="alert"]': collection(options.alerts || []),
     'button, [role="button"]': collection(options.buttons || []),
+    'button, [role], input, [type="submit"]': collection(options.buttons || []),
   };
   const handle = { evaluate: async () => options.attached !== false, isVisible: async () => options.visible !== false };
   if (options.handleHasLocator !== false) handle.locator = (selector) => selectors[selector] || collection([]);
@@ -65,9 +66,7 @@ function publishControlItem(config = {}) {
   };
 }
 function publishComposer(controls = [], outsideControls = []) {
-  const retained = {
-    evaluate: async (callback) => callback({ isConnected: true }),
-    isVisible: async () => true,
+  const pairedLocator = {
     locator: (selector) => {
       if (selector === 'button, [role], input, [type="submit"]') return collection(controls);
       if (selector === 'button, [role="button"]') return collection(controls.filter((control) => {
@@ -77,9 +76,14 @@ function publishComposer(controls = [], outsideControls = []) {
       return collection([]);
     },
   };
+  const retained = {
+    evaluate: async (callback) => callback({ isConnected: true }),
+    isVisible: async () => true,
+  };
+  retained.locator = () => { throw new Error('ElementHandle traversal is forbidden for publish controls'); };
   // Outside controls intentionally have no route into the retained root.
   void outsideControls;
-  return { handle: retained, locator: { locator: () => collection([]) }, editor: item({ input: 'immutable snapshot' }) };
+  return { handle: retained, locator: pairedLocator, editor: item({ input: 'immutable snapshot' }) };
 }
 function sequenceComposerModel(values) {
   let reads = 0;
@@ -454,6 +458,19 @@ test('publish control is exactly one visible enabled control inside the retained
   await assert.rejects(findScopedPublishControl(composerModel({ buttons: [item({ text: 'Post', enabled: false })] })), { code: 'FACEBOOK_PUBLISH_CONTROL_MISSING' });
 });
 
+test('publish control uses the exact paired retained Locator when the ElementHandle has no Locator API', async () => {
+  const valid = item({ tagName: 'BUTTON', text: 'Post' });
+  const composer = composerModel({ handleHasLocator: false, buttons: [valid] });
+  const diagnostic = [];
+  assert.equal(await findScopedPublishControl(composer, {
+    diagnostic: { publishControlDiscoverySummary: async (summary) => diagnostic.push(summary) },
+  }), valid);
+  assert.equal(diagnostic.length, 1);
+  assert.equal(diagnostic[0].rawCandidateCount, 1);
+  assert.equal(diagnostic[0].labelMatchedCount, 1);
+  assert.equal(diagnostic[0].acceptedCandidateCount, 1);
+});
+
 test('retained-composer publish-control diagnostics classify bounded candidates without changing resolution', async () => {
   const accepted = await inspectScopedPublishControlCandidates(publishComposer([publishControlItem({ text: 'Post' })]));
   assert.equal(accepted.rawCandidateCount, 1);
@@ -495,4 +512,12 @@ test('publish-control diagnostics remain retained-root-only and never store raw 
   assert.equal(summary.candidates[0].rejection, 'WRONG_ROLE');
   assert.doesNotMatch(JSON.stringify(summary), /Private target text|secret aria label|cookie|https?:/i);
   assert.equal(summary.candidates[0].tagName, 'SPAN');
+});
+
+test('publish-control discovery never reacquires a generic root or traverses the ElementHandle', async () => {
+  const valid = publishControlItem({ text: 'Publish' });
+  const composer = publishComposer([valid]);
+  assert.equal(await findScopedPublishControl(composer), valid);
+  const diagnostic = await inspectScopedPublishControlCandidates(composer);
+  assert.equal(diagnostic.acceptedCandidateCount, 1);
 });

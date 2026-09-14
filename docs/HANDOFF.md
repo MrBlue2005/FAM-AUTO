@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7BY retained-composer Locator for publish controls
+
+Publish-control discovery now traverses only the exact paired `composer.locator` that was retained with the accepted composer `ElementHandle`; it no longer attempts Locator traversal on that ElementHandle. The handle remains the authority for DOM identity, attachment, visibility, and structural evaluation. The reviewed static selector (`button, [role="button"]`), exact Romanian/English label matching, visibility/enabled checks, fail-closed ambiguity handling, no-reacquisition policy, marker ordering, click, submit, and retry semantics are unchanged.
+
 ## G5.7BU retained-composer publish-control diagnostics
 
 The real adapter now records a best-effort, local-only protected `PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY` immediately before its existing retained-composer publish-control resolver. It inspects only the exact already-retained composer root; there is no page-wide control query, dialog reacquisition, or fallback. Each summary has bounded aggregate counters and at most 16 structural candidates, each with fixed tag/role/type, visibility/enablement/attachment/form/ARIA/tab/depth booleans or bounded values, plus fixed text-classification and rejection enums. Repeated identical summaries coalesce and at most three distinct snapshots are retained.
