@@ -7,6 +7,8 @@ const {
   verifyCanonicalFacebookGroupTarget,
   normalizeComposerText,
   verifyComposerText,
+  contentMismatchDiagnostic,
+  CONTENT_HASH_PREFIX_LENGTH,
   inspectComposerMedia,
   findScopedPublishControl,
 } = require('../app/local-agent/FacebookLiveReadiness');
@@ -46,6 +48,52 @@ test('composer text uses only harmless normalization and rejects missing, change
   await verifyComposerText(composerModel({ text: ' immutable snapshot ' }), 'immutable snapshot');
   await assert.rejects(verifyComposerText(composerModel({ text: 'changed' }), 'immutable snapshot'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
   await assert.rejects(verifyComposerText(composerModel({ text: 'immutable snapshot extra' }), 'immutable snapshot'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+});
+
+test('content mismatch diagnostics preserve current normalization semantics without emitting on exact or equivalent text', async () => {
+  const records = [];
+  const diagnostic = { contentMismatchSummary: (value) => records.push(value) };
+  await verifyComposerText(composerModel({ text: 'immutable snapshot' }), 'immutable snapshot', { diagnostic });
+  await verifyComposerText(composerModel({ text: 'A\nB' }), 'A\r\nB', { diagnostic });
+  await verifyComposerText(composerModel({ text: 'A B' }), 'A\u00a0B', { diagnostic });
+  await verifyComposerText(composerModel({ text: 'Caf\u00e9' }), 'Cafe\u0301', { diagnostic });
+  await verifyComposerText(composerModel({ text: ' immutable snapshot ' }), 'immutable snapshot', { diagnostic });
+  assert.equal(records.length, 0);
+});
+
+test('content mismatch diagnostics distinguish empty, duplicated, and one-character text without retaining content', async () => {
+  const records = [];
+  const diagnostic = { contentMismatchSummary: (value) => records.push(value) };
+  await assert.rejects(verifyComposerText(composerModel({ text: '' }), 'private expected text', { diagnostic }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  await assert.rejects(verifyComposerText(composerModel({ text: 'abab' }), 'ab', { diagnostic }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  await assert.rejects(verifyComposerText(composerModel({ text: 'abce' }), 'abcd', { diagnostic }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  assert.equal(records[0].lengthRelation, 'EMPTY');
+  assert.equal(records[1].lengthRelation, 'DOUBLE_LENGTH');
+  assert.equal(records[2].lengthRelation, 'EXACT_LENGTH');
+  assert.notEqual(records[2].expectedSha256Prefix, records[2].actualSha256Prefix);
+  assert.equal(records[2].expectedSha256Prefix.length, CONTENT_HASH_PREFIX_LENGTH);
+  assert.equal(records[2].insertionMethod, 'CLIPBOARD_PASTE');
+  assert.equal(records[2].verificationReadCount, 1);
+  assert.equal(records[2].verificationReadTiming, 'FIRST_VERIFICATION_READ');
+  assert.doesNotMatch(JSON.stringify(records), /private expected text|abab|abce|abcd/);
+});
+
+test('content mismatch diagnostics record bounded structural counters and stage hashes only', () => {
+  const expectedText = '  PRIVATE_EXPECTED\r\nB\u00a0 ';
+  const actualText = ' PRIVATE_ACTUAL\nB  X  ';
+  const result = contentMismatchDiagnostic(expectedText, actualText);
+  assert.equal(result.expectedLineCount, 2);
+  assert.equal(result.actualLineCount, 2);
+  assert.equal(result.expectedNewlineCount, 1);
+  assert.equal(result.actualNewlineCount, 1);
+  assert.equal(result.expectedLeadingWhitespaceCount, 2);
+  assert.equal(result.actualLeadingWhitespaceCount, 1);
+  assert.equal(result.expectedTrailingWhitespaceCount, 2);
+  assert.equal(result.actualTrailingWhitespaceCount, 2);
+  assert.equal(result.normalizationStages.raw.expected.length, expectedText.length);
+  assert.equal(result.normalizationStages.final.expected.sha256Prefix.length, CONTENT_HASH_PREFIX_LENGTH);
+  assert.deepEqual(Object.keys(result.normalizationStages), ['raw', 'nfc', 'crlfToLf', 'nbspToSpace', 'final']);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_EXPECTED|PRIVATE_ACTUAL/);
 });
 
 test('media requires exact count, ready state, and exposed filename ordering', async () => {

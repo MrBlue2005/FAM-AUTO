@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7AW privacy-safe content-mismatch diagnostics
+
+When retained-composer verification raises `FACEBOOK_CONTENT_MISMATCH`, the Local Agent may write exactly one terminal `CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY` in its existing local composer-diagnostics file. It records only bounded expected/actual normalized lengths, short 16-hex SHA-256 prefixes, line/newline and leading/trailing-whitespace counts, a fixed length-relation enum, `CLIPBOARD_PASTE`, a fixed verification-read timing/count, raw-stage lengths, and safe length/hash pairs for NFC, CRLF-to-LF, NBSP-to-space, and final normalized stages. It never writes composer text, task text, DOM text, cookies, identities, credentials, tokens, media paths, or task payloads. The summary is protected from ordinary bounded-log pressure.
+
+This checkpoint is observability only. It does not alter text insertion, NFC/CRLF/NBSP/trim normalization, exact equality, editor binding, media readiness, control discovery, lease checks, marker ordering, submit, or retry behavior. Diagnostic failures are ignored so they cannot change a safe pre-marker failure or successful execution.
+
 ## G5.7AT zero-media live create-post branch
 
 The real adapter passes `expectedMediaCount` to `createPost()` only from the immutable live task snapshot. An exact count of zero skips `uploadImage()` entirely and proceeds to unchanged text insertion; every nonzero snapshot retains the existing uploader behavior. The later retained-composer media inspection is unchanged and still requires zero attachments, no upload processing, and no upload error for text-only posts. Missing, malformed, or inconsistent media snapshots fail closed before preparation; this change neither alters marker order nor authorizes a hosted task, browser launch, or publication.

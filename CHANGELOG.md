@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AW - privacy-safe content-mismatch diagnostics
+
+- A `FACEBOOK_CONTENT_MISMATCH` now writes one local, terminal-safe `CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY`. It contains only bounded normalized lengths, line/newline and surrounding-whitespace counts, fixed insertion/read enums, length relation, raw-stage lengths, and 16-hex-character SHA-256 prefixes for the existing post-raw normalization stages.
+- Raw Facebook composer text, task text, DOM text, cookies, credentials, and tokens are never persisted. The existing NFC, CRLF-to-LF, NBSP-to-space, trim, and exact-equality behavior is unchanged; diagnostics are best-effort and cannot affect task execution.
+
 ## Phase G5.7AT - zero-media live create-post branch
 
 - Real live execution derives an exact expected media count from the immutable task snapshot. Exactly zero media skips `uploadImage()` and continues through the unchanged text path; nonzero media retains the existing uploader and input validation.

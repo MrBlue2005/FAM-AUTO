@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { COMPOSER_EDITOR_SELECTOR, COMPOSER_ROOT_SELECTOR, GROUP_COMPOSER_STRUCTURAL_SELECTOR, createRootPair, eligibleEditors, inspectRootLocalEditorShapes, inspectRootLocalSelectorParity, openComposer, summarizeEditorShapes, summarizePreSelectorEditorShapes } = require('../app/facebook/composer');
-const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
+const { createComposerAcquisitionDiagnosticSink, sanitizeCandidate, sanitizePreSelectorShapeSummary, sanitizeSelectorParity, sanitizeSelectorParitySummary, sanitizeContentMismatch } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
 function structuralNode(config = {}) {
   const attributes = {
@@ -420,6 +420,47 @@ test('selector parity records are bounded, private, and retain their terminal ag
     assert.equal(sanitized.selectorParityResult, 'SAFE_EVALUATION_ERROR');
     assert.equal(sanitized.branchCounts.roleTextboxCount, 2);
     assert.deepEqual(sanitizeSelectorParitySummary({ samples: 1, unknown: 9 }), { samples: 1, bothZeroCount: 0, bothNonzeroEqualCount: 0, bothNonzeroDifferentCount: 0, domNonzeroPlaywrightZeroCount: 0, domZeroPlaywrightNonzeroCount: 0, rootUnavailableCount: 0, safeEvaluationErrorCount: 0 });
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('content mismatch terminal summary is fixed, private, and survives bounded diagnostic log pressure', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-content-mismatch-retention-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 1, maxBytes: 12000, now: () => '2026-09-14T00:00:00.000Z' });
+    const record = sink.forTask('content_mismatch');
+    for (let index = 0; index < 12; index += 1) record.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    record.contentMismatchSummary({
+      expectedNormalizedLength: 20, actualNormalizedLength: 0,
+      expectedSha256Prefix: '0123456789abcdef', actualSha256Prefix: 'fedcba9876543210',
+      expectedLineCount: 2, actualLineCount: 0,
+      expectedLeadingWhitespaceCount: 1, actualLeadingWhitespaceCount: 0,
+      expectedTrailingWhitespaceCount: 1, actualTrailingWhitespaceCount: 0,
+      expectedNewlineCount: 1, actualNewlineCount: 0,
+      lengthRelation: 'EMPTY', insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1,
+      verificationReadTiming: 'FIRST_VERIFICATION_READ',
+      normalizationStages: {
+        raw: { expected: { length: 22 }, actual: { length: 0 } },
+        nfc: { expected: { length: 22, sha256Prefix: '0123456789abcdef' }, actual: { length: 0, sha256Prefix: 'fedcba9876543210' } },
+        crlfToLf: { expected: { length: 21, sha256Prefix: '0123456789abcdef' }, actual: { length: 0, sha256Prefix: 'fedcba9876543210' } },
+        nbspToSpace: { expected: { length: 21, sha256Prefix: '0123456789abcdef' }, actual: { length: 0, sha256Prefix: 'fedcba9876543210' } },
+        final: { expected: { length: 20, sha256Prefix: '0123456789abcdef' }, actual: { length: 0, sha256Prefix: 'fedcba9876543210' } },
+      },
+      text: 'PRIVATE_FACEBOOK_COMPOSER_TEXT', cookie: 'never persist',
+    });
+    const saved = fs.readFileSync(path.join(directory, 'content_mismatch.json'), 'utf8');
+    const data = JSON.parse(saved);
+    const summary = data.records.find((item) => item.stage === 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY');
+    assert.ok(summary);
+    assert.equal(summary.contentMismatch.lengthRelation, 'EMPTY');
+    assert.equal(summary.contentMismatch.insertionMethod, 'CLIPBOARD_PASTE');
+    assert.equal(summary.contentMismatch.normalizationStages.final.expected.length, 20);
+    assert.ok(data.records.length <= 4);
+    assert.doesNotMatch(saved, /PRIVATE_FACEBOOK_COMPOSER_TEXT|never persist|cookie/);
+    const sanitized = sanitizeContentMismatch({ expectedNormalizedLength: 9999, unknown: 'private', lengthRelation: 'untrusted', insertionMethod: 'untrusted' });
+    assert.equal(sanitized.expectedNormalizedLength, 1000);
+    assert.equal(sanitized.lengthRelation, 'EXACT_LENGTH');
+    assert.equal(sanitized.insertionMethod, 'OTHER_FIXED_METHOD');
+    assert.equal(Object.hasOwn(sanitized, 'unknown'), false);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 

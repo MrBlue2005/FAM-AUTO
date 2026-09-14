@@ -20,6 +20,7 @@ const STAGES = new Set([
   'EDITOR_SHAPE_SNAPSHOT', 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY',
   'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
+  'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -31,6 +32,7 @@ const REASON_CLASSES = new Set([
   'EDITOR_SHAPE_SNAPSHOT', 'EDITOR_SHAPE_SUMMARY',
   'PRE_SELECTOR_EDITOR_SHAPE_SNAPSHOT', 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY',
   'EDITOR_SELECTOR_PARITY_SNAPSHOT', 'EDITOR_SELECTOR_PARITY_SUMMARY',
+  'CONTENT_MISMATCH',
 ]);
 
 const COUNTERS = new Set([
@@ -67,10 +69,21 @@ const SELECTOR_PARITY_RESULTS = new Set([
   'DOM_NONZERO_PLAYWRIGHT_ZERO', 'DOM_ZERO_PLAYWRIGHT_NONZERO',
   'ROOT_UNAVAILABLE', 'SAFE_EVALUATION_ERROR',
 ]);
+const CONTENT_MISMATCH_LENGTH_RELATIONS = new Set([
+  'EXACT_LENGTH', 'SHORTER', 'LONGER', 'DOUBLE_LENGTH', 'EMPTY',
+]);
+const CONTENT_MISMATCH_INSERTION_METHODS = new Set([
+  'CLIPBOARD_PASTE', 'FILL', 'TYPE', 'PRESS_INSERT_TEXT', 'DOM_SETTER', 'OTHER_FIXED_METHOD',
+]);
+const CONTENT_MISMATCH_READ_TIMINGS = new Set([
+  'IMMEDIATELY_AFTER_INSERTION', 'AFTER_EXISTING_SETTLE', 'FIRST_VERIFICATION_READ',
+]);
+const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const PROTECTED_STAGES = new Set([
   PRE_SELECTOR_SNAPSHOT_STAGE,
   PRE_SELECTOR_SUMMARY_STAGE,
   SELECTOR_PARITY_SUMMARY_STAGE,
+  CONTENT_MISMATCH_SUMMARY_STAGE,
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -162,6 +175,47 @@ function sanitizeSelectorParitySummary(value = {}) {
   return Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0]));
 }
 
+function sanitizeHashPrefix(value) {
+  return typeof value === 'string' && /^[a-f0-9]{12,16}$/.test(value) ? value : null;
+}
+
+function sanitizeContentMismatchStage(value = {}) {
+  return {
+    expected: { length: boundedInteger(value.expected?.length) || 0, sha256Prefix: sanitizeHashPrefix(value.expected?.sha256Prefix) },
+    actual: { length: boundedInteger(value.actual?.length) || 0, sha256Prefix: sanitizeHashPrefix(value.actual?.sha256Prefix) },
+  };
+}
+
+function sanitizeContentMismatch(value = {}) {
+  const count = (key) => boundedInteger(value[key]) || 0;
+  const stages = value.normalizationStages || {};
+  return {
+    expectedNormalizedLength: count('expectedNormalizedLength'),
+    actualNormalizedLength: count('actualNormalizedLength'),
+    expectedSha256Prefix: sanitizeHashPrefix(value.expectedSha256Prefix),
+    actualSha256Prefix: sanitizeHashPrefix(value.actualSha256Prefix),
+    expectedLineCount: count('expectedLineCount'),
+    actualLineCount: count('actualLineCount'),
+    expectedLeadingWhitespaceCount: count('expectedLeadingWhitespaceCount'),
+    actualLeadingWhitespaceCount: count('actualLeadingWhitespaceCount'),
+    expectedTrailingWhitespaceCount: count('expectedTrailingWhitespaceCount'),
+    actualTrailingWhitespaceCount: count('actualTrailingWhitespaceCount'),
+    expectedNewlineCount: count('expectedNewlineCount'),
+    actualNewlineCount: count('actualNewlineCount'),
+    lengthRelation: CONTENT_MISMATCH_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EXACT_LENGTH',
+    insertionMethod: CONTENT_MISMATCH_INSERTION_METHODS.has(value.insertionMethod) ? value.insertionMethod : 'OTHER_FIXED_METHOD',
+    verificationReadCount: Math.max(1, count('verificationReadCount')),
+    verificationReadTiming: CONTENT_MISMATCH_READ_TIMINGS.has(value.verificationReadTiming) ? value.verificationReadTiming : 'FIRST_VERIFICATION_READ',
+    normalizationStages: {
+      raw: sanitizeContentMismatchStage(stages.raw),
+      nfc: sanitizeContentMismatchStage(stages.nfc),
+      crlfToLf: sanitizeContentMismatchStage(stages.crlfToLf),
+      nbspToSpace: sanitizeContentMismatchStage(stages.nbspToSpace),
+      final: sanitizeContentMismatchStage(stages.final),
+    },
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -212,7 +266,9 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       try {
         const { counters, flags } = sanitizeEvidence(evidence);
         const record = { timestamp: now(), task_id: safeId, stage, reason_class: reasonClass, counters, flags };
-        if (shape?.selectorParity === true) {
+        if (shape?.contentMismatch === true) {
+          record.contentMismatch = sanitizeContentMismatch(shape.value);
+        } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
         } else if (shape?.preSelector === true) {
@@ -224,7 +280,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -260,6 +316,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       preSelectorShapeSummary: (summary) => persist(PRE_SELECTOR_SUMMARY_STAGE, 'PRE_SELECTOR_EDITOR_SHAPE_SUMMARY', {}, true, { summary, preSelector: true }),
       selectorParity: (value) => persist(SELECTOR_PARITY_SNAPSHOT_STAGE, 'EDITOR_SELECTOR_PARITY_SNAPSHOT', {}, false, { value, selectorParity: true }),
       selectorParitySummary: (summary) => persist(SELECTOR_PARITY_SUMMARY_STAGE, 'EDITOR_SELECTOR_PARITY_SUMMARY', {}, true, { summary, selectorParity: true }),
+      contentMismatchSummary: (value) => persist(CONTENT_MISMATCH_SUMMARY_STAGE, 'CONTENT_MISMATCH', {}, true, { value, contentMismatch: true }),
     });
   }
 
@@ -281,6 +338,7 @@ module.exports = {
   sanitizePreSelectorShapeSummary,
   sanitizeSelectorParity,
   sanitizeSelectorParitySummary,
+  sanitizeContentMismatch,
   STAGES,
   createComposerAcquisitionDiagnosticSink,
 };
