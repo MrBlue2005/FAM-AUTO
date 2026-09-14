@@ -58,7 +58,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const findPublishControl = options.findPublishControl || findScopedPublishControl;
   const verifyPublishControl = options.verifyPublishControl || ensureScopedPublishControl;
   const composerDiagnostics = options.composerDiagnostics || createComposerAcquisitionDiagnosticSink();
-  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let traceStage = () => {}; let taskDiagnostics = null;
+  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let traceStage = () => {}; let taskDiagnostics = null; let textInsertionMethod = 'CLIPBOARD_PASTE';
 
   function requirePrepared(task) {
     if (!browser || preparedTaskId !== task?.task_id || !composer) throw failure('PUBLISHER_NOT_PREPARED', 'Live publisher has not prepared this exact task.');
@@ -78,7 +78,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     }
   }
   async function cleanup() {
-    const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; traceStage = () => {}; taskDiagnostics = null;
+    const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; traceStage = () => {}; taskDiagnostics = null; textInsertionMethod = 'CLIPBOARD_PASTE';
     if (current?.context) await current.context.close().catch(() => {});
   }
   async function verifyCurrentReadiness(task) {
@@ -87,7 +87,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
     verifyTarget(browser.page.url(), targetCanonical);
     await verifyComposer(composer);
-    await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
+    await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
     await verifyMedia(composer, task);
     publishButton = await findPublishControl(composer);
     return { sessionReady: true, targetReady: true, composerReady: true };
@@ -132,8 +132,9 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
           diagnostic: taskDiagnostics,
         });
         composer = preparedComposer(prepared);
+        textInsertionMethod = prepared?.insertionMethod || textInsertionMethod;
         await verifyComposer(composer);
-        await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: 'CLIPBOARD_PASTE', synchronizeAfterPaste: true, verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC' });
+        await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, synchronizeAfterPaste: true, verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC' });
         await verifyMedia(composer, task);
         trace('COMPOSER_READY');
         preparedTaskId = task.task_id;
@@ -149,7 +150,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       await verifyAuthenticatedFacebookAccountId(browser.page, expectedFacebookAccountId);
       verifyTarget(browser.page.url(), targetCanonical);
       await verifyComposer(composer);
-      await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
+      await verifyText(composer, task.payload?.post?.text, { diagnostic: taskDiagnostics, insertionMethod: textInsertionMethod, verificationReadCount: 1, verificationReadTiming: 'FIRST_VERIFICATION_READ' });
       await verifyMedia(composer, task);
       await verifyPublishControl(publishButton, composer);
     },

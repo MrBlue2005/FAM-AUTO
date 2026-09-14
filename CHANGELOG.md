@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BC - retained-editor multiline insertion
+
+- Immutable multiline live-post text no longer uses the clipboard route that was observed to collapse an internal line break. When, and only when, an exact retained composer editor receives multiline source text, each source line is entered through that editor and adjacent lines are separated by its scoped `Shift+Enter` action.
+- Single-line and legacy Local Studio paths retain `CLIPBOARD_PASTE`. The existing normalization, bounded two-second exact verification, media/control checks, marker order, single-submit guard, and no-retry behavior are unchanged. Multiline insertion errors or mismatch remain pre-marker failures.
+
 ## Phase G5.7AZ - retained-editor post-paste synchronization
 
 - After the immutable text is pasted, the real adapter polls only the already-retained editor for at most two seconds, with a fixed 100 ms interval. It passes immediately only when the existing NFC/CRLF-to-LF/NBSP-to-space/trim normalization produces an exact immutable-text match; empty, shorter, duplicated, longer, or same-length-different text still fails closed.

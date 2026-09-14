@@ -635,19 +635,19 @@ function fakeFacebookPublisher(options = {}) {
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
   };
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
-  const preparePostInputs = [];
+  const preparePostInputs = []; const textVerificationOptions = [];
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context }; },
-    openGroup: async () => { targetNavigated = true; calls.push('NAVIGATE_FAKE'); }, createPost: async (_page, post, composerOptions) => { calls.push('PREPARE_POST'); preparePostInputs.push({ post, composerOptions }); return { composer }; },
+    openGroup: async () => { targetNavigated = true; calls.push('NAVIGATE_FAKE'); }, createPost: async (_page, post, composerOptions) => { calls.push('PREPARE_POST'); preparePostInputs.push({ post, composerOptions }); return { composer, insertionMethod: options.insertionMethod }; },
     requirePreparedComposer: (prepared) => prepared?.composer || (() => { throw Object.assign(new Error('composer missing'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' }); })(),
     verifyComposer: async () => { composerChecks += 1; if (options.composerError && (!options.composerErrorAt || composerChecks >= options.composerErrorAt)) throw Object.assign(new Error('composer changed'), { code: options.composerError }); },
-    verifyText: async () => { textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
+    verifyText: async (_composer, _text, verificationOptions) => { textVerificationOptions.push(verificationOptions); textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
     verifyMedia: async () => { mediaChecks += 1; if (options.content?.mediaReady === false && (!options.contentErrorAt || mediaChecks >= options.contentErrorAt)) throw Object.assign(new Error('media mismatch'), { code: 'FACEBOOK_MEDIA_MISMATCH' }); },
     findPublishControl: async () => { publishLookups += 1; if (options.publishError && (!options.publishErrorAt || publishLookups >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); return button; },
     verifyPublishControl: async () => { publishChecks += 1; if (options.publishError && (!options.publishErrorAt || publishChecks >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); },
     verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
   });
-  return { adapter, calls, clicks: () => clicks, closed: () => closed, preparePostInputs };
+  return { adapter, calls, clicks: () => clicks, closed: () => closed, preparePostInputs, textVerificationOptions };
 }
 
 test('real Facebook publisher adapter uses existing browser/navigation/composer seams but only submit can click', async () => {
@@ -674,6 +674,21 @@ test('real adapter derives the create-post media branch only from its immutable 
     assert.equal(fake.preparePostInputs[0].post.media.length, expectedMediaCount);
     await fake.adapter.cleanup();
   }
+});
+
+test('real adapter retains the multiline insertion diagnostic through preparation and post-lease readiness', async () => {
+  const target = { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' };
+  const task = liveFixture({ payload: { ...liveFixture().payload, target } });
+  const fake = fakeFacebookPublisher({ insertionMethod: 'RETAINED_EDITOR_SHIFT_ENTER' });
+  await fake.adapter.prepare(task);
+  await fake.adapter.verifyReady(task);
+  await fake.adapter.verifyAfterLeaseReadiness(task);
+  assert.equal(fake.textVerificationOptions.length, 3);
+  assert.deepEqual(
+    fake.textVerificationOptions.map((options) => options.insertionMethod),
+    ['RETAINED_EDITOR_SHIFT_ENTER', 'RETAINED_EDITOR_SHIFT_ENTER', 'RETAINED_EDITOR_SHIFT_ENTER'],
+  );
+  await fake.adapter.cleanup();
 });
 
 test('real adapter and executor fail closed for malformed immutable media before marker or submit', async () => {

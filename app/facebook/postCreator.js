@@ -20,11 +20,11 @@ async function createPost(page, post, composerOptions = {}) {
   const identityResult = await selectPostingIdentity(page, post);
   if (identityResult.selected) console.log(`Postarea va fi facuta ca: ${identityResult.actorName}`);
   if (!skipMediaUpload) await uploadImage(page, post, composer);
-  await writePostText(page, post.text, composer);
+  const textWrite = await writePostText(page, post.text, composer);
   console.log('Postarea a fost pregatita.');
   // Legacy callers may ignore this optional metadata. Real live execution
   // consumes it to retain only the composer created by this operation.
-  return { composer };
+  return { composer, insertionMethod: textWrite?.insertionMethod };
 }
 
 module.exports = { createPost };

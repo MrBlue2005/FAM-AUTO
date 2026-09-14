@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7BC retained-editor multiline insertion
+
+The real live adapter keeps the exact retained composer editor as the sole authority for multiline text entry. For source text containing an LF, CRLF, or CR separator, `writePostText()` enters each source line through that editor and sends `Shift+Enter` only between lines. It does not use page-wide keyboard input, a new editor lookup, DOM text mutation, or clipboard state for that branch. Trailing empty split segments are not converted into an additional soft break, matching the existing immutable comparison's trim semantics. Single-line and legacy Local Studio paths remain on their prior clipboard-paste behavior.
+
+The existing NFC, CRLF-to-LF, NBSP-to-space, trim, exact-equality, immediate-read, 100 ms polling, 2,000 ms maximum synchronization, and 21-read bound are unchanged. The new fixed safe diagnostic insertion enum is `RETAINED_EDITOR_SHIFT_ENTER`; no raw text is persisted. A failure remains `FACEBOOK_CONTENT_MISMATCH` before media readiness, scoped publish-control discovery, lease renewal, `ATTEMPT_STARTED`, submit, or a Facebook click.
+
 ## G5.7AZ retained-editor post-paste synchronization
 
 Immediately after `writePostText()` completes its clipboard paste, real live execution performs a short bounded exact-match observation of that same retained editor before it permits composer preparation to continue. The default bound is two seconds with a 100 ms poll interval. Every read uses the unchanged NFC, CRLF-to-LF, NBSP-to-space, trim, and exact-equality contract; there is no partial-match acceptance, editor lookup, page-wide fallback, correction, or retry. A match passes immediately. A timeout remains `FACEBOOK_CONTENT_MISMATCH` before media/control readiness, lease renewal, `ATTEMPT_STARTED`, submit, or any click.

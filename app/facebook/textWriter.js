@@ -1,3 +1,34 @@
+const CLIPBOARD_PASTE = 'CLIPBOARD_PASTE';
+const RETAINED_EDITOR_SHIFT_ENTER = 'RETAINED_EDITOR_SHIFT_ENTER';
+
+function failure(code, message) { return Object.assign(new Error(message), { code }); }
+
+function multilineLines(value) {
+  const lines = String(value ?? '').split(/\r\n?|\n/);
+  // Verification keeps its long-standing trim semantics. Do not manufacture a
+  // trailing soft break for a source terminator that the immutable comparison
+  // deliberately ignores.
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+async function writeRetainedMultilineText(field, text) {
+  if (typeof field.pressSequentially !== 'function' || typeof field.press !== 'function') {
+    throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The retained Facebook composer cannot accept multiline text.');
+  }
+  const lines = multilineLines(text);
+  for (let index = 0; index < lines.length; index += 1) {
+    try {
+      if (lines[index]) await field.pressSequentially(lines[index]);
+      // Shift+Enter is the reviewed Facebook composer line-break action. It is
+      // issued through the exact retained editor, never page-wide keyboard state.
+      if (index < lines.length - 1) await field.press('Shift+Enter');
+    } catch {
+      throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'The retained Facebook composer cannot accept multiline text.');
+    }
+  }
+}
+
 async function writePostText(page, text, preparedComposer = null) {
   const handle = preparedComposer?.handle;
   const field = handle
@@ -6,11 +37,24 @@ async function writePostText(page, text, preparedComposer = null) {
   if (handle && !field) throw Object.assign(new Error('The prepared composer text field was not retained.'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });
   if (typeof field.waitFor === 'function') await field.waitFor({ state: 'visible', timeout: 30000 });
   else await field.waitForElementState?.('visible', { timeout: 30000 });
-  console.log('Introduc textul prin paste pentru a evita autofill/tag-uri Facebook.');
   await field.click();
+
+  if (handle && /\r\n?|\n/.test(String(text ?? ''))) {
+    console.log('Introduc text multiline pe editorul retinut.');
+    await writeRetainedMultilineText(field, text);
+    console.log('Text introdus.');
+    return { insertionMethod: RETAINED_EDITOR_SHIFT_ENTER };
+  }
+
+  console.log('Introduc textul prin paste pentru a evita autofill/tag-uri Facebook.');
   await page.evaluate(async (value) => { await navigator.clipboard.writeText(value); }, text);
   await page.keyboard.press('Control+V');
   console.log('Text introdus.');
+  return { insertionMethod: CLIPBOARD_PASTE };
 }
 
-module.exports = { writePostText };
+module.exports = {
+  CLIPBOARD_PASTE,
+  RETAINED_EDITOR_SHIFT_ENTER,
+  writePostText,
+};

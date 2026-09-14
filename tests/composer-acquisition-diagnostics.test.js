@@ -470,6 +470,11 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('content mismatch diagnostics retain the fixed retained-editor multiline insertion enum', () => {
+  const sanitized = sanitizeContentMismatch({ insertionMethod: 'RETAINED_EDITOR_SHIFT_ENTER' });
+  assert.equal(sanitized.insertionMethod, 'RETAINED_EDITOR_SHIFT_ENTER');
+});
+
 function eligibilityRoot(configs) {
   const locatorFor = (config = {}) => {
     const node = {
