@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7AT - zero-media live create-post branch
+
+- Real live execution derives an exact expected media count from the immutable task snapshot. Exactly zero media skips `uploadImage()` and continues through the unchanged text path; nonzero media retains the existing uploader and input validation.
+- Composer-local media readiness remains mandatory after preparation: a text-only task still requires zero attachments, no processing state, and no upload failure before the existing scoped-control and pre-marker chain. Malformed or inconsistent snapshots fail closed before browser preparation.
+
 ## Phase G5.7AQ - retained-root Locator editor discovery
 
 - Editor discovery now uses the exact Playwright `Locator` retained with the composer root pair. The paired `ElementHandle` remains limited to DOM-native identity and structural evaluation; it is no longer used as a locator root.

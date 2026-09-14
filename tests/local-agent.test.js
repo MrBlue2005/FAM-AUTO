@@ -431,6 +431,64 @@ function liveFixture(overrides = {}) {
   };
 }
 
+function loadPostCreatorForTest(stubs) {
+  const postCreatorPath = require.resolve('../app/facebook/postCreator');
+  const dependencyPaths = {
+    composer: require.resolve('../app/facebook/composer'),
+    uploader: require.resolve('../app/facebook/imageUploader'),
+    identity: require.resolve('../app/facebook/postingIdentity'),
+    writer: require.resolve('../app/facebook/textWriter'),
+  };
+  const originals = Object.fromEntries(Object.entries(dependencyPaths).map(([key, modulePath]) => [key, require(modulePath)]));
+  delete require.cache[postCreatorPath];
+  require.cache[dependencyPaths.composer].exports = { openComposer: stubs.openComposer };
+  require.cache[dependencyPaths.uploader].exports = { uploadImage: stubs.uploadImage };
+  require.cache[dependencyPaths.identity].exports = { selectPostingIdentity: stubs.selectPostingIdentity };
+  require.cache[dependencyPaths.writer].exports = { writePostText: stubs.writePostText };
+  return {
+    createPost: require('../app/facebook/postCreator').createPost,
+    restore() {
+      delete require.cache[postCreatorPath];
+      for (const [key, modulePath] of Object.entries(dependencyPaths)) require.cache[modulePath].exports = originals[key];
+    },
+  };
+}
+
+async function exercisePostCreatorForMediaCount(expectedMediaCount, media) {
+  const calls = [];
+  const loaded = loadPostCreatorForTest({
+    openComposer: async () => { calls.push('COMPOSER'); return { handle: {} }; },
+    selectPostingIdentity: async () => { calls.push('IDENTITY'); return { selected: false }; },
+    uploadImage: async (_page, post) => { calls.push(`UPLOAD:${post.media.length}`); },
+    writePostText: async (_page, text) => { calls.push(`TEXT:${text}`); },
+  });
+  try {
+    await loaded.createPost({}, { text: 'Exact reviewed text', media }, { expectedMediaCount });
+    return calls;
+  } finally { loaded.restore(); }
+}
+
+test('zero immutable media skips the uploader and continues the exact text path', async () => {
+  assert.deepEqual(await exercisePostCreatorForMediaCount(0, []), ['COMPOSER', 'IDENTITY', 'TEXT:Exact reviewed text']);
+});
+
+test('one and multiple immutable media items retain the existing uploader ordering', async () => {
+  assert.deepEqual(await exercisePostCreatorForMediaCount(1, ['one.jpg']), ['COMPOSER', 'IDENTITY', 'UPLOAD:1', 'TEXT:Exact reviewed text']);
+  assert.deepEqual(await exercisePostCreatorForMediaCount(2, ['one.jpg', 'two.jpg']), ['COMPOSER', 'IDENTITY', 'UPLOAD:2', 'TEXT:Exact reviewed text']);
+});
+
+test('malformed immutable expected media counts fail closed before composer, upload, or text work', async () => {
+  const calls = [];
+  const loaded = loadPostCreatorForTest({
+    openComposer: async () => calls.push('COMPOSER'), selectPostingIdentity: async () => ({ selected: false }),
+    uploadImage: async () => calls.push('UPLOAD'), writePostText: async () => calls.push('TEXT'),
+  });
+  try {
+    await assert.rejects(loaded.createPost({}, { text: 'ignored' }, { expectedMediaCount: -1 }), { code: 'LIVE_EXECUTION_SNAPSHOT_INVALID' });
+    assert.deepEqual(calls, []);
+  } finally { loaded.restore(); }
+});
+
 function liveSeamFixture(overrides = {}) {
   const calls = [];
   const publisher = {
@@ -563,9 +621,10 @@ function fakeFacebookPublisher(options = {}) {
     getByText: () => ({ first: () => ({ waitFor: async () => {} }) }),
   };
   const button = { isEnabled: async () => true, click: async () => { clicks += 1; calls.push('CLICK'); if (options.clickError) throw new Error('click interrupted'); } };
+  const preparePostInputs = [];
   const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY', legacyProfileIds: ['fake'], localProfilePath: 'never-used', displayName: 'Fake profile', expectedFacebookAccountId: '100000000000001' }) }, () => [], {
     openBrowser: async () => { calls.push('OPEN_FAKE'); return { page, context }; },
-    openGroup: async () => { targetNavigated = true; calls.push('NAVIGATE_FAKE'); }, createPost: async () => { calls.push('PREPARE_POST'); return { composer }; },
+    openGroup: async () => { targetNavigated = true; calls.push('NAVIGATE_FAKE'); }, createPost: async (_page, post, composerOptions) => { calls.push('PREPARE_POST'); preparePostInputs.push({ post, composerOptions }); return { composer }; },
     requirePreparedComposer: (prepared) => prepared?.composer || (() => { throw Object.assign(new Error('composer missing'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' }); })(),
     verifyComposer: async () => { composerChecks += 1; if (options.composerError && (!options.composerErrorAt || composerChecks >= options.composerErrorAt)) throw Object.assign(new Error('composer changed'), { code: options.composerError }); },
     verifyText: async () => { textChecks += 1; if (options.content?.textPresent === false && (!options.contentErrorAt || textChecks >= options.contentErrorAt)) throw Object.assign(new Error('content mismatch'), { code: 'FACEBOOK_CONTENT_MISMATCH' }); },
@@ -574,7 +633,7 @@ function fakeFacebookPublisher(options = {}) {
     verifyPublishControl: async () => { publishChecks += 1; if (options.publishError && (!options.publishErrorAt || publishChecks >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); },
     verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
   });
-  return { adapter, calls, clicks: () => clicks, closed: () => closed };
+  return { adapter, calls, clicks: () => clicks, closed: () => closed, preparePostInputs };
 }
 
 test('real Facebook publisher adapter uses existing browser/navigation/composer seams but only submit can click', async () => {
@@ -584,6 +643,43 @@ test('real Facebook publisher adapter uses existing browser/navigation/composer 
   await fake.adapter.submit(task); assert.equal(fake.clicks(), 1);
   assert.deepEqual(await fake.adapter.verifyOutcome(task), { verified: true, state: 'VERIFIED_SUCCESS' });
   await fake.adapter.cleanup(); assert.equal(fake.closed(), 1);
+});
+
+test('real adapter derives the create-post media branch only from its immutable snapshot', async () => {
+  const target = { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' };
+  for (const [media, paths, expectedMediaCount] of [
+    [[], undefined, 0],
+    [[{ media_id: 'one' }], ['C:/safe/one.jpg'], 1],
+    [[{ media_id: 'one' }, { media_id: 'two' }], ['C:/safe/one.jpg', 'C:/safe/two.jpg'], 2],
+  ]) {
+    const fake = fakeFacebookPublisher();
+    const task = liveFixture({ payload: { ...liveFixture().payload, target, media, ...(paths === undefined ? {} : { local_media_paths: paths }) } });
+    await fake.adapter.prepare(task);
+    assert.equal(fake.preparePostInputs.length, 1);
+    assert.equal(fake.preparePostInputs[0].composerOptions.expectedMediaCount, expectedMediaCount);
+    assert.equal(fake.preparePostInputs[0].post.media.length, expectedMediaCount);
+    await fake.adapter.cleanup();
+  }
+});
+
+test('real adapter and executor fail closed for malformed immutable media before marker or submit', async () => {
+  const target = { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' };
+  const malformed = liveFixture({ payload: { ...liveFixture().payload, target, media: null, local_media_paths: [] } });
+  const fake = fakeFacebookPublisher();
+  await assert.rejects(fake.adapter.prepare(malformed), { code: 'LIVE_EXECUTION_SNAPSHOT_INVALID' });
+  assert.equal(fake.calls.includes('OPEN_FAKE'), false);
+  const calls = [];
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  await assert.rejects(execute(malformed, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'LIVE_EXECUTION_SNAPSHOT_INVALID' });
+  assert.deepEqual(calls, []);
+});
+
+test('unexpected zero-media composer attachment fails before marker or submit', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const fake = fakeFacebookPublisher({ content: { mediaReady: false } }); const markers = [];
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => markers.push('LEASE'), markSideEffectAttemptStarted: async () => markers.push('MARK'), markSideEffectVerifiedSuccess: async () => markers.push('VERIFIED') } }), { code: 'FACEBOOK_MEDIA_MISMATCH' });
+  assert.deepEqual(markers, []); assert.equal(fake.clicks(), 0);
 });
 
 test('real publisher establishes bounded Facebook-root session and identity before target preparation', async () => {

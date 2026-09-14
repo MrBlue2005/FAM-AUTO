@@ -16,9 +16,16 @@ function requireLiveSnapshot(task, registry, runtimeProfiles, transport) {
   if (!payload.campaign?.campaign_id || !payload.post?.post_id || !Number.isInteger(payload.post?.day) || !payload.target?.target_id || !payload.target?.url) throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Live execution snapshot is incomplete.');
   const profile = registry?.getProfile?.(task.profile_id, runtimeProfiles());
   if (!profile || profile.status !== 'READY') throw failure('PROFILE_UNAVAILABLE', 'Local profile is unavailable for live execution.');
-  const media = Array.isArray(payload.media) ? payload.media : [];
-  const localMedia = Array.isArray(payload.local_media_paths) ? payload.local_media_paths : [];
-  if (media.length !== localMedia.length) throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
+  if (!Array.isArray(payload.media)) throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Live execution media snapshot is invalid.');
+  const media = payload.media;
+  const localMedia = payload.local_media_paths;
+  // Zero-media snapshots are materialized without a local path list. Any
+  // non-empty or malformed list still fails before the browser is opened.
+  if (media.length === 0) {
+    if (localMedia !== undefined && (!Array.isArray(localMedia) || localMedia.length !== 0)) throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
+  } else if (!Array.isArray(localMedia) || media.length !== localMedia.length) {
+    throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
+  }
 }
 
 function requirePublisher(publisher) {

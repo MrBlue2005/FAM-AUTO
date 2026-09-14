@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7AT zero-media live create-post branch
+
+The real adapter passes `expectedMediaCount` to `createPost()` only from the immutable live task snapshot. An exact count of zero skips `uploadImage()` entirely and proceeds to unchanged text insertion; every nonzero snapshot retains the existing uploader behavior. The later retained-composer media inspection is unchanged and still requires zero attachments, no upload processing, and no upload error for text-only posts. Missing, malformed, or inconsistent media snapshots fail closed before preparation; this change neither alters marker order nor authorizes a hosted task, browser launch, or publication.
+
 ## G5.7AQ retained-root Locator editor discovery
 
 After a composer root has been retained as a proven `{ locator, handle }` pair, scoped editor discovery uses only `locator.locator(COMPOSER_EDITOR_SELECTOR)`. The `handle` remains available for DOM-native identity, structural, and parity evaluation, but is not used as a Playwright locator root. This closes the observed handle-vs-locator discovery split without changing the selector, eligibility order, transition proof, exact editor binding, text/media/publish scope, marker ordering, submit, or retry behavior.

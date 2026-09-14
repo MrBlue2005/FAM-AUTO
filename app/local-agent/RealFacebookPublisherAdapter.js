@@ -24,6 +24,24 @@ function isApprovedFacebookOrigin(value) {
   }
 }
 
+function immutableLiveMediaInput(task) {
+  const snapshotMedia = task?.payload?.media;
+  const localMediaPaths = task?.payload?.local_media_paths;
+  if (!Array.isArray(snapshotMedia)) {
+    throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Live execution media snapshot is invalid.');
+  }
+  if (snapshotMedia.length === 0) {
+    if (localMediaPaths !== undefined && (!Array.isArray(localMediaPaths) || localMediaPaths.length !== 0)) {
+      throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
+    }
+    return { expectedMediaCount: 0, localMediaPaths: [] };
+  }
+  if (!Array.isArray(localMediaPaths) || localMediaPaths.length !== snapshotMedia.length || localMediaPaths.some((value) => typeof value !== 'string' || !value.trim())) {
+    throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
+  }
+  return { expectedMediaCount: snapshotMedia.length, localMediaPaths };
+}
+
 // The sole adapter capable of reaching the real browser publishing click. It
 // owns neither claiming, lease validation, durable markers, nor completion.
 function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options = {}) {
@@ -88,6 +106,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       expectedFacebookAccountId = requireExpectedFacebookAccountId(profile);
       const targetUrl = String(task.payload?.target?.url || '');
       targetCanonical = canonicalTarget(targetUrl);
+      const mediaInput = immutableLiveMediaInput(task);
       try {
         browser = await openBrowser((profile.legacyProfileIds || [])[0], { profilePath: profile.localProfilePath, displayName: profile.displayName });
         // The initial persistent-context page may be blank, stale, or a new tab.
@@ -101,12 +120,13 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
         await navigateGroup(browser.page, targetUrl);
         verifyTarget(browser.page.url(), targetCanonical);
         trace('TARGET_READY');
-        const post = { ...task.payload.post, media: task.payload.local_media_paths, imagePath: task.payload.local_media_paths?.[0], postingIdentityId: task.payload.posting_identity_id || task.payload.post?.postingIdentityId };
+        const post = { ...task.payload.post, media: mediaInput.localMediaPaths, imagePath: mediaInput.localMediaPaths[0], postingIdentityId: task.payload.posting_identity_id || task.payload.post?.postingIdentityId };
         // Composer discovery is permitted only after the canonical target
         // proof above. The callback is re-run inside the opener immediately
         // before it searches for a group creation surface.
         const prepared = await preparePost(browser.page, post, {
           assertTargetReady: () => verifyTarget(browser.page.url(), targetCanonical),
+          expectedMediaCount: mediaInput.expectedMediaCount,
           trace,
           diagnostic: composerDiagnostics.forTask(task.task_id),
         });
