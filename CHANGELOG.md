@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BF - retained editor Locator for multiline writer
+
+- An accepted Facebook editor now remains an exact `{ handle, locator }` pair from one eligibility candidate. The `Locator` alone performs scoped multiline keyboard entry (`pressSequentially` and `Shift+Enter`); the paired `ElementHandle` remains limited to existing DOM identity, visibility, editability, and exact-read checks.
+- No generic editor lookup, selector change, text normalization, verification bound, zero-media branch, marker ordering, submit behavior, or retry behavior changed. Missing or unusable paired Locators fail closed before insertion.
+
 ## Phase G5.7BC - retained-editor multiline insertion
 
 - Immutable multiline live-post text no longer uses the clipboard route that was observed to collapse an internal line break. When, and only when, an exact retained composer editor receives multiline source text, each source line is entered through that editor and adjacent lines are separated by its scoped `Shift+Enter` action.

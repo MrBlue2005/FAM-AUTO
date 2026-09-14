@@ -31,8 +31,15 @@ async function writeRetainedMultilineText(field, text) {
 
 async function writePostText(page, text, preparedComposer = null) {
   const handle = preparedComposer?.handle;
+  const retainedEditor = preparedComposer?.editor;
+  // Live preparation retains an editor pair.  Keyboard input must use the
+  // paired Locator, not the ElementHandle retained for DOM identity checks.
+  // The unpaired branch preserves the legacy Local Studio caller contract.
+  const retainedEditorLocator = retainedEditor?.handle
+    ? retainedEditor.locator
+    : retainedEditor;
   const field = handle
-    ? preparedComposer?.editor
+    ? retainedEditorLocator
     : page.getByRole('textbox').last(); // Legacy Local Studio path only.
   if (handle && !field) throw Object.assign(new Error('The prepared composer text field was not retained.'), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });
   if (typeof field.waitFor === 'function') await field.waitFor({ state: 'visible', timeout: 30000 });

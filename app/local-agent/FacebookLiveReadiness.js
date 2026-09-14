@@ -124,7 +124,9 @@ async function ensureRetainedComposer(composer) {
 
 async function readComposerText(composer) {
   await ensureRetainedComposer(composer);
-  const editor = composer?.editor;
+  // Retain the ElementHandle for the DOM/readiness checks below.  Text entry
+  // itself is deliberately performed through the paired Locator.
+  const editor = composer?.editor?.handle || composer?.editor;
   if (!editor) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text field was not retained.');
   const [attached, visible, editable] = await Promise.all([
     editor.evaluate?.((node) => node.isConnected).catch(() => false),

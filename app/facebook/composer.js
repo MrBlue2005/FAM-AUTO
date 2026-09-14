@@ -652,7 +652,11 @@ async function openComposer(page, options = {}) {
     emitSelectorParitySummary();
     trace('COMPOSER_OPENED');
     console.log('Composerul a fost deschis.');
-    return { handle, locator, editor: editor.handle };
+    // Keep the exact accepted editor pair.  The ElementHandle remains the
+    // authority for DOM identity/evaluation while the Locator is required for
+    // scoped keyboard input.  Both values originate from the same candidate
+    // returned by eligibleEditors(); do not reconstruct either after binding.
+    return { handle, locator, editor: { handle: editor.handle, locator: editor.locator } };
   } catch (error) {
     if (!diagnosticSummaryWritten) {
       emitPreSelectorSummary();

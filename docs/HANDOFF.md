@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7BF retained editor Locator for multiline writer
+
+The accepted Facebook editor is now retained as the exact pair `{ handle, locator }` from the single accepted root-local candidate. Multiline keyboard entry uses only that candidate's `Locator`, which supplies `pressSequentially()` and scoped `Shift+Enter`; DOM identity, visibility, editability, and exact text-read checks continue to use its paired `ElementHandle`. There is no selector re-query, page-wide fallback, or positional reconstruction after binding. Missing or unusable Locators fail before any character insertion, exact verification, marker, submit, or publish click. Single-line clipboard behavior and all existing normalization and two-second exact synchronization semantics remain unchanged.
+
 ## G5.7BC retained-editor multiline insertion
 
 The real live adapter keeps the exact retained composer editor as the sole authority for multiline text entry. For source text containing an LF, CRLF, or CR separator, `writePostText()` enters each source line through that editor and sends `Shift+Enter` only between lines. It does not use page-wide keyboard input, a new editor lookup, DOM text mutation, or clipboard state for that branch. Trailing empty split segments are not converted into an additional soft break, matching the existing immutable comparison's trim semantics. Single-line and legacy Local Studio paths remain on their prior clipboard-paste behavior.

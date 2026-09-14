@@ -13,7 +13,7 @@ const { normalizeComposerText, verifyComposerText } = require('../app/local-agen
 function retainedEditorFixture() {
   const calls = [];
   let value = '';
-  const editor = {
+  const editorLocator = {
     waitForElementState: async (state) => calls.push(`WAIT:${state}`),
     click: async () => calls.push('CLICK'),
     pressSequentially: async (text) => { calls.push(`TYPE:${text}`); value += text; },
@@ -26,6 +26,13 @@ function retainedEditorFixture() {
     isEditable: async () => true,
     inputValue: async () => value,
   };
+  const editorHandle = {
+    candidateId: 'accepted-editor-1',
+    evaluate: async () => true,
+    isVisible: async () => true,
+    isEditable: async () => true,
+    inputValue: async () => value,
+  };
   const page = {
     evaluate: async (_fn, text) => { calls.push(`COPY:${text}`); value = text; },
     keyboard: { press: async (key) => calls.push(`PAGE_KEY:${key}`) },
@@ -33,10 +40,21 @@ function retainedEditorFixture() {
   };
   const composer = {
     handle: { evaluate: async () => true, isVisible: async () => true, locator: () => { throw new Error('composer editor reacquisition is forbidden'); } },
-    editor,
+    editor: { handle: editorHandle, locator: editorLocator },
   };
-  return { calls, composer, editor, page, value: () => value };
+  return { calls, composer, editor: editorLocator, editorHandle, page, value: () => value };
 }
+
+test('production-shaped editor pair keeps one accepted candidate and uses its Locator without reacquisition', async () => {
+  const fixture = retainedEditorFixture();
+  const text = 'TEST RX AUTOMATION â€” 12.09.2026\nTest tehnic de publicare RX AI Studio.';
+  assert.equal(fixture.editorHandle.candidateId, 'accepted-editor-1');
+  const result = await writePostText(fixture.page, text, fixture.composer);
+  const verification = await verifyComposerText(fixture.composer, text, { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: async () => {} });
+  assert.equal(result.insertionMethod, RETAINED_EDITOR_SHIFT_ENTER);
+  assert.equal(verification.matchedOnReadNumber, 1);
+  assert.deepEqual(fixture.calls, ['WAIT:visible', 'CLICK', 'TYPE:TEST RX AUTOMATION â€” 12.09.2026', 'KEY:Shift+Enter', 'TYPE:Test tehnic de publicare RX AI Studio.']);
+});
 
 test('one-line retained-editor text preserves the reviewed clipboard path', async () => {
   const fixture = retainedEditorFixture();
@@ -82,7 +100,14 @@ test('retained multiline insertion neither duplicates nor collapses an internal 
   assert.equal(fixture.calls.filter((call) => call === 'KEY:Shift+Enter').length, 2);
 });
 
-test('retained multiline insertion fails before exact verification when the retained editor cannot emit a line break', async () => {
+test('retained multiline insertion fails closed when the paired Locator is missing', async () => {
+  const fixture = retainedEditorFixture();
+  fixture.composer.editor.locator = null;
+  await assert.rejects(writePostText(fixture.page, 'A\nB', fixture.composer), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });
+  assert.deepEqual(fixture.calls, []);
+});
+
+test('retained multiline insertion fails before exact verification when the paired Locator cannot emit a line break', async () => {
   const fixture = retainedEditorFixture();
   fixture.editor.press = async () => { throw new Error('line break unavailable'); };
   await assert.rejects(writePostText(fixture.page, 'A\nB', fixture.composer), { code: 'FACEBOOK_COMPOSER_UNVERIFIED' });

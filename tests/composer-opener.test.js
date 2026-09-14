@@ -222,7 +222,7 @@ test('a Facebook-like composer layer without dialog role or aria-modal is accept
   assert.equal((await openComposer(fixture.page, openerOptions(fixture))).handle._node.id, 'composer-layer');
 });
 
-test('root-scoped alternate Facebook editor shapes retain exactly one editor handle', async () => {
+test('root-scoped alternate Facebook editor shapes retain one exact editor handle/Locator pair', async () => {
   const cases = [
     ['contenteditable without role', { role: '', contenteditable: true }],
     ['inherited role textbox', { role: 'textbox', contenteditable: false, isContentEditable: true }],
@@ -233,6 +233,11 @@ test('root-scoped alternate Facebook editor shapes retain exactly one editor han
     const fixture = fakePage({ before: [node('old')], after: [node(label, 1, { editorOptions })], labelled: { 'button:Scrie ceva...': [{}] } });
     const composer = await openComposer(fixture.page, openerOptions(fixture));
     assert.ok(composer.editor, label);
+    assert.ok(composer.editor.handle, label);
+    assert.ok(composer.editor.locator, label);
+    // The fixture's elementHandle() returns the exact candidate Locator; this
+    // proves openComposer propagates the one accepted candidate as a pair.
+    assert.equal(composer.editor.handle, composer.editor.locator, label);
     assert.equal(composer.handle._node.id, label);
   }
 });
