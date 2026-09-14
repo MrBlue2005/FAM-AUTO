@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7BI - retained contenteditable visual-text reader
+
+- Immutable verification of the exact retained contenteditable editor now reconstructs visible plain-text line boundaries from text nodes, `<br>`, and non-empty block descendants, without editor reacquisition or page-wide DOM access. Inline spans remain concatenated and duplicate/empty structural boundaries are suppressed.
+- Textarea/input value reads, normalization, strict equality, bounded synchronization, media/control checks, lease/marker order, submit, retry, and publication behavior are unchanged. Privacy-safe mismatch summaries now whitelist a fixed reader enum and bounded visual line-break count only.
+
 ## Phase G5.7BF - retained editor Locator for multiline writer
 
 - An accepted Facebook editor now remains an exact `{ handle, locator }` pair from one eligibility candidate. The `Locator` alone performs scoped multiline keyboard entry (`pressSequentially` and `Shift+Enter`); the paired `ElementHandle` remains limited to existing DOM identity, visibility, editability, and exact-read checks.

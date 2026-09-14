@@ -41,6 +41,9 @@ const VERIFICATION_READ_TIMING = 'FIRST_VERIFICATION_READ';
 const COMPOSER_TEXT_SETTLE_TIMEOUT_MS = 2000;
 const COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS = 100;
 const COMPOSER_TEXT_SETTLE_MAX_TIMEOUT_MS = 5000;
+const CONTENTEDITABLE_VISUAL_TEXT = 'CONTENTEDITABLE_VISUAL_TEXT';
+const TEXTAREA_VALUE = 'TEXTAREA_VALUE';
+const INPUT_VALUE = 'INPUT_VALUE';
 
 function composerTextStages(value) {
   const raw = String(value ?? '');
@@ -92,6 +95,8 @@ function contentMismatchDiagnostic(expectedValue, actualValue, options = {}) {
     actualNewlineCount: actualMetrics.newlineCount,
     lengthRelation: contentLengthRelation(expected.final, actual.final),
     insertionMethod: options.insertionMethod || TEXT_INSERTION_METHOD,
+    reader: [CONTENTEDITABLE_VISUAL_TEXT, TEXTAREA_VALUE, INPUT_VALUE].includes(options.reader) ? options.reader : CONTENTEDITABLE_VISUAL_TEXT,
+    visualLineBreakCount: Number.isSafeInteger(options.visualLineBreakCount) && options.visualLineBreakCount >= 0 ? options.visualLineBreakCount : 0,
     verificationReadCount: Number.isSafeInteger(options.verificationReadCount) && options.verificationReadCount > 0 ? options.verificationReadCount : 1,
     verificationReadTiming: options.verificationReadTiming || VERIFICATION_READ_TIMING,
     matchedOnReadNumber: Number.isSafeInteger(options.matchedOnReadNumber) && options.matchedOnReadNumber > 0 ? options.matchedOnReadNumber : null,
@@ -105,6 +110,58 @@ function contentMismatchDiagnostic(expectedValue, actualValue, options = {}) {
       final: { expected: stage(expected.final), actual: stage(actual.final) },
     },
   };
+}
+
+// This is intentionally a DOM-only reader for the exact ElementHandle paired
+// with the retained composer.  textContent omits visual line boundaries from
+// Lexical's block and <br> shapes, so it cannot verify an immutable multiline
+// snapshot faithfully.
+function visualPlainTextFromContenteditable(root) {
+  // Kept inside the evaluated function because Playwright serializes this
+  // reader into the browser context without module closures.
+  const visualBlockTags = new Set([
+    'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'DT', 'DD',
+    'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5',
+    'H6', 'HEADER', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'UL',
+  ]);
+  let output = '';
+  let visualLineBreakCount = 0;
+  const nodeType = (node) => Number(node?.nodeType);
+  const tagName = (node) => String(node?.tagName || '').toUpperCase();
+  const isBlock = (node) => visualBlockTags.has(tagName(node));
+  const appendBoundary = () => {
+    if (!output || output.endsWith('\n')) return;
+    output += '\n';
+    visualLineBreakCount += 1;
+  };
+  const hasVisibleText = (node) => {
+    if (nodeType(node) === 3) return String(node.nodeValue || '').length > 0;
+    if (nodeType(node) !== 1) return false;
+    if (tagName(node) === 'BR') return true;
+    return Array.from(node.childNodes || []).some(hasVisibleText);
+  };
+  const walkChildren = (parent) => {
+    const children = Array.from(parent?.childNodes || []);
+    for (let index = 0; index < children.length; index += 1) {
+      const child = children[index];
+      walk(child);
+      if (isBlock(child) && hasVisibleText(child) && children.slice(index + 1).some(hasVisibleText)) appendBoundary();
+    }
+  };
+  const walk = (node) => {
+    if (nodeType(node) === 3) {
+      output += String(node.nodeValue || '');
+      return;
+    }
+    if (nodeType(node) !== 1) return;
+    if (tagName(node) === 'BR') {
+      appendBoundary();
+      return;
+    }
+    walkChildren(node);
+  };
+  walkChildren(root);
+  return { text: output, visualLineBreakCount };
 }
 
 function requirePreparedComposer(prepared) {
@@ -134,10 +191,16 @@ async function readComposerText(composer) {
     typeof editor.isEditable === 'function' ? editor.isEditable().catch(() => false) : Promise.resolve(false),
   ]);
   if (attached !== true || visible !== true || editable !== true) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text field is unavailable.');
-  let text = await editor.inputValue?.().catch(() => null);
-  if (text === null || text === undefined) text = await editor.textContent?.().catch(() => null);
-  if (text === null || text === undefined) throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text cannot be read.');
-  return String(text);
+  const inputValue = await editor.inputValue?.().catch(() => undefined);
+  if (inputValue !== undefined && inputValue !== null) {
+    const tag = await editor.evaluate?.((node) => String(node?.tagName || '').toLowerCase()).catch(() => '');
+    return { text: String(inputValue), reader: tag === 'textarea' ? TEXTAREA_VALUE : INPUT_VALUE, visualLineBreakCount: 0 };
+  }
+  const visual = await editor.evaluate?.(visualPlainTextFromContenteditable).catch(() => null);
+  if (!visual || typeof visual.text !== 'string' || !Number.isSafeInteger(visual.visualLineBreakCount) || visual.visualLineBreakCount < 0) {
+    throw failure('FACEBOOK_COMPOSER_UNVERIFIED', 'Facebook composer text cannot be read.');
+  }
+  return { text: visual.text, reader: CONTENTEDITABLE_VISUAL_TEXT, visualLineBreakCount: visual.visualLineBreakCount };
 }
 
 function boundedPositiveInteger(value, fallback, maximum) {
@@ -164,10 +227,15 @@ async function verifyComposerText(composer, expectedText, options = {}) {
   const synchronization = postPasteSynchronizationOptions(options);
   const startedAt = synchronization.now();
   let actualText = '';
+  let reader = CONTENTEDITABLE_VISUAL_TEXT;
+  let visualLineBreakCount = 0;
   let verificationReadCount = 0;
 
   while (verificationReadCount < synchronization.maxReads) {
-    actualText = await readComposerText(composer);
+    const read = await readComposerText(composer);
+    actualText = read.text;
+    reader = read.reader;
+    visualLineBreakCount = read.visualLineBreakCount;
     verificationReadCount += 1;
     if (expectedNormalized === normalizeComposerText(actualText)) {
       return {
@@ -189,6 +257,8 @@ async function verifyComposerText(composer, expectedText, options = {}) {
       verificationReadCount,
       matchedOnReadNumber: null,
       settleDurationMs,
+      reader,
+      visualLineBreakCount,
       verificationReadTiming: options.verificationReadTiming || (synchronization.enabled ? 'BOUNDED_POST_PASTE_SYNC' : VERIFICATION_READ_TIMING),
     }));
   } catch { /* observability only */ }
@@ -265,11 +335,15 @@ module.exports = {
   contentMismatchDiagnostic,
   CONTENT_HASH_PREFIX_LENGTH,
   TEXT_INSERTION_METHOD,
+  CONTENTEDITABLE_VISUAL_TEXT,
+  TEXTAREA_VALUE,
+  INPUT_VALUE,
   VERIFICATION_READ_TIMING,
   COMPOSER_TEXT_SETTLE_TIMEOUT_MS,
   COMPOSER_TEXT_SETTLE_POLL_INTERVAL_MS,
   requirePreparedComposer,
   ensureRetainedComposer,
+  visualPlainTextFromContenteditable,
   verifyComposerText,
   inspectComposerMedia,
   findScopedPublishControl,

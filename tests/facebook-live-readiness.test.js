@@ -9,15 +9,19 @@ const {
   verifyComposerText,
   contentMismatchDiagnostic,
   CONTENT_HASH_PREFIX_LENGTH,
+  CONTENTEDITABLE_VISUAL_TEXT,
+  TEXTAREA_VALUE,
+  visualPlainTextFromContenteditable,
   inspectComposerMedia,
   findScopedPublishControl,
 } = require('../app/local-agent/FacebookLiveReadiness');
 
 function item(options = {}) {
+  const node = options.node || { nodeType: 1, tagName: options.tagName || 'TEXTAREA', childNodes: [], isConnected: options.attached !== false };
   return {
     textContent: async () => options.text || '', getAttribute: async (name) => options[name] || null,
     isVisible: async () => options.visible !== false, isEnabled: async () => options.enabled !== false,
-    isEditable: async () => options.editable !== false, evaluate: async () => options.attached !== false,
+    isEditable: async () => options.editable !== false, evaluate: async (callback) => callback(node),
     inputValue: async () => { if (options.input === undefined) throw new Error('not input'); return options.input; },
   };
 }
@@ -39,6 +43,15 @@ function sequenceComposerModel(values) {
   editor.inputValue = async () => values[Math.min(reads++, values.length - 1)];
   return { composer: composerModel({ editor }), reads: () => reads };
 }
+function textNode(value) { return { nodeType: 3, nodeValue: value }; }
+function element(tagName, children = []) { return { nodeType: 1, tagName, childNodes: children, isConnected: true }; }
+function visualEditor(root) {
+  return item({
+    node: root,
+    tagName: 'DIV',
+    input: undefined,
+  });
+}
 const immediateWait = async () => {};
 const synchronized = { synchronizeAfterPaste: true, settleTimeoutMs: 20, pollIntervalMs: 10, wait: immediateWait };
 const task = (paths = []) => ({ payload: { post: { text: 'immutable snapshot' }, local_media_paths: paths } });
@@ -56,6 +69,57 @@ test('composer text uses only harmless normalization and rejects missing, change
   await verifyComposerText(composerModel({ text: ' immutable snapshot ' }), 'immutable snapshot');
   await assert.rejects(verifyComposerText(composerModel({ text: 'changed' }), 'immutable snapshot'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
   await assert.rejects(verifyComposerText(composerModel({ text: 'immutable snapshot extra' }), 'immutable snapshot'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+});
+
+test('retained contenteditable reader reconstructs only visual block and br line boundaries', async () => {
+  assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
+    element('DIV', [textNode('line1')]),
+    element('DIV', [textNode('line2')]),
+    element('DIV', [textNode('line3')]),
+  ])), { text: 'line1\nline2\nline3', visualLineBreakCount: 2 });
+  assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
+    textNode('line1'), element('BR'), textNode('line2'),
+  ])), { text: 'line1\nline2', visualLineBreakCount: 1 });
+  assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
+    element('DIV', [textNode('line1'), element('BR')]),
+    element('DIV', [textNode('line2')]),
+  ])), { text: 'line1\nline2', visualLineBreakCount: 1 });
+  assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
+    element('DIV', [element('SPAN', [textNode('abc')]), element('SPAN', [textNode('def')])]),
+  ])), { text: 'abcdef', visualLineBreakCount: 0 });
+  assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
+    element('DIV'), element('SPAN'), element('DIV', [textNode('only')]), element('DIV'),
+  ])), { text: 'only', visualLineBreakCount: 0 });
+});
+
+test('Facebook Lexical 70/2/1 visible block shape passes immutable exact verification', async () => {
+  const text = 'TEST RX AUTOMATION \u2014 12.09.2026\nTest tehnic de publicare RX AI Studio.';
+  const root = element('DIV', [
+    element('DIV', [textNode('TEST RX AUTOMATION \u2014 12.09.2026')]),
+    element('DIV', [textNode('Test tehnic de publicare RX AI Studio.')]),
+  ]);
+  const editor = visualEditor(root);
+  const composer = composerModel({ editor });
+  const result = await verifyComposerText(composer, text);
+  assert.equal(text.length, 70);
+  assert.equal(result.matchedOnReadNumber, 1);
+});
+
+test('single-line retained contenteditable verification remains exact', async () => {
+  const composer = composerModel({ editor: visualEditor(element('DIV', [element('SPAN', [textNode('immutable snapshot')])])) });
+  const result = await verifyComposerText(composer, 'immutable snapshot');
+  assert.equal(result.matchedOnReadNumber, 1);
+});
+
+test('textarea and input retain their value readers, while a visual wrong text still fails exactly', async () => {
+  await verifyComposerText(composerModel({ editor: item({ input: 'A\nB', tagName: 'TEXTAREA' }) }), 'A\nB');
+  await verifyComposerText(composerModel({ editor: item({ input: 'A\nB', tagName: 'INPUT' }) }), 'A\nB');
+  const records = [];
+  await assert.rejects(verifyComposerText(composerModel({ editor: visualEditor(element('DIV', [element('DIV', [textNode('A')]), element('DIV', [textNode('wrong')])])) }), 'A\nB', {
+    diagnostic: { contentMismatchSummary: (value) => records.push(value) },
+  }), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  assert.equal(records[0].reader, CONTENTEDITABLE_VISUAL_TEXT);
+  assert.equal(records[0].visualLineBreakCount, 1);
 });
 
 test('content mismatch diagnostics preserve current normalization semantics without emitting on exact or equivalent text', async () => {
@@ -81,6 +145,7 @@ test('content mismatch diagnostics distinguish empty, duplicated, and one-charac
   assert.notEqual(records[2].expectedSha256Prefix, records[2].actualSha256Prefix);
   assert.equal(records[2].expectedSha256Prefix.length, CONTENT_HASH_PREFIX_LENGTH);
   assert.equal(records[2].insertionMethod, 'CLIPBOARD_PASTE');
+  assert.equal(records[2].reader, TEXTAREA_VALUE);
   assert.equal(records[2].verificationReadCount, 1);
   assert.equal(records[2].verificationReadTiming, 'FIRST_VERIFICATION_READ');
   assert.doesNotMatch(JSON.stringify(records), /private expected text|abab|abce|abcd/);

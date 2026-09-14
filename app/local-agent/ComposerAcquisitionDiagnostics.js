@@ -78,6 +78,9 @@ const CONTENT_MISMATCH_INSERTION_METHODS = new Set([
 const CONTENT_MISMATCH_READ_TIMINGS = new Set([
   'IMMEDIATELY_AFTER_INSERTION', 'AFTER_EXISTING_SETTLE', 'FIRST_VERIFICATION_READ', 'BOUNDED_POST_PASTE_SYNC',
 ]);
+const CONTENT_MISMATCH_READERS = new Set([
+  'CONTENTEDITABLE_VISUAL_TEXT', 'TEXTAREA_VALUE', 'INPUT_VALUE',
+]);
 const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const PROTECTED_STAGES = new Set([
   PRE_SELECTOR_SNAPSHOT_STAGE,
@@ -205,6 +208,8 @@ function sanitizeContentMismatch(value = {}) {
     actualNewlineCount: count('actualNewlineCount'),
     lengthRelation: CONTENT_MISMATCH_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EXACT_LENGTH',
     insertionMethod: CONTENT_MISMATCH_INSERTION_METHODS.has(value.insertionMethod) ? value.insertionMethod : 'OTHER_FIXED_METHOD',
+    reader: CONTENT_MISMATCH_READERS.has(value.reader) ? value.reader : 'CONTENTEDITABLE_VISUAL_TEXT',
+    visualLineBreakCount: count('visualLineBreakCount'),
     verificationReadCount: Math.max(1, count('verificationReadCount')),
     verificationReadTiming: CONTENT_MISMATCH_READ_TIMINGS.has(value.verificationReadTiming) ? value.verificationReadTiming : 'FIRST_VERIFICATION_READ',
     matchedOnReadNumber: Number.isInteger(value.matchedOnReadNumber) && value.matchedOnReadNumber > 0 ? Math.min(MAX_COUNTER, value.matchedOnReadNumber) : null,

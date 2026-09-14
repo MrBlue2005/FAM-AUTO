@@ -436,7 +436,7 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
       expectedLeadingWhitespaceCount: 1, actualLeadingWhitespaceCount: 0,
       expectedTrailingWhitespaceCount: 1, actualTrailingWhitespaceCount: 0,
       expectedNewlineCount: 1, actualNewlineCount: 0,
-      lengthRelation: 'EMPTY', insertionMethod: 'CLIPBOARD_PASTE', verificationReadCount: 1,
+      lengthRelation: 'EMPTY', insertionMethod: 'CLIPBOARD_PASTE', reader: 'CONTENTEDITABLE_VISUAL_TEXT', visualLineBreakCount: 1, verificationReadCount: 1,
       verificationReadTiming: 'BOUNDED_POST_PASTE_SYNC', matchedOnReadNumber: null,
       settleDurationMs: 2000, finalLengthRelation: 'EMPTY',
       normalizationStages: {
@@ -454,6 +454,8 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
     assert.ok(summary);
     assert.equal(summary.contentMismatch.lengthRelation, 'EMPTY');
     assert.equal(summary.contentMismatch.insertionMethod, 'CLIPBOARD_PASTE');
+    assert.equal(summary.contentMismatch.reader, 'CONTENTEDITABLE_VISUAL_TEXT');
+    assert.equal(summary.contentMismatch.visualLineBreakCount, 1);
     assert.equal(summary.contentMismatch.verificationReadTiming, 'BOUNDED_POST_PASTE_SYNC');
     assert.equal(summary.contentMismatch.matchedOnReadNumber, null);
     assert.equal(summary.contentMismatch.settleDurationMs, 2000);
@@ -461,18 +463,21 @@ test('content mismatch terminal summary is fixed, private, and survives bounded 
     assert.equal(summary.contentMismatch.normalizationStages.final.expected.length, 20);
     assert.ok(data.records.length <= 4);
     assert.doesNotMatch(saved, /PRIVATE_FACEBOOK_COMPOSER_TEXT|never persist|cookie/);
-    const sanitized = sanitizeContentMismatch({ expectedNormalizedLength: 9999, unknown: 'private', lengthRelation: 'untrusted', insertionMethod: 'untrusted' });
+    const sanitized = sanitizeContentMismatch({ expectedNormalizedLength: 9999, unknown: 'private', lengthRelation: 'untrusted', insertionMethod: 'untrusted', reader: 'untrusted', visualLineBreakCount: 9999 });
     assert.equal(sanitized.expectedNormalizedLength, 1000);
     assert.equal(sanitized.lengthRelation, 'EXACT_LENGTH');
     assert.equal(sanitized.insertionMethod, 'OTHER_FIXED_METHOD');
+    assert.equal(sanitized.reader, 'CONTENTEDITABLE_VISUAL_TEXT');
+    assert.equal(sanitized.visualLineBreakCount, 1000);
     assert.equal(sanitized.matchedOnReadNumber, null);
     assert.equal(Object.hasOwn(sanitized, 'unknown'), false);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('content mismatch diagnostics retain the fixed retained-editor multiline insertion enum', () => {
-  const sanitized = sanitizeContentMismatch({ insertionMethod: 'RETAINED_EDITOR_SHIFT_ENTER' });
+  const sanitized = sanitizeContentMismatch({ insertionMethod: 'RETAINED_EDITOR_SHIFT_ENTER', reader: 'TEXTAREA_VALUE' });
   assert.equal(sanitized.insertionMethod, 'RETAINED_EDITOR_SHIFT_ENTER');
+  assert.equal(sanitized.reader, 'TEXTAREA_VALUE');
 });
 
 function eligibilityRoot(configs) {

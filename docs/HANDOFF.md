@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7BI retained contenteditable visual-text reader
+
+Exact immutable text verification now reads only the already-bound retained editor. Textarea and input controls retain their value reader. For a retained contenteditable surface, a local DOM walk reconstructs visible plain text: text nodes concatenate, `<br>` emits one line break, and non-empty block descendants create one boundary only when another visible sibling follows. Inline descendants add no boundary; empty wrappers add none; adjacent structural boundaries are deduplicated. This addresses Lexical/Facebook layouts where `textContent` omits a visually rendered newline.
+
+The existing NFC, CRLF-to-LF, NBSP-to-space, trim, exact-equality, immediate read, 100 ms poll, two-second/21-read cap, media/control checks, post-lease checks, marker order, and retry policy are unchanged. Mismatch summaries remain privacy-safe and may additionally contain only the fixed reader enum (`CONTENTEDITABLE_VISUAL_TEXT`, `TEXTAREA_VALUE`, or `INPUT_VALUE`) and a bounded visual-line-break count.
+
 ## G5.7BF retained editor Locator for multiline writer
 
 The accepted Facebook editor is now retained as the exact pair `{ handle, locator }` from the single accepted root-local candidate. Multiline keyboard entry uses only that candidate's `Locator`, which supplies `pressSequentially()` and scoped `Shift+Enter`; DOM identity, visibility, editability, and exact text-read checks continue to use its paired `ElementHandle`. There is no selector re-query, page-wide fallback, or positional reconstruction after binding. Missing or unusable Locators fail before any character insertion, exact verification, marker, submit, or publish click. Single-line clipboard behavior and all existing normalization and two-second exact synchronization semantics remain unchanged.
