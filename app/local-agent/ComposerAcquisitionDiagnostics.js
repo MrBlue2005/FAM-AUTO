@@ -25,6 +25,7 @@ const STAGES = new Set([
   'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY',
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY',
+  'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -41,6 +42,7 @@ const REASON_CLASSES = new Set([
   'PUBLISH_CONTROL_DISCOVERY',
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION',
+  'ACKNOWLEDGEMENT_SHAPE',
 ]);
 
 const COUNTERS = new Set([
@@ -123,6 +125,7 @@ const PROTECTED_STAGES = new Set([
   ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
   PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE,
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
+  'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -375,6 +378,35 @@ function sanitizePostSubmitVerification(value = {}) {
   };
 }
 
+const ACK_FAMILIES = new Set(['CURRENT_TEXT_MATCH', 'ROLE_STATUS', 'ROLE_ALERT', 'ARIA_LIVE_REGION', 'OTHER_SAFE_ACK_SURFACE']);
+const ACK_TAGS = new Set(['DIV', 'SPAN', 'P', 'SECTION', 'OTHER']);
+const ACK_ROLES = new Set([null, 'status', 'alert', 'other']);
+const ACK_ARIA_LIVE = new Set(['OFF', 'POLITE', 'ASSERTIVE', 'OTHER', 'NONE']);
+const ACK_TEXT_CLASSES = new Set(['MATCHES_CURRENT_ACK_PATTERN', 'NON_MATCHING_TEXT_PRESENT', 'EMPTY_OR_UNAVAILABLE', 'SAFE_TEXT_EVALUATION_ERROR']);
+const ACK_ACCESSIBILITY_CLASSES = new Set(['MATCHES_CURRENT_ACK_PATTERN', 'NON_MATCHING_ACCESSIBLE_NAME_PRESENT', 'EMPTY_OR_UNAVAILABLE', 'SAFE_ACCESSIBILITY_EVALUATION_ERROR']);
+const ACK_BUCKETS = new Set(['UNDER_1_SECOND', 'UNDER_5_SECONDS', 'UNDER_30_SECONDS', 'UNDER_120_SECONDS', 'AT_OR_OVER_TIMEOUT']);
+const ACK_MATCHER_RESULTS = new Set(['MATCHED', 'NO_MATCH', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
+
+function sanitizeAcknowledgementCandidate(value = {}) {
+  return {
+    candidateFamily: ACK_FAMILIES.has(value.candidateFamily) ? value.candidateFamily : 'OTHER_SAFE_ACK_SURFACE',
+    tagName: ACK_TAGS.has(value.tagName) ? value.tagName : 'OTHER', role: ACK_ROLES.has(value.role) ? value.role : 'other',
+    visible: value.visible === true, attached: value.attached === true,
+    ariaLive: ACK_ARIA_LIVE.has(value.ariaLive) ? value.ariaLive : 'NONE',
+    textClassification: ACK_TEXT_CLASSES.has(value.textClassification) ? value.textClassification : 'SAFE_TEXT_EVALUATION_ERROR',
+    accessibilityClassification: ACK_ACCESSIBILITY_CLASSES.has(value.accessibilityClassification) ? value.accessibilityClassification : 'SAFE_ACCESSIBILITY_EVALUATION_ERROR',
+    nestedTextPresent: value.nestedTextPresent === true, candidateDepth: boundedInteger(value.candidateDepth) || 0,
+    firstObservedBucket: ACK_BUCKETS.has(value.firstObservedBucket) ? value.firstObservedBucket : 'UNDER_1_SECOND',
+    lastObservedBucket: ACK_BUCKETS.has(value.lastObservedBucket) ? value.lastObservedBucket : 'UNDER_1_SECOND',
+    observationCount: boundedInteger(value.observationCount) || 0,
+  };
+}
+
+function sanitizeAcknowledgementShape(value = {}) {
+  const keys = ['totalDistinctCandidatesObserved', 'currentPatternMatchObservationCount', 'accessibilityPatternMatchObservationCount', 'roleStatusObservationCount', 'roleAlertObservationCount', 'ariaLiveObservationCount', 'transientCandidateCount', 'candidatesVisibleAtVerificationStart', 'candidatesObservedAfterVerificationStart', 'structurallyAckLikeButPatternMismatchCount'];
+  return { ...Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0])), currentMatcherWouldHaveMatched: value.currentMatcherWouldHaveMatched === true, exactCurrentMatcherResult: ACK_MATCHER_RESULTS.has(value.exactCurrentMatcherResult) ? value.exactCurrentMatcherResult : 'SAFE_EVALUATION_ERROR', candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizeAcknowledgementCandidate) : [] };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -431,6 +463,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.postSubmitClick = sanitizePostSubmitClick(shape.value);
         } else if (shape?.postSubmitVerification === true) {
           record.postSubmitVerification = sanitizePostSubmitVerification(shape.value);
+        } else if (shape?.acknowledgementShape === true) {
+          record.acknowledgementShape = sanitizeAcknowledgementShape(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -493,6 +527,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       postSubmitClickFailed: (value) => persist('POST_SUBMIT_CLICK_FAILED', 'POST_SUBMIT_CLICK_FAILED', {}, true, { value, postSubmitClick: true }),
       postSubmitVerificationStarted: (value) => persist('POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_STARTED', {}, false, { value, postSubmitVerification: true }),
       postSubmitVerificationSummary: (value) => persist(POST_SUBMIT_VERIFICATION_SUMMARY_STAGE, 'POST_SUBMIT_VERIFICATION', {}, true, { value, postSubmitVerification: true }),
+      acknowledgementShapeSummary: (value) => persist('ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SHAPE', {}, true, { value, acknowledgementShape: true }),
     });
   }
 

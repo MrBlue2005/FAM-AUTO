@@ -1,3 +1,5 @@
+const { createAcknowledgementShapeObserver } = require('./acknowledgementDiagnostics');
+
 async function verifyPostPublished(page, composerDialog) {
   console.log('Astept confirmarea publicarii...');
 
@@ -65,11 +67,17 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
   try { diagnostic?.postSubmitVerificationStarted?.({ verificationTimeoutMs: timeout, composerHiddenPredicateEnabled: true, acknowledgementPredicateEnabled: true }); } catch { /* observability only */ }
   try {
     const successMessage = page.getByText(/postarea (ta )?(a fost|este acum) publicat[ăa]|your post (was|is now) published/i).first();
+    // Starts without awaiting: this cannot delay, replace, or broaden either
+    // existing verification predicate.
+    const acknowledgementShapes = createAcknowledgementShapeObserver(page, { now, capture: options.captureAcknowledgementShapes, schedule: options.scheduleAcknowledgementObservation, cancel: options.cancelAcknowledgementObservation });
+    acknowledgementShapes.start();
     const [composer, acknowledgement] = await Promise.all([waitPredicate(composerDialog, 'hidden', timeout), waitPredicate(successMessage, 'visible', timeout)]);
     const [composerState, acknowledgementState] = await Promise.all([observeComposerState(composerDialog), observeAcknowledgement(successMessage, acknowledgement.passed)]);
     const elapsed = Math.max(0, now() - startedAt);
     const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: composer.passed && acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : 'NOT_SATISFIED', failurePredicate: failurePredicate(composer, acknowledgement) };
     try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
+    const acknowledgementShapeSummary = acknowledgementShapes.stop();
+    try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     return composer.passed && acknowledgement.passed;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);

@@ -3,6 +3,10 @@
 ## Phase G5.7CC - post-submit verification diagnostics
 
 - Added protected, bounded task-local diagnostics for real publish click return/failure and terminal strict-verification classification. The records distinguish composer-hidden from acknowledgement-observation failures using only safe enums, booleans, counters, and elapsed-time buckets.
+
+## Phase G5.7CH - post-click acknowledgement-shape diagnostics
+
+- Added bounded, privacy-safe observation of status, alert, aria-live, current-pattern, and accessibility-only acknowledgement-shaped surfaces during the existing post-submit verification window. A protected summary captures only safe structural classifications and transient counters; it does not alter the acknowledgement matcher, success semantics, timeout, submit path, cleanup, or retry policy.
 - No Facebook content, labels, URLs, DOM, account data, cookies, or tokens are persisted. Verification predicates, timeouts, outcome handling, marker ordering, submit limit, retry protection, and cleanup behavior are unchanged.
 
 ## Phase G5.7BY - retained-composer Locator for publish controls
