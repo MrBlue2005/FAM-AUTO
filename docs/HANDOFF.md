@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7CZ post-candidate body-subtree diagnostics
+
+Post-submit observation now assigns each bounded article candidate a task-local sequential `POST_CANDIDATE_n` correlation ID. For only visible, attached candidates with immutable-body containment, it reduces a bounded retained descendant tree and adjacent text-block sequences into enums, booleans, counters, and observation buckets. The fourth critical terminal summary, `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`, correlates the same safe candidate with structural, parity, and temporal observations under the unchanged 32 KiB cap.
+
+No text, text hash, selector, DOM ID/class/path, URL, cookie, account identity, or Facebook identifier is persisted. Exact body discovery is diagnostic-only and never constitutes publication proof: the acknowledgement matcher, strict composer-hidden plus acknowledgement rule, 120-second timeout, `OUTCOME_UNKNOWN`, marker ordering, cleanup, and no-retry semantics are unchanged.
+
 ## G5.7CC post-submit verification diagnostics
 
 The strict post-submit verifier now writes bounded, task-local, privacy-safe click and terminal verification summaries. They distinguish retained-composer-hidden and acknowledgement-observation predicate outcomes, plus safe composer/acknowledgement state classifications, without recording Facebook text, labels, URLs, DOM, cookies, or identities. The existing two-predicate AND requirement, 120-second timeout, marker ordering, one-submit limit, retry policy, and browser cleanup semantics are unchanged.

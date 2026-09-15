@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7CZ - post-candidate body-subtree diagnostics
+
+- Added a fourth critical terminal summary, `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`, under the unchanged 32 KiB task-local cap. It assigns bounded task-local opaque candidate indices and reduces only plausible visible, attached article candidates into safe subtree/contiguous-block parity metadata and temporal observations.
+- No Facebook/post text, content hashes, selectors, DOM IDs/classes/paths, or account identifiers are retained. This is diagnostic-only: acknowledgement matching, strict success semantics, timeout, marker ordering, click, cleanup, and retry behavior are unchanged.
+
 ## Phase G5.7CV - post-candidate text-parity diagnostics
 
 - Added a critical terminal, privacy-safe `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY` beside the existing post-publication structural summary. It distinguishes whole-root mismatch, bounded descendant-body equality, visual-line representation differences, and header/action contamination using only enums, booleans, and bounded counters.

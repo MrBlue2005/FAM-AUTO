@@ -103,6 +103,9 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     // This is an after-the-fact, privacy-reduced explanation of article text
     // parity. It is never consulted by either existing success predicate.
     try { diagnostic?.postCandidateTextParitySummary?.(acknowledgementShapes.textParitySummary()); } catch { /* observability only */ }
+    // Bounded retained-subtree correlation is also diagnostic-only.  It runs
+    // after the existing waits and cannot alter their strict success result.
+    try { diagnostic?.postCandidateBodySubtreeSummary?.(acknowledgementShapes.bodySubtreeSummary()); } catch { /* observability only */ }
     return composer.passed && acknowledgement.passed;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);

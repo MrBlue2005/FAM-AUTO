@@ -29,6 +29,7 @@ const STAGES = new Set([
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -49,6 +50,7 @@ const REASON_CLASSES = new Set([
   'ACKNOWLEDGEMENT_SEMANTIC',
   'POST_PUBLICATION_STRUCTURAL',
   'POST_CANDIDATE_TEXT_PARITY',
+  'POST_CANDIDATE_BODY_SUBTREE',
 ]);
 
 const COUNTERS = new Set([
@@ -135,12 +137,14 @@ const PROTECTED_STAGES = new Set([
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 const CRITICAL_TERMINAL_STAGES = new Set([
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY',
 ]);
 const TERMINAL_DIAGNOSTIC_STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
@@ -148,10 +152,15 @@ const TERMINAL_DIAGNOSTIC_STAGES = new Set([
 ]);
 const DIAGNOSTIC_PRIORITY = Object.freeze({ ORDINARY: 0, PROTECTED: 1, TERMINAL: 2, CRITICAL_TERMINAL: 3 });
 const POST_CANDIDATE_TEXT_PARITY_STAGE = 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY';
+const POST_CANDIDATE_BODY_SUBTREE_STAGE = 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY';
 const POST_CANDIDATE_READER_TYPES = new Set(['CURRENT_READER', 'TEXT_CONTENT', 'INNER_TEXT', 'VISUAL_TEXT', 'DESCENDANT_TEXT_BLOCKS']);
 const POST_CANDIDATE_LENGTH_RELATIONS = new Set(['EMPTY', 'EXACT_LENGTH', 'SHORTER', 'LONGER']);
 const POST_CANDIDATE_TEXT_SHAPES = new Set(['EXACT_POST_BODY_ONLY', 'POST_BODY_PLUS_HEADER', 'POST_BODY_PLUS_ACTIONS', 'POST_BODY_PLUS_HEADER_AND_ACTIONS', 'BODY_SUBSTRING_PRESENT', 'NO_BODY_MATCH', 'EMPTY_OR_UNAVAILABLE', 'AMBIGUOUS']);
 const POST_CANDIDATE_PARITY_CLASSES = new Set(['EXACT_WHOLE_CANDIDATE_MATCH', 'EXACT_DESCENDANT_BODY_MATCH', 'IMMUTABLE_BODY_PRESENT_WITH_EXTRA_UI_TEXT', 'VISUAL_RECONSTRUCTION_REQUIRED', 'NO_IMMUTABLE_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
+const BODY_ISOLATION_CLASSES = new Set(['EXACT_SINGLE_SUBTREE', 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE', 'BODY_WITH_HEADER_OUTSIDE', 'BODY_WITH_ACTIONS_OUTSIDE', 'BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE', 'BODY_PRESENT_BUT_NOT_ISOLATABLE', 'AMBIGUOUS', 'NO_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
+const BODY_SUMMARY_CLASSES = new Set(['EXACT_SINGLE_SUBTREE', 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE', 'IMMUTABLE_BODY_ISOLATED_FROM_EXTRA_UI', 'BODY_PRESENT_BUT_NOT_ISOLATABLE', 'NO_RELIABLE_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
+const POST_CANDIDATE_CORRELATION = /^POST_CANDIDATE_[1-9]\d{0,2}$/;
+const BODY_SUBTREE_TAGS = new Set(['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION', 'OTHER']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -517,7 +526,7 @@ function sanitizePostPublicationStructural(value = {}) {
     structuralSuccessEvidenceClass: STRUCTURAL_EVIDENCE_CLASSES.has(value.structuralSuccessEvidenceClass) ? value.structuralSuccessEvidenceClass : 'SAFE_EVALUATION_ERROR',
     pageState: { retainedComposerAttached: state.retainedComposerAttached === true, retainedComposerVisible: state.retainedComposerVisible === true, composerState: PAGE_COMPOSER_STATES.has(state.composerState) ? state.composerState : 'SAFE_EVALUATION_ERROR', publishControlPresent: state.publishControlPresent === true, publishControlVisible: state.publishControlVisible === true, targetCanonicalValid: state.targetCanonicalValid === true, dialogCountBucket: BUCKETS.has(state.dialogCountBucket) ? state.dialogCountBucket : 'UNKNOWN', visibleDialogCountBucket: BUCKETS.has(state.visibleDialogCountBucket) ? state.visibleDialogCountBucket : 'UNKNOWN' },
     acknowledgementCandidates: Array.isArray(value.acknowledgementCandidates) ? value.acknowledgementCandidates.slice(0, 16).map(sanitizePostPublicationStructuralCandidate) : [],
-    articleCandidates: Array.isArray(value.articleCandidates) ? value.articleCandidates.slice(0, 16).map((candidate) => ({ candidateFamily: ARTICLE_FAMILIES.has(candidate.candidateFamily) ? candidate.candidateFamily : 'UNKNOWN_ARTICLE_LIKE', visible: candidate.visible === true, attached: candidate.attached === true, containsTextSurface: candidate.containsTextSurface === true, containsMediaSurface: candidate.containsMediaSurface === true, containsTimestampLikeSurface: candidate.containsTimestampLikeSurface === true, containsActionBarLikeSurface: candidate.containsActionBarLikeSurface === true, immutableTextExactMatch: candidate.immutableTextExactMatch === true, firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.firstObservedRelativeBucket) ? candidate.firstObservedRelativeBucket : 'UNDER_1S', lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.lastObservedRelativeBucket) ? candidate.lastObservedRelativeBucket : 'UNDER_1S', observationCount: boundedInteger(candidate.observationCount) || 0, transient: candidate.transient === true })) : [],
+    articleCandidates: Array.isArray(value.articleCandidates) ? value.articleCandidates.slice(0, 16).map((candidate) => ({ candidateCorrelationId: POST_CANDIDATE_CORRELATION.test(candidate.candidateCorrelationId) ? candidate.candidateCorrelationId : undefined, candidateFamily: ARTICLE_FAMILIES.has(candidate.candidateFamily) ? candidate.candidateFamily : 'UNKNOWN_ARTICLE_LIKE', visible: candidate.visible === true, attached: candidate.attached === true, containsTextSurface: candidate.containsTextSurface === true, containsMediaSurface: candidate.containsMediaSurface === true, containsTimestampLikeSurface: candidate.containsTimestampLikeSurface === true, containsActionBarLikeSurface: candidate.containsActionBarLikeSurface === true, immutableTextExactMatch: candidate.immutableTextExactMatch === true, firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.firstObservedRelativeBucket) ? candidate.firstObservedRelativeBucket : 'UNDER_1S', lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.lastObservedRelativeBucket) ? candidate.lastObservedRelativeBucket : 'UNDER_1S', observationCount: boundedInteger(candidate.observationCount) || 0, transient: candidate.transient === true })) : [],
   };
 }
 
@@ -538,6 +547,7 @@ function sanitizePostCandidateTextView(value = {}) {
 
 function sanitizePostCandidateTextParityCandidate(value = {}) {
   return {
+    candidateCorrelationId: POST_CANDIDATE_CORRELATION.test(value.candidateCorrelationId) ? value.candidateCorrelationId : undefined,
     candidateFamily: ARTICLE_FAMILIES.has(value.candidateFamily) ? value.candidateFamily : 'UNKNOWN_ARTICLE_LIKE',
     visible: value.visible === true, attached: value.attached === true,
     hasExtraTextBeforeImmutable: value.hasExtraTextBeforeImmutable === true,
@@ -553,6 +563,13 @@ function sanitizePostCandidateTextParityCandidate(value = {}) {
     matchedDescendantAttached: value.matchedDescendantAttached === true,
     exactTextViewMatchObserved: value.exactTextViewMatchObserved === true,
     exactDescendantMatchObserved: value.exactDescendantMatchObserved === true,
+    firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.firstObservedRelativeBucket) ? value.firstObservedRelativeBucket : 'UNDER_1S',
+    lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.lastObservedRelativeBucket) ? value.lastObservedRelativeBucket : 'UNDER_1S',
+    observationCount: boundedInteger(value.observationCount) || 0,
+    wasPresentBeforeClickObservation: value.wasPresentBeforeClickObservation === true,
+    firstObservedAfterClick: value.firstObservedAfterClick === true,
+    remainedVisibleThroughObservation: value.remainedVisibleThroughObservation === true,
+    remainedAttachedThroughObservation: value.remainedAttachedThroughObservation === true,
     views: Array.isArray(value.views) ? value.views.slice(0, 5).map(sanitizePostCandidateTextView) : [],
   };
 }
@@ -563,6 +580,59 @@ function sanitizePostCandidateTextParity(value = {}) {
     ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
     bestSupportedTextParityClass: POST_CANDIDATE_PARITY_CLASSES.has(value.bestSupportedTextParityClass) ? value.bestSupportedTextParityClass : 'SAFE_EVALUATION_ERROR',
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateTextParityCandidate) : [],
+  };
+}
+
+function sanitizePostCandidateBodySubtree(value = {}) {
+  return {
+    candidateCorrelationId: POST_CANDIDATE_CORRELATION.test(value.candidateCorrelationId) ? value.candidateCorrelationId : undefined,
+    subtreeIndex: boundedInteger(value.subtreeIndex) || 0,
+    depthRelativeToCandidate: Math.min(24, boundedInteger(value.depthRelativeToCandidate) || 0),
+    tagFamily: BODY_SUBTREE_TAGS.has(value.tagFamily) ? value.tagFamily : 'OTHER',
+    visible: value.visible === true, attached: value.attached === true,
+    hasDirectTextNode: value.hasDirectTextNode === true, hasDescendantText: value.hasDescendantText === true,
+    hasInteractiveDescendant: value.hasInteractiveDescendant === true, hasArticleDescendant: value.hasArticleDescendant === true,
+    ...sanitizePostCandidateTextView(value),
+  };
+}
+
+function sanitizePostCandidateBodySubtreeCandidate(value = {}) {
+  const candidate = value.candidate || {};
+  return {
+    candidateCorrelationId: POST_CANDIDATE_CORRELATION.test(value.candidateCorrelationId) ? value.candidateCorrelationId : undefined,
+    candidateFamily: ARTICLE_FAMILIES.has(candidate.candidateFamily) ? candidate.candidateFamily : 'UNKNOWN_ARTICLE_LIKE',
+    visible: candidate.visible === true, attached: candidate.attached === true,
+    bodyIsolationClass: BODY_ISOLATION_CLASSES.has(value.bodyIsolationClass) ? value.bodyIsolationClass : 'SAFE_EVALUATION_ERROR',
+    minimalExactBodySubtreeFound: value.minimalExactBodySubtreeFound === true,
+    minimalExactBodySubtreeCount: boundedInteger(value.minimalExactBodySubtreeCount) || 0,
+    minimalMatchVisible: value.minimalMatchVisible === true, minimalMatchAttached: value.minimalMatchAttached === true,
+    minimalMatchDepth: Math.min(24, boundedInteger(value.minimalMatchDepth) || 0),
+    minimalMatchHasInteractiveDescendant: value.minimalMatchHasInteractiveDescendant === true,
+    minimalMatchHasArticleDescendant: value.minimalMatchHasArticleDescendant === true,
+    exactContiguousBlockSequenceFound: value.exactContiguousBlockSequenceFound === true,
+    exactContiguousBlockSequenceCount: boundedInteger(value.exactContiguousBlockSequenceCount) || 0,
+    blockCountInBestMatch: Math.min(24, boundedInteger(value.blockCountInBestMatch) || 0),
+    bestSequenceVisible: value.bestSequenceVisible === true, bestSequenceAttached: value.bestSequenceAttached === true,
+    extraTextBeforeBody: value.extraTextBeforeBody === true, extraTextAfterBody: value.extraTextAfterBody === true,
+    headerOutsideBody: value.headerOutsideBody === true, actionsOutsideBody: value.actionsOutsideBody === true,
+    timestampOutsideBody: value.timestampOutsideBody === true,
+    firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.firstObservedRelativeBucket) ? value.firstObservedRelativeBucket : 'UNDER_1S',
+    lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.lastObservedRelativeBucket) ? value.lastObservedRelativeBucket : 'UNDER_1S',
+    observationCount: boundedInteger(value.observationCount) || 0,
+    wasPresentBeforeClickObservation: value.wasPresentBeforeClickObservation === true,
+    firstObservedAfterClick: value.firstObservedAfterClick === true,
+    remainedVisibleThroughObservation: value.remainedVisibleThroughObservation === true,
+    remainedAttachedThroughObservation: value.remainedAttachedThroughObservation === true,
+    subtrees: Array.isArray(value.subtrees) ? value.subtrees.slice(0, 24).map(sanitizePostCandidateBodySubtree) : [],
+  };
+}
+
+function sanitizePostCandidateBodySubtreeSummary(value = {}) {
+  const counts = ['candidateCountInspected', 'bodySubstringCandidateCount', 'minimalExactBodySubtreeCandidateCount', 'exactContiguousBlockSequenceCandidateCount', 'bodyWithHeaderOutsideCount', 'bodyWithActionsOutsideCount', 'bodyWithHeaderAndActionsOutsideCount', 'bodyPresentButNotIsolatableCount', 'ambiguousCount', 'newAfterClickExactBodyCandidateCount', 'visibleAttachedExactBodyCandidateCount'];
+  return {
+    ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
+    bestSupportedBodyIsolationClass: BODY_SUMMARY_CLASSES.has(value.bestSupportedBodyIsolationClass) ? value.bestSupportedBodyIsolationClass : 'SAFE_EVALUATION_ERROR',
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }
 
@@ -644,6 +714,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.postPublicationStructural = sanitizePostPublicationStructural(shape.value);
         } else if (shape?.postCandidateTextParity === true) {
           record.postCandidateTextParity = sanitizePostCandidateTextParity(shape.value);
+        } else if (shape?.postCandidateBodySubtree === true) {
+          record.postCandidateBodySubtree = sanitizePostCandidateBodySubtreeSummary(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -656,7 +728,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' || stage === POST_CANDIDATE_TEXT_PARITY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' || stage === POST_CANDIDATE_TEXT_PARITY_STAGE || stage === POST_CANDIDATE_BODY_SUBTREE_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -711,6 +783,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       acknowledgementSemanticSummary: (value) => persist('ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SEMANTIC', {}, true, { value, acknowledgementSemantic: true }),
       postPublicationStructuralSummary: (value) => persist('POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL', {}, true, { value, postPublicationStructural: true }),
       postCandidateTextParitySummary: (value) => persist(POST_CANDIDATE_TEXT_PARITY_STAGE, 'POST_CANDIDATE_TEXT_PARITY', {}, true, { value, postCandidateTextParity: true }),
+      postCandidateBodySubtreeSummary: (value) => persist(POST_CANDIDATE_BODY_SUBTREE_STAGE, 'POST_CANDIDATE_BODY_SUBTREE', {}, true, { value, postCandidateBodySubtree: true }),
     });
   }
 
@@ -742,6 +815,8 @@ module.exports = {
   sanitizeAcknowledgementSemanticCandidate,
   sanitizeAcknowledgementSemantic,
   sanitizePostPublicationStructural,
+  sanitizePostCandidateTextParity,
+  sanitizePostCandidateBodySubtreeSummary,
   MAX_PUBLISH_CONTROL_CANDIDATES,
   MAX_PUBLISH_CONTROL_SNAPSHOTS,
   DIAGNOSTIC_PRIORITY,

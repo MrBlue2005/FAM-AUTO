@@ -124,6 +124,90 @@ function summarizeArticleTextParity(candidates = []) {
   };
 }
 
+// Raw subtree values exist only while this helper reduces them to bounded,
+// privacy-safe comparison metadata. They are never kept by the observer.
+function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
+  try {
+    const immutable = normalizeImmutablePostText(immutableText);
+    const candidate = diagnoseArticleTextParity(raw, immutable);
+    const plausible = candidate.visible && candidate.attached && candidate.views.some((view) => view.containsImmutableText);
+    if (!plausible) return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate, subtrees: [], bodyIsolationClass: candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS' : 'NO_BODY_SIGNAL' };
+    const rawSubtrees = Array.isArray(raw.bodySubtrees) ? raw.bodySubtrees.slice(0, 24) : [];
+    const subtrees = rawSubtrees.map((subtree, index) => {
+      const parity = textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false);
+      return {
+        candidateCorrelationId: raw.candidateCorrelationId,
+        subtreeIndex: index + 1,
+        depthRelativeToCandidate: bounded(subtree?.depthRelativeToCandidate, 24),
+        tagFamily: ['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION'].includes(subtree?.tagFamily) ? subtree.tagFamily : 'OTHER',
+        visible: subtree?.visible === true, attached: subtree?.attached === true,
+        hasDirectTextNode: subtree?.hasDirectTextNode === true, hasDescendantText: subtree?.hasDescendantText === true,
+        hasInteractiveDescendant: subtree?.hasInteractiveDescendant === true, hasArticleDescendant: subtree?.hasArticleDescendant === true,
+        ...parity,
+      };
+    });
+    const exact = subtrees.filter((subtree) => subtree.visible && subtree.attached && subtree.exactImmutableMatch);
+    let sequenceCount = 0; let bestBlockCount = 0; let sequenceVisible = false; let sequenceAttached = false;
+    if (!exact.length && immutable) {
+      for (let start = 0; start < subtrees.length; start += 1) {
+        let joined = '';
+        for (let end = start; end < Math.min(subtrees.length, start + 8); end += 1) {
+          const source = rawSubtrees[end]; const next = normalizeImmutablePostText(source?.value);
+          joined = joined ? `${joined}\n${next}` : next;
+          if (normalizeImmutablePostText(joined) !== immutable) continue;
+          const sequence = subtrees.slice(start, end + 1);
+          if (sequence.every((item) => item.visible && item.attached)) { sequenceCount += 1; bestBlockCount = bestBlockCount || sequence.length; sequenceVisible = true; sequenceAttached = true; }
+        }
+      }
+    }
+    const hasBody = candidate.views.some((view) => view.containsImmutableText);
+    const header = candidate.hasAuthorHeaderTextSurface; const actions = candidate.hasActionControlTextSurface;
+    const isolate = exact.length || sequenceCount;
+    const bodyIsolationClass = candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS'
+      : isolate && header && actions ? 'BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE'
+        : isolate && header ? 'BODY_WITH_HEADER_OUTSIDE'
+          : isolate && actions ? 'BODY_WITH_ACTIONS_OUTSIDE'
+            : exact.length ? 'EXACT_SINGLE_SUBTREE'
+              : sequenceCount ? 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE'
+                : hasBody ? 'BODY_PRESENT_BUT_NOT_ISOLATABLE' : 'NO_BODY_SIGNAL';
+    return {
+      candidateCorrelationId: raw.candidateCorrelationId, inspected: true, candidate, subtrees,
+      minimalExactBodySubtreeFound: exact.length > 0, minimalExactBodySubtreeCount: bounded(exact.length),
+      minimalMatchVisible: exact.some((item) => item.visible), minimalMatchAttached: exact.some((item) => item.attached),
+      minimalMatchDepth: bounded(exact[0]?.depthRelativeToCandidate, 24),
+      minimalMatchHasInteractiveDescendant: exact.some((item) => item.hasInteractiveDescendant), minimalMatchHasArticleDescendant: exact.some((item) => item.hasArticleDescendant),
+      exactContiguousBlockSequenceFound: sequenceCount > 0, exactContiguousBlockSequenceCount: bounded(sequenceCount), blockCountInBestMatch: bounded(bestBlockCount, 24),
+      bestSequenceVisible: sequenceVisible, bestSequenceAttached: sequenceAttached,
+      bodyIsolationClass, extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
+      headerOutsideBody: isolate && header, actionsOutsideBody: isolate && actions, timestampOutsideBody: isolate && candidate.hasTimestampTextSurface,
+    };
+  } catch {
+    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR' };
+  }
+}
+
+function summarizeArticleBodySubtrees(candidates = []) {
+  const inspected = candidates.filter((candidate) => candidate.inspected);
+  const count = (value) => inspected.filter((candidate) => candidate.bodyIsolationClass === value).length;
+  const exact = inspected.filter((candidate) => candidate.minimalExactBodySubtreeFound || candidate.exactContiguousBlockSequenceFound);
+  const bestSupportedBodyIsolationClass = exact.some((candidate) => candidate.bodyIsolationClass === 'EXACT_SINGLE_SUBTREE') ? 'EXACT_SINGLE_SUBTREE'
+    : exact.some((candidate) => candidate.bodyIsolationClass === 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE') ? 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE'
+      : exact.length ? 'IMMUTABLE_BODY_ISOLATED_FROM_EXTRA_UI'
+        : count('BODY_PRESENT_BUT_NOT_ISOLATABLE') ? 'BODY_PRESENT_BUT_NOT_ISOLATABLE'
+          : inspected.some((candidate) => candidate.bodyIsolationClass === 'SAFE_EVALUATION_ERROR') ? 'SAFE_EVALUATION_ERROR' : 'NO_RELIABLE_BODY_SIGNAL';
+  return {
+    candidateCountInspected: inspected.length,
+    bodySubstringCandidateCount: inspected.filter((candidate) => candidate.candidate.views.some((view) => view.containsImmutableText)).length,
+    minimalExactBodySubtreeCandidateCount: inspected.filter((candidate) => candidate.minimalExactBodySubtreeFound).length,
+    exactContiguousBlockSequenceCandidateCount: inspected.filter((candidate) => candidate.exactContiguousBlockSequenceFound).length,
+    bodyWithHeaderOutsideCount: count('BODY_WITH_HEADER_OUTSIDE'), bodyWithActionsOutsideCount: count('BODY_WITH_ACTIONS_OUTSIDE'),
+    bodyWithHeaderAndActionsOutsideCount: count('BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE'), bodyPresentButNotIsolatableCount: count('BODY_PRESENT_BUT_NOT_ISOLATABLE'), ambiguousCount: count('AMBIGUOUS'),
+    newAfterClickExactBodyCandidateCount: exact.filter((candidate) => candidate.firstObservedAfterClick).length,
+    visibleAttachedExactBodyCandidateCount: exact.filter((candidate) => candidate.candidate.visible && candidate.candidate.attached).length,
+    bestSupportedBodyIsolationClass, candidates,
+  };
+}
+
 // This accepts transient page text only to immediately reduce it to fixed,
 // non-reversible semantic booleans and enums.  It must never return text.
 function classifyAcknowledgementSemanticText(renderedText, accessibilityText) {
@@ -301,6 +385,16 @@ async function inspectAcknowledgementShapes(page, options = {}) {
         const currentReader = String(node.innerText || node.textContent || '');
         const articleFamily = roleValue === 'article' ? 'ARTICLE_ROLE' : roleValue === 'feeditem' ? 'FEED_ITEM_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE';
         const descendants = Array.from(node.querySelectorAll('div,span,p,[role="textbox"],article,[role="article"]')).filter((child) => child !== node).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true }));
+        const relativeDepth = (child) => { let value = 0; let current = child; while (current?.parentElement && current.parentElement !== node && value < 24) { value += 1; current = current.parentElement; } return value + 1; };
+        const bodySubtrees = Array.from(node.querySelectorAll('div,span,p,article,section')).filter((child) => child !== node).slice(0, 24).map((child) => ({
+          value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true,
+          depthRelativeToCandidate: relativeDepth(child), tagFamily: ['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION'].includes(child.tagName) ? child.tagName : 'OTHER',
+          hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()),
+          hasDescendantText: Array.from(child.children).some((item) => String(item.innerText || item.textContent || '').trim()),
+          hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null,
+          hasArticleDescendant: child.querySelector('article,[role="article"]') !== null,
+          readSucceeded: true,
+        }));
         return {
           key: `${index}:${articleFamily}`, candidateFamily: articleFamily, visible: visible(node), attached: node.isConnected === true,
           containsTextSurface: Boolean(currentReader.trim()), containsMediaSurface: node.querySelector('img,video') !== null,
@@ -312,7 +406,7 @@ async function inspectAcknowledgementShapes(page, options = {}) {
             innerText: { value: innerText, readSucceeded: true }, visualText: { value: visualText(node), readSucceeded: true },
             descendantTextBlocks: { value: descendants.map((child) => child.value).join('\n'), readSucceeded: true },
           },
-          descendantTexts: descendants,
+          descendantTexts: descendants, bodySubtrees,
         };
       });
       return { candidates: out, articles };
@@ -373,7 +467,10 @@ function createAcknowledgementShapeObserver(page, options = {}) {
       if (!raw?.key || articleEntries.size >= 16 && !articleEntries.has(raw.key)) continue;
       // Raw DOM text is reduced here, before any observer state or terminal
       // diagnostic can retain it.
+      const correlationId = `POST_CANDIDATE_${articleEntries.size + 1}`;
+      raw.candidateCorrelationId = articleEntries.get(raw.key)?.candidateCorrelationId || correlationId;
       const article = diagnoseArticleTextParity(raw, options.immutableText);
+      const subtree = diagnoseArticleBodySubtrees(raw, options.immutableText);
       const existing = articleEntries.get(raw.key);
       if (existing) {
         existing.lastSnapshot = currentSnapshot; existing.lastObservedRelativeBucket = relativeBucket(now() - startedAt);
@@ -384,7 +481,10 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         existing.exactImmutableDescendantMatch = existing.exactImmutableDescendantMatch || article.exactImmutableDescendantMatch === true;
         existing.exactImmutableDescendantMatchCount = Math.max(existing.exactImmutableDescendantMatchCount || 0, article.exactImmutableDescendantMatchCount || 0);
         existing.views = article.views;
-      } else articleEntries.set(raw.key, { ...article, immutableTextExactMatch: article.exactTextViewMatchObserved === true, firstSnapshot: currentSnapshot, lastSnapshot: currentSnapshot, firstObservedRelativeBucket: relativeBucket(now() - startedAt), lastObservedRelativeBucket: relativeBucket(now() - startedAt), observationCount: 1 });
+        existing.bodySubtree = subtree;
+        existing.remainedVisibleThroughObservation = existing.remainedVisibleThroughObservation && article.visible;
+        existing.remainedAttachedThroughObservation = existing.remainedAttachedThroughObservation && article.attached;
+      } else articleEntries.set(raw.key, { ...article, candidateCorrelationId: raw.candidateCorrelationId, bodySubtree: subtree, immutableTextExactMatch: article.exactTextViewMatchObserved === true, firstSnapshot: currentSnapshot, lastSnapshot: currentSnapshot, firstObservedRelativeBucket: relativeBucket(now() - startedAt), lastObservedRelativeBucket: relativeBucket(now() - startedAt), observationCount: 1, wasPresentBeforeClickObservation: currentSnapshot === 0, firstObservedAfterClick: currentSnapshot > 0, remainedVisibleThroughObservation: article.visible, remainedAttachedThroughObservation: article.attached });
     }
     if (currentSnapshot === 0) startVisible = visibleAtThisSnapshot;
   };
@@ -497,6 +597,17 @@ function createAcknowledgementShapeObserver(page, options = {}) {
       }));
       return summarizeArticleTextParity(candidates);
     },
+    bodySubtreeSummary() {
+      const candidates = [...articleEntries.values()].map((entry) => ({
+        ...(entry.bodySubtree || {}), candidateCorrelationId: entry.candidateCorrelationId,
+        candidate: { ...entry, candidateCorrelationId: entry.candidateCorrelationId },
+        firstObservedRelativeBucket: entry.firstObservedRelativeBucket, lastObservedRelativeBucket: entry.lastObservedRelativeBucket,
+        observationCount: entry.observationCount, wasPresentBeforeClickObservation: entry.wasPresentBeforeClickObservation,
+        firstObservedAfterClick: entry.firstObservedAfterClick, remainedVisibleThroughObservation: entry.remainedVisibleThroughObservation,
+        remainedAttachedThroughObservation: entry.remainedAttachedThroughObservation,
+      }));
+      return summarizeArticleBodySubtrees(candidates);
+    },
   });
 }
 
@@ -508,6 +619,8 @@ module.exports = {
   classifyAcknowledgementSemanticText,
   normalizeImmutablePostText,
   diagnoseArticleTextParity,
+  diagnoseArticleBodySubtrees,
+  summarizeArticleBodySubtrees,
   summarizeArticleTextParity,
   createAcknowledgementShapeObserver,
   inspectAcknowledgementShapes,

@@ -7,7 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
-const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText, diagnoseArticleTextParity, summarizeArticleTextParity } = require('../app/facebook/acknowledgementDiagnostics');
+const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText, diagnoseArticleTextParity, diagnoseArticleBodySubtrees, summarizeArticleTextParity, summarizeArticleBodySubtrees } = require('../app/facebook/acknowledgementDiagnostics');
 const { submitScopedPublishControl } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
@@ -34,6 +34,7 @@ function diagnostic() {
     acknowledgementSemanticSummary: (value) => records.push({ stage: 'ACK_SEMANTIC_SUMMARY', value }),
     postPublicationStructuralSummary: (value) => records.push({ stage: 'POST_PUBLICATION_STRUCTURAL_SUMMARY', value }),
     postCandidateTextParitySummary: (value) => records.push({ stage: 'POST_CANDIDATE_TEXT_PARITY_SUMMARY', value }),
+    postCandidateBodySubtreeSummary: (value) => records.push({ stage: 'POST_CANDIDATE_BODY_SUBTREE_SUMMARY', value }),
     postSubmitClickStarted: (value) => records.push({ stage: 'CLICK_START', value }),
     postSubmitClickReturned: (value) => records.push({ stage: 'CLICK_RETURNED', value }),
     postSubmitClickFailed: (value) => records.push({ stage: 'CLICK_FAILED', value }),
@@ -75,6 +76,7 @@ test('post-submit summary records strict success without changing both-predicate
   });
   assert.ok(sink.records.some((record) => record.stage === 'ACK_SEMANTIC_SUMMARY'));
   assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_SUMMARY'));
+  assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_SUMMARY'));
 });
 
 test('post-submit summary distinguishes acknowledgement timeout from composer-hidden success', async () => {
@@ -308,6 +310,85 @@ function parityArticle(overrides = {}) {
   };
 }
 
+function bodySubtree(value, overrides = {}) {
+  return {
+    value, visible: true, attached: true, depthRelativeToCandidate: 2, tagFamily: 'DIV',
+    hasDirectTextNode: true, hasDescendantText: false, hasInteractiveDescendant: false,
+    hasArticleDescendant: false, readSucceeded: true, ...overrides,
+  };
+}
+
+function bodyArticle(subtrees, overrides = {}) {
+  const body = 'immutable body';
+  return parityArticle({
+    candidateCorrelationId: 'POST_CANDIDATE_1',
+    textViews: {
+      currentReader: { value: body }, textContent: { value: body }, innerText: { value: body },
+      visualText: { value: body }, descendantTextBlocks: { value: body },
+    }, descendantTexts: [{ value: body, visible: true, attached: true }], bodySubtrees: subtrees, ...overrides,
+  });
+}
+
+test('post-candidate body-subtree diagnostics isolate exact body and bounded header/action UI shapes', () => {
+  const exact = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body')]), 'immutable body');
+  assert.equal(exact.bodyIsolationClass, 'EXACT_SINGLE_SUBTREE');
+  assert.equal(exact.minimalExactBodySubtreeFound, true);
+
+  const header = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('header'), bodySubtree('immutable body')], { hasAuthorHeaderTextSurface: true, textViews: { currentReader: { value: 'header immutable body' }, textContent: { value: 'header immutable body' }, innerText: { value: 'header immutable body' }, visualText: { value: 'header immutable body' }, descendantTextBlocks: { value: 'header\nimmutable body' } } }), 'immutable body');
+  assert.equal(header.bodyIsolationClass, 'BODY_WITH_HEADER_OUTSIDE');
+
+  const actions = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body'), bodySubtree('actions', { hasInteractiveDescendant: true })], { hasActionControlTextSurface: true, textViews: { currentReader: { value: 'immutable body actions' }, textContent: { value: 'immutable body actions' }, innerText: { value: 'immutable body actions' }, visualText: { value: 'immutable body actions' }, descendantTextBlocks: { value: 'immutable body\nactions' } } }), 'immutable body');
+  assert.equal(actions.bodyIsolationClass, 'BODY_WITH_ACTIONS_OUTSIDE');
+
+  const combined = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('header'), bodySubtree('immutable body'), bodySubtree('actions')], { hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true, textViews: { currentReader: { value: 'header immutable body actions' }, textContent: { value: 'header immutable body actions' }, innerText: { value: 'header immutable body actions' }, visualText: { value: 'header immutable body actions' }, descendantTextBlocks: { value: 'header\nimmutable body\nactions' } } }), 'immutable body');
+  assert.equal(combined.bodyIsolationClass, 'BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE');
+});
+
+test('post-candidate body-subtree diagnostics recognize bounded contiguous blocks and fail closed for ambiguous/non-isolatable shapes', () => {
+  const sequence = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable'), bodySubtree('body')], { textViews: { currentReader: { value: 'immutable\nbody' }, textContent: { value: 'immutable\nbody' }, innerText: { value: 'immutable\nbody' }, visualText: { value: 'immutable\nbody' }, descendantTextBlocks: { value: 'immutable\nbody' } } }), 'immutable\nbody');
+  assert.equal(sequence.bodyIsolationClass, 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE');
+  assert.equal(sequence.exactContiguousBlockSequenceFound, true);
+
+  const notIsolatable = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body extra')], { textViews: { currentReader: { value: 'immutable body extra' }, textContent: { value: 'immutable body extra' }, innerText: { value: 'immutable body extra' }, visualText: { value: 'immutable body extra' }, descendantTextBlocks: { value: 'immutable body extra' } } }), 'immutable body');
+  assert.equal(notIsolatable.bodyIsolationClass, 'BODY_PRESENT_BUT_NOT_ISOLATABLE');
+
+  const ambiguous = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body')], { hasNestedArticleTextSurface: true }), 'immutable body');
+  assert.equal(ambiguous.bodyIsolationClass, 'AMBIGUOUS');
+  assert.equal(summarizeArticleBodySubtrees([sequence, notIsolatable, ambiguous]).bestSupportedBodyIsolationClass, 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE');
+});
+
+test('post-candidate body-subtree correlation follows the same candidate across temporal observations', async () => {
+  let snapshot = 0; let clock = 0;
+  const existing = bodyArticle([bodySubtree('immutable body')], { key: 'existing' });
+  const added = bodyArticle([bodySubtree('immutable body')], { key: 'added', candidateCorrelationId: undefined });
+  const observer = createAcknowledgementShapeObserver(null, {
+    now: () => clock,
+    capture: async () => ({ result: 'AVAILABLE', candidates: [], articles: snapshot++ ? [existing, added] : [existing] }),
+    schedule: () => 0, cancel: () => {}, immutableText: 'immutable body',
+  });
+  await observer.observe(); clock += 1000; await observer.observe();
+  const parity = observer.textParitySummary(); const body = observer.bodySubtreeSummary(); const structural = observer.structuralSummary({});
+  const existingBody = body.candidates.find((candidate) => candidate.candidateCorrelationId === 'POST_CANDIDATE_1');
+  const addedBody = body.candidates.find((candidate) => candidate.candidateCorrelationId === 'POST_CANDIDATE_2');
+  assert.ok(existingBody); assert.equal(existingBody.wasPresentBeforeClickObservation, true); assert.equal(existingBody.firstObservedAfterClick, false);
+  assert.ok(addedBody); assert.equal(addedBody.wasPresentBeforeClickObservation, false); assert.equal(addedBody.firstObservedAfterClick, true);
+  assert.ok(parity.candidates.some((candidate) => candidate.candidateCorrelationId === 'POST_CANDIDATE_2'));
+  assert.ok(structural.articleCandidates.some((candidate) => candidate.candidateCorrelationId === 'POST_CANDIDATE_2'));
+});
+
+test('post-candidate body-subtree persistence excludes raw content, hashes, DOM references, and identifiers', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-post-candidate-body-'));
+  try {
+    const taskId = 'live_execution_post_candidate_body';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, now: () => '2026-09-16T00:00:00.000Z' }).forTask(taskId);
+    const body = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('private Facebook post', { selector: '#private', className: 'private', domPath: '/html/body', facebookId: 'fb-123' })]), 'private Facebook post');
+    sink.postCandidateBodySubtreeSummary({ ...summarizeArticleBodySubtrees([body]), rawText: 'private Facebook post', hash: 'secret-hash', selector: '#private', domPath: '/html/body', facebookId: 'fb-123' });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook post|secret-hash|#private|\/html\/body|fb-123/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('post-candidate parity distinguishes exact roots, headers, actions, and combined UI contamination without retaining text', () => {
   const exact = diagnoseArticleTextParity(parityArticle(), 'immutable body');
   assert.equal(exact.candidateTextShape, 'EXACT_POST_BODY_ONLY');
@@ -374,7 +455,7 @@ function criticalStructuralSummary() {
   return { ackSurfaceCount: 1, composerHiddenObserved: true, publishControlGoneObserved: true, canonicalTargetStillValid: true, structuralSuccessEvidenceClass: 'COMPOSER_ONLY', pageState: { retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'DETACHED', targetCanonicalValid: true, dialogCountBucket: 'ZERO', visibleDialogCountBucket: 'ZERO' }, acknowledgementCandidates: [{ role: 'status', accessibleNameSource: 'TEXT_CONTENT', textSource: 'DIRECT_TEXT_NODE', semanticContainer: 'STATUS_CONTAINER_LIKE' }] };
 }
 
-test('near-32KiB pressure evicts lower-priority diagnostics and retains both critical post-submit summaries', () => {
+test('near-32KiB pressure evicts lower-priority diagnostics and retains all critical terminal summaries', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-retention-'));
   try {
     const taskId = 'live_execution_critical_retention';
@@ -384,11 +465,13 @@ test('near-32KiB pressure evicts lower-priority diagnostics and retains both cri
     sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
     sink.postPublicationStructuralSummary(criticalStructuralSummary());
     sink.postCandidateTextParitySummary(summarizeArticleTextParity([diagnoseArticleTextParity(parityArticle(), 'immutable body')]));
+    sink.postCandidateBodySubtreeSummary(summarizeArticleBodySubtrees([diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body')]), 'immutable body')]));
     const file = path.join(directory, `${taskId}.json`); const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.ok(fs.statSync(file).size <= 32 * 1024);
     assert.ok(persisted.records.some((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY'));
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.filter((record) => record.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY').length < 8);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
