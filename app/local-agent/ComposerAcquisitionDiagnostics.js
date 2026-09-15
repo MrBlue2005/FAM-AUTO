@@ -23,6 +23,8 @@ const STAGES = new Set([
   'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY',
   'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY',
   'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY',
+  'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
+  'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -37,6 +39,8 @@ const REASON_CLASSES = new Set([
   'CONTENT_MISMATCH',
   'ZERO_MEDIA_INSPECTION',
   'PUBLISH_CONTROL_DISCOVERY',
+  'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
+  'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION',
 ]);
 
 const COUNTERS = new Set([
@@ -88,6 +92,7 @@ const CONTENT_MISMATCH_READERS = new Set([
 const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const ZERO_MEDIA_INSPECTION_SUMMARY_STAGE = 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY';
 const PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE = 'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY';
+const POST_SUBMIT_VERIFICATION_SUMMARY_STAGE = 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY';
 const MAX_PUBLISH_CONTROL_CANDIDATES = 16;
 const MAX_PUBLISH_CONTROL_SNAPSHOTS = 3;
 const PUBLISH_CONTROL_TAG_NAMES = new Set(['BUTTON', 'INPUT', 'DIV', 'SPAN', 'A', 'OTHER']);
@@ -117,6 +122,7 @@ const PROTECTED_STAGES = new Set([
   CONTENT_MISMATCH_SUMMARY_STAGE,
   ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
   PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE,
+  POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -321,6 +327,54 @@ function sanitizePublishControlDiscovery(value = {}) {
   };
 }
 
+const POST_SUBMIT_COMPOSER_STATES = new Set([
+  'ATTACHED_VISIBLE', 'ATTACHED_HIDDEN', 'DETACHED', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR',
+]);
+const POST_SUBMIT_ACKNOWLEDGEMENT_CLASSES = new Set([
+  'NONE', 'MATCH_FOUND', 'CANDIDATES_PRESENT_NO_MATCH', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR',
+]);
+const POST_SUBMIT_PREDICATE_RESULTS = new Set([
+  'PASSED', 'FAILED_TIMEOUT', 'FAILED_ERROR', 'NOT_COMPLETED',
+]);
+const POST_SUBMIT_SUCCESS_PREDICATES = new Set(['BOTH_PREDICATES_PASSED', 'NOT_SATISFIED']);
+const POST_SUBMIT_FAILURE_PREDICATES = new Set([
+  'NONE', 'COMPOSER_NOT_HIDDEN', 'ACKNOWLEDGEMENT_NOT_OBSERVED', 'BOTH_FAILED',
+  'CLICK_FAILED', 'VERIFICATION_ERROR', 'OTHER_SAFE_FAILURE',
+]);
+const POST_SUBMIT_CLICK_ERRORS = new Set(['NONE', 'TIMEOUT', 'SAFE_CLICK_ERROR']);
+const POST_SUBMIT_ELAPSED_BUCKETS = new Set([
+  'UNDER_1_SECOND', 'UNDER_5_SECONDS', 'UNDER_30_SECONDS', 'UNDER_120_SECONDS', 'AT_OR_OVER_TIMEOUT', 'UNKNOWN',
+]);
+const boundedDuration = (value) => Math.max(0, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
+
+function sanitizePostSubmitClick(value = {}) {
+  return {
+    clickReturned: value.clickReturned === true,
+    elapsedMs: boundedDuration(value.elapsedMs),
+    clickError: POST_SUBMIT_CLICK_ERRORS.has(value.clickError) ? value.clickError : 'SAFE_CLICK_ERROR',
+  };
+}
+
+function sanitizePostSubmitVerification(value = {}) {
+  const bool = (key) => value[key] === true;
+  return {
+    clickReturned: bool('clickReturned'),
+    verificationStarted: bool('verificationStarted'),
+    verificationElapsedMs: boundedDuration(value.verificationElapsedMs),
+    verificationElapsedBucket: POST_SUBMIT_ELAPSED_BUCKETS.has(value.verificationElapsedBucket) ? value.verificationElapsedBucket : 'UNKNOWN',
+    retainedComposerAttached: bool('retainedComposerAttached'),
+    retainedComposerVisible: bool('retainedComposerVisible'),
+    composerState: POST_SUBMIT_COMPOSER_STATES.has(value.composerState) ? value.composerState : 'SAFE_EVALUATION_ERROR',
+    acknowledgementCandidateCount: boundedInteger(value.acknowledgementCandidateCount) || 0,
+    acknowledgementClassification: POST_SUBMIT_ACKNOWLEDGEMENT_CLASSES.has(value.acknowledgementClassification) ? value.acknowledgementClassification : 'SAFE_EVALUATION_ERROR',
+    canonicalTargetStillValid: bool('canonicalTargetStillValid'),
+    composerHiddenPredicate: POST_SUBMIT_PREDICATE_RESULTS.has(value.composerHiddenPredicate) ? value.composerHiddenPredicate : 'NOT_COMPLETED',
+    acknowledgementPredicate: POST_SUBMIT_PREDICATE_RESULTS.has(value.acknowledgementPredicate) ? value.acknowledgementPredicate : 'NOT_COMPLETED',
+    successPredicate: POST_SUBMIT_SUCCESS_PREDICATES.has(value.successPredicate) ? value.successPredicate : 'NOT_SATISFIED',
+    failurePredicate: POST_SUBMIT_FAILURE_PREDICATES.has(value.failurePredicate) ? value.failurePredicate : 'OTHER_SAFE_FAILURE',
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -373,6 +427,10 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.zeroMediaInspection = sanitizeZeroMediaInspection(shape.value);
         } else if (shape?.publishControlDiscovery === true) {
           record.publishControlDiscovery = sanitizePublishControlDiscovery(shape.value);
+        } else if (shape?.postSubmitClick === true) {
+          record.postSubmitClick = sanitizePostSubmitClick(shape.value);
+        } else if (shape?.postSubmitVerification === true) {
+          record.postSubmitVerification = sanitizePostSubmitVerification(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -385,7 +443,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -430,6 +488,11 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       contentMismatchSummary: (value) => persist(CONTENT_MISMATCH_SUMMARY_STAGE, 'CONTENT_MISMATCH', {}, true, { value, contentMismatch: true }),
       zeroMediaInspectionSummary: (value) => persist(ZERO_MEDIA_INSPECTION_SUMMARY_STAGE, 'ZERO_MEDIA_INSPECTION', {}, true, { value, zeroMediaInspection: true }),
       publishControlDiscoverySummary: (value) => persist(PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE, 'PUBLISH_CONTROL_DISCOVERY', {}, true, { value, publishControlDiscovery: true }),
+      postSubmitClickStarted: (value) => persist('POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_STARTED', {}, false, { value, postSubmitClick: true }),
+      postSubmitClickReturned: (value) => persist('POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_RETURNED', {}, false, { value, postSubmitClick: true }),
+      postSubmitClickFailed: (value) => persist('POST_SUBMIT_CLICK_FAILED', 'POST_SUBMIT_CLICK_FAILED', {}, true, { value, postSubmitClick: true }),
+      postSubmitVerificationStarted: (value) => persist('POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_STARTED', {}, false, { value, postSubmitVerification: true }),
+      postSubmitVerificationSummary: (value) => persist(POST_SUBMIT_VERIFICATION_SUMMARY_STAGE, 'POST_SUBMIT_VERIFICATION', {}, true, { value, postSubmitVerification: true }),
     });
   }
 
@@ -456,6 +519,8 @@ module.exports = {
   sanitizeZeroMediaInspection,
   sanitizePublishControlCandidate,
   sanitizePublishControlDiscovery,
+  sanitizePostSubmitClick,
+  sanitizePostSubmitVerification,
   MAX_PUBLISH_CONTROL_CANDIDATES,
   MAX_PUBLISH_CONTROL_SNAPSHOTS,
   STAGES,

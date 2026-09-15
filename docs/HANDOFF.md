@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7CC post-submit verification diagnostics
+
+The strict post-submit verifier now writes bounded, task-local, privacy-safe click and terminal verification summaries. They distinguish retained-composer-hidden and acknowledgement-observation predicate outcomes, plus safe composer/acknowledgement state classifications, without recording Facebook text, labels, URLs, DOM, cookies, or identities. The existing two-predicate AND requirement, 120-second timeout, marker ordering, one-submit limit, retry policy, and browser cleanup semantics are unchanged.
+
 ## G5.7BY retained-composer Locator for publish controls
 
 Publish-control discovery now traverses only the exact paired `composer.locator` that was retained with the accepted composer `ElementHandle`; it no longer attempts Locator traversal on that ElementHandle. The handle remains the authority for DOM identity, attachment, visibility, and structural evaluation. The reviewed static selector (`button, [role="button"]`), exact Romanian/English label matching, visibility/enabled checks, fail-closed ambiguity handling, no-reacquisition policy, marker ordering, click, submit, and retry semantics are unchanged.

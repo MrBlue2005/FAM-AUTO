@@ -14,6 +14,31 @@ function failure(code, message) { return Object.assign(new Error(message), { cod
 const FACEBOOK_ROOT_URL = 'https://www.facebook.com/';
 const FACEBOOK_ROOT_TIMEOUT_MS = 30000;
 
+function clickErrorClass(error) { return error?.name === 'TimeoutError' ? 'TIMEOUT' : 'SAFE_CLICK_ERROR'; }
+
+async function submitScopedPublishControl(publishButton, diagnostic, now = () => Date.now()) {
+  const startedAt = now();
+  try { diagnostic?.postSubmitClickStarted?.({ clickReturned: false, elapsedMs: 0, clickError: 'NONE' }); } catch { /* observability only */ }
+  try {
+    await publishButton.click();
+    const elapsedMs = Math.max(0, now() - startedAt);
+    try { diagnostic?.postSubmitClickReturned?.({ clickReturned: true, elapsedMs, clickError: 'NONE' }); } catch { /* observability only */ }
+    return true;
+  } catch (error) {
+    const elapsedMs = Math.max(0, now() - startedAt);
+    try {
+      diagnostic?.postSubmitClickFailed?.({ clickReturned: false, elapsedMs, clickError: clickErrorClass(error) });
+      diagnostic?.postSubmitVerificationSummary?.({
+        clickReturned: false, verificationStarted: false, verificationElapsedMs: 0, verificationElapsedBucket: 'UNKNOWN',
+        retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'UNAVAILABLE',
+        acknowledgementCandidateCount: 0, acknowledgementClassification: 'UNAVAILABLE', canonicalTargetStillValid: false,
+        composerHiddenPredicate: 'NOT_COMPLETED', acknowledgementPredicate: 'NOT_COMPLETED', successPredicate: 'NOT_SATISFIED', failurePredicate: 'CLICK_FAILED',
+      });
+    } catch { /* observability only */ }
+    throw error;
+  }
+}
+
 function isApprovedFacebookOrigin(value) {
   try {
     const url = new URL(String(value || ''));
@@ -160,15 +185,17 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       if (submitInvoked) throw failure('PUBLISH_ALREADY_ATTEMPTED', 'The live publisher will not submit twice.');
       submitInvoked = true;
       // DANGEROUS BOUNDARY: the sole real Facebook side effect in this adapter.
-      await publishButton.click();
+      await submitScopedPublishControl(publishButton, taskDiagnostics);
     },
     async verifyOutcome(task) {
       requirePrepared(task);
-      const verified = await verifyPublished(browser.page, composer.locator);
+      let canonicalTargetStillValid = false;
+      try { verifyTarget(browser.page.url(), targetCanonical); canonicalTargetStillValid = true; } catch { /* diagnostic only */ }
+      const verified = await verifyPublished(browser.page, composer.locator, 120000, { diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid });
       return verified ? { verified: true, state: 'VERIFIED_SUCCESS' } : { verified: false, state: 'AMBIGUOUS' };
     },
     cleanup,
   };
 }
 
-module.exports = { createRealFacebookPublisherAdapter };
+module.exports = { createRealFacebookPublisherAdapter, submitScopedPublishControl };

@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7CC - post-submit verification diagnostics
+
+- Added protected, bounded task-local diagnostics for real publish click return/failure and terminal strict-verification classification. The records distinguish composer-hidden from acknowledgement-observation failures using only safe enums, booleans, counters, and elapsed-time buckets.
+- No Facebook content, labels, URLs, DOM, account data, cookies, or tokens are persisted. Verification predicates, timeouts, outcome handling, marker ordering, submit limit, retry protection, and cleanup behavior are unchanged.
+
 ## Phase G5.7BY - retained-composer Locator for publish controls
 
 - Scoped publish-control traversal and its local diagnostic now use the exact paired retained composer `Locator`. The retained `ElementHandle` continues to provide identity, attachment, visibility, and structural checks; no new root, dialog, or page-wide query is introduced.
