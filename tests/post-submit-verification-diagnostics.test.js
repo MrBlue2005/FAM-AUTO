@@ -7,7 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
-const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText } = require('../app/facebook/acknowledgementDiagnostics');
+const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText, diagnoseArticleTextParity, summarizeArticleTextParity } = require('../app/facebook/acknowledgementDiagnostics');
 const { submitScopedPublishControl } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
@@ -33,6 +33,7 @@ function diagnostic() {
     acknowledgementShapeSummary: (value) => records.push({ stage: 'ACK_SHAPE_SUMMARY', value }),
     acknowledgementSemanticSummary: (value) => records.push({ stage: 'ACK_SEMANTIC_SUMMARY', value }),
     postPublicationStructuralSummary: (value) => records.push({ stage: 'POST_PUBLICATION_STRUCTURAL_SUMMARY', value }),
+    postCandidateTextParitySummary: (value) => records.push({ stage: 'POST_CANDIDATE_TEXT_PARITY_SUMMARY', value }),
     postSubmitClickStarted: (value) => records.push({ stage: 'CLICK_START', value }),
     postSubmitClickReturned: (value) => records.push({ stage: 'CLICK_RETURNED', value }),
     postSubmitClickFailed: (value) => records.push({ stage: 'CLICK_FAILED', value }),
@@ -73,6 +74,7 @@ test('post-submit summary records strict success without changing both-predicate
     successPredicate: 'BOTH_PREDICATES_PASSED', failurePredicate: 'NONE',
   });
   assert.ok(sink.records.some((record) => record.stage === 'ACK_SEMANTIC_SUMMARY'));
+  assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_SUMMARY'));
 });
 
 test('post-submit summary distinguishes acknowledgement timeout from composer-hidden success', async () => {
@@ -291,6 +293,70 @@ test('post-publication structural persistence redacts raw text and remains prote
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+function parityArticle(overrides = {}) {
+  return {
+    candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true,
+    hasActionControlTextSurface: false, hasTimestampTextSurface: false,
+    hasAuthorHeaderTextSurface: false, hasNestedArticleTextSurface: false,
+    textViews: {
+      currentReader: { value: 'immutable body' }, textContent: { value: 'immutable body' },
+      innerText: { value: 'immutable body' }, visualText: { value: 'immutable body' },
+      descendantTextBlocks: { value: 'immutable body' },
+    },
+    descendantTexts: [{ value: 'immutable body', visible: true, attached: true }],
+    ...overrides,
+  };
+}
+
+test('post-candidate parity distinguishes exact roots, headers, actions, and combined UI contamination without retaining text', () => {
+  const exact = diagnoseArticleTextParity(parityArticle(), 'immutable body');
+  assert.equal(exact.candidateTextShape, 'EXACT_POST_BODY_ONLY');
+  assert.equal(exact.views.find((view) => view.readerType === 'CURRENT_READER').exactImmutableMatch, true);
+
+  const header = diagnoseArticleTextParity(parityArticle({ hasAuthorHeaderTextSurface: true, textViews: { currentReader: { value: 'header immutable body' }, textContent: { value: 'header immutable body' }, innerText: { value: 'header immutable body' }, visualText: { value: 'header immutable body' }, descendantTextBlocks: { value: 'immutable body' } } }), 'immutable body');
+  assert.equal(header.candidateTextShape, 'POST_BODY_PLUS_HEADER'); assert.equal(header.exactImmutableDescendantMatch, true);
+
+  const actions = diagnoseArticleTextParity(parityArticle({ hasActionControlTextSurface: true, textViews: { currentReader: { value: 'immutable body actions' }, textContent: { value: 'immutable body actions' }, innerText: { value: 'immutable body actions' }, visualText: { value: 'immutable body actions' }, descendantTextBlocks: { value: 'immutable body' } } }), 'immutable body');
+  assert.equal(actions.candidateTextShape, 'POST_BODY_PLUS_ACTIONS'); assert.equal(actions.hasExtraTextAfterImmutable, true);
+
+  const combined = diagnoseArticleTextParity(parityArticle({ hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true, textViews: { currentReader: { value: 'header immutable body actions' }, textContent: { value: 'header immutable body actions' }, innerText: { value: 'header immutable body actions' }, visualText: { value: 'header immutable body actions' }, descendantTextBlocks: { value: 'immutable body' } } }), 'immutable body');
+  assert.equal(combined.candidateTextShape, 'POST_BODY_PLUS_HEADER_AND_ACTIONS');
+  const summary = summarizeArticleTextParity([exact, header, actions, combined]);
+  assert.equal(summary.currentReaderExactMatchCount, 1); assert.equal(summary.exactImmutableDescendantCandidateCount, 4);
+  assert.equal(summary.postBodyPlusHeaderAndActionsCount, 1);
+});
+
+test('post-candidate parity identifies visual and innerText reader divergence without changing immutable comparison', () => {
+  const visual = diagnoseArticleTextParity(parityArticle({ textViews: { currentReader: { value: 'line one line two' }, textContent: { value: 'line one line two' }, innerText: { value: 'line one line two' }, visualText: { value: 'line one\nline two' }, descendantTextBlocks: { value: 'line one line two' } }, descendantTexts: [] }), 'line one\nline two');
+  assert.equal(visual.views.find((view) => view.readerType === 'VISUAL_TEXT').exactImmutableMatch, true);
+  assert.equal(summarizeArticleTextParity([visual]).bestSupportedTextParityClass, 'VISUAL_RECONSTRUCTION_REQUIRED');
+
+  const innerText = diagnoseArticleTextParity(parityArticle({ textViews: { currentReader: { value: 'wrong' }, textContent: { value: 'wrong' }, innerText: { value: 'immutable body' }, visualText: { value: 'wrong' }, descendantTextBlocks: { value: 'wrong' } }, descendantTexts: [] }), 'immutable body');
+  assert.equal(innerText.views.find((view) => view.readerType === 'INNER_TEXT').exactImmutableMatch, true);
+  assert.equal(summarizeArticleTextParity([innerText]).innerTextExactMatchCount, 1);
+});
+
+test('post-candidate parity fails safely for unrelated and nested-article shapes', () => {
+  const unrelated = diagnoseArticleTextParity(parityArticle({ textViews: { currentReader: { value: 'unrelated' }, textContent: { value: 'unrelated' }, innerText: { value: 'unrelated' }, visualText: { value: 'unrelated' }, descendantTextBlocks: { value: 'unrelated' } }, descendantTexts: [] }), 'immutable body');
+  assert.equal(unrelated.candidateTextShape, 'NO_BODY_MATCH');
+  assert.equal(summarizeArticleTextParity([unrelated]).bestSupportedTextParityClass, 'NO_IMMUTABLE_BODY_SIGNAL');
+  const ambiguous = diagnoseArticleTextParity(parityArticle({ hasNestedArticleTextSurface: true }), 'immutable body');
+  assert.equal(ambiguous.candidateTextShape, 'AMBIGUOUS');
+});
+
+test('post-candidate parity persistence excludes raw text, substrings, hashes, selectors, IDs, and paths', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-post-candidate-parity-'));
+  try {
+    const taskId = 'live_execution_post_candidate_parity';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    const candidate = diagnoseArticleTextParity(parityArticle({ rawText: 'private Facebook post', selector: '#private', path: '/private', textViews: { currentReader: { value: 'private Facebook post' }, textContent: { value: 'private Facebook post' }, innerText: { value: 'private Facebook post' }, visualText: { value: 'private Facebook post' }, descendantTextBlocks: { value: 'private Facebook post' } } }), 'private Facebook post');
+    sink.postCandidateTextParitySummary({ ...summarizeArticleTextParity([candidate]), hash: 'secret-hash', rawText: 'private Facebook post' });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY'));
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook post|secret-hash|#private|\/private/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 function pressureMediaSummary(seed) {
   return {
     rawMediaSelectorCount: 16, visibleMediaCandidateCount: 16, possibleUploadAttachmentCount: 0,
@@ -317,10 +383,12 @@ test('near-32KiB pressure evicts lower-priority diagnostics and retains both cri
     for (let index = 0; index < 8; index += 1) sink.zeroMediaInspectionSummary(pressureMediaSummary(index));
     sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
     sink.postPublicationStructuralSummary(criticalStructuralSummary());
+    sink.postCandidateTextParitySummary(summarizeArticleTextParity([diagnoseArticleTextParity(parityArticle(), 'immutable body')]));
     const file = path.join(directory, `${taskId}.json`); const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.ok(fs.statSync(file).size <= 32 * 1024);
     assert.ok(persisted.records.some((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY'));
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.filter((record) => record.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY').length < 8);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

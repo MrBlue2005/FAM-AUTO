@@ -1,5 +1,10 @@
 # Changelog
 
+## Phase G5.7CV - post-candidate text-parity diagnostics
+
+- Added a critical terminal, privacy-safe `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY` beside the existing post-publication structural summary. It distinguishes whole-root mismatch, bounded descendant-body equality, visual-line representation differences, and header/action contamination using only enums, booleans, and bounded counters.
+- No Facebook/post text, text fragments, hashes, selectors, DOM IDs, classes, or paths are retained. The verifier, acknowledgement matcher, timeout, success semantics, side-effect markers, cleanup, and retry policy remain unchanged.
+
 ## Phase G5.7CS - terminal diagnostic retention
 
 - Added deterministic priority eviction under the unchanged 32 KiB task-local diagnostics cap.

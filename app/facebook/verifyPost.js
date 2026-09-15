@@ -100,6 +100,9 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
     const postPublicationStructuralSummary = acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid));
     try { diagnostic?.postPublicationStructuralSummary?.(postPublicationStructuralSummary); } catch { /* observability only */ }
+    // This is an after-the-fact, privacy-reduced explanation of article text
+    // parity. It is never consulted by either existing success predicate.
+    try { diagnostic?.postCandidateTextParitySummary?.(acknowledgementShapes.textParitySummary()); } catch { /* observability only */ }
     return composer.passed && acknowledgement.passed;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);

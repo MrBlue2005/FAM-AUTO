@@ -439,6 +439,10 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
+### G5.7CV post-candidate text-parity diagnostics
+
+The post-submit observer now writes a critical terminal `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY` under the unchanged 32 KiB task-local cap. It compares current, `textContent`, `innerText`, visual-line, and bounded descendant text views only in memory, then stores safe parity metadata that identifies whole-body matches, descendant-body matches, header/action contamination, representation differences, or ambiguity. No text, fragments, hashes, selectors, DOM paths, classes, IDs, or Facebook content are persisted. It is diagnostic-only and cannot affect acknowledgement matching, `VERIFIED_SUCCESS`, `OUTCOME_UNKNOWN`, the timeout, marker ordering, submission, cleanup, or retry behavior.
+
 ### G5.7S observed Facebook composer modal contract
 
 `role="dialog"` is no longer mandatory for composer acquisition. The bounded opener-bound transition snapshot includes dialogs, `aria-modal` overlays, and Facebook composer/create-post pagelet roots. A candidate must be attached, visible, structurally composer-like, have a composer-local action region, and contain exactly one visible/enabled post editor; comment, reply, search, hidden, unrelated, multi-root, and multi-editor surfaces fail closed. The exact post-click root handle remains the sole downstream scope for text/media/publish checks. Local deterministic coverage includes dialog, aria-modal, non-dialog pagelet overlay, replacement/reuse, delayed/timeout, and observed-shape regressions. No hosted deployment, task, Chromium, Facebook navigation, or publication was performed.

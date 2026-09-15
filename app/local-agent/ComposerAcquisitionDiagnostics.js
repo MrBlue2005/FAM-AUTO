@@ -28,6 +28,7 @@ const STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -47,6 +48,7 @@ const REASON_CLASSES = new Set([
   'ACKNOWLEDGEMENT_SHAPE',
   'ACKNOWLEDGEMENT_SEMANTIC',
   'POST_PUBLICATION_STRUCTURAL',
+  'POST_CANDIDATE_TEXT_PARITY',
 ]);
 
 const COUNTERS = new Set([
@@ -132,17 +134,24 @@ const PROTECTED_STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 const CRITICAL_TERMINAL_STAGES = new Set([
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
+  'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
 ]);
 const TERMINAL_DIAGNOSTIC_STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
 ]);
 const DIAGNOSTIC_PRIORITY = Object.freeze({ ORDINARY: 0, PROTECTED: 1, TERMINAL: 2, CRITICAL_TERMINAL: 3 });
+const POST_CANDIDATE_TEXT_PARITY_STAGE = 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY';
+const POST_CANDIDATE_READER_TYPES = new Set(['CURRENT_READER', 'TEXT_CONTENT', 'INNER_TEXT', 'VISUAL_TEXT', 'DESCENDANT_TEXT_BLOCKS']);
+const POST_CANDIDATE_LENGTH_RELATIONS = new Set(['EMPTY', 'EXACT_LENGTH', 'SHORTER', 'LONGER']);
+const POST_CANDIDATE_TEXT_SHAPES = new Set(['EXACT_POST_BODY_ONLY', 'POST_BODY_PLUS_HEADER', 'POST_BODY_PLUS_ACTIONS', 'POST_BODY_PLUS_HEADER_AND_ACTIONS', 'BODY_SUBSTRING_PRESENT', 'NO_BODY_MATCH', 'EMPTY_OR_UNAVAILABLE', 'AMBIGUOUS']);
+const POST_CANDIDATE_PARITY_CLASSES = new Set(['EXACT_WHOLE_CANDIDATE_MATCH', 'EXACT_DESCENDANT_BODY_MATCH', 'IMMUTABLE_BODY_PRESENT_WITH_EXTRA_UI_TEXT', 'VISUAL_RECONSTRUCTION_REQUIRED', 'NO_IMMUTABLE_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -512,6 +521,51 @@ function sanitizePostPublicationStructural(value = {}) {
   };
 }
 
+function sanitizePostCandidateTextView(value = {}) {
+  return {
+    readerType: POST_CANDIDATE_READER_TYPES.has(value.readerType) ? value.readerType : 'CURRENT_READER',
+    readSucceeded: value.readSucceeded === true,
+    normalizedLength: boundedInteger(value.normalizedLength) || 0,
+    lineCount: boundedInteger(value.lineCount) || 0,
+    newlineCount: boundedInteger(value.newlineCount) || 0,
+    exactImmutableMatch: value.exactImmutableMatch === true,
+    containsImmutableText: value.containsImmutableText === true,
+    immutableTextPrefixMatch: value.immutableTextPrefixMatch === true,
+    immutableTextSuffixMatch: value.immutableTextSuffixMatch === true,
+    lengthRelation: POST_CANDIDATE_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EMPTY',
+  };
+}
+
+function sanitizePostCandidateTextParityCandidate(value = {}) {
+  return {
+    candidateFamily: ARTICLE_FAMILIES.has(value.candidateFamily) ? value.candidateFamily : 'UNKNOWN_ARTICLE_LIKE',
+    visible: value.visible === true, attached: value.attached === true,
+    hasExtraTextBeforeImmutable: value.hasExtraTextBeforeImmutable === true,
+    hasExtraTextAfterImmutable: value.hasExtraTextAfterImmutable === true,
+    hasActionControlTextSurface: value.hasActionControlTextSurface === true,
+    hasTimestampTextSurface: value.hasTimestampTextSurface === true,
+    hasAuthorHeaderTextSurface: value.hasAuthorHeaderTextSurface === true,
+    hasNestedArticleTextSurface: value.hasNestedArticleTextSurface === true,
+    candidateTextShape: POST_CANDIDATE_TEXT_SHAPES.has(value.candidateTextShape) ? value.candidateTextShape : 'AMBIGUOUS',
+    exactImmutableDescendantMatch: value.exactImmutableDescendantMatch === true,
+    exactImmutableDescendantMatchCount: boundedInteger(value.exactImmutableDescendantMatchCount) || 0,
+    matchedDescendantVisible: value.matchedDescendantVisible === true,
+    matchedDescendantAttached: value.matchedDescendantAttached === true,
+    exactTextViewMatchObserved: value.exactTextViewMatchObserved === true,
+    exactDescendantMatchObserved: value.exactDescendantMatchObserved === true,
+    views: Array.isArray(value.views) ? value.views.slice(0, 5).map(sanitizePostCandidateTextView) : [],
+  };
+}
+
+function sanitizePostCandidateTextParity(value = {}) {
+  const counts = ['candidateCountInspected', 'currentReaderExactMatchCount', 'textContentExactMatchCount', 'innerTextExactMatchCount', 'visualTextExactMatchCount', 'descendantBlockExactMatchCount', 'bodySubstringCandidateCount', 'exactImmutableDescendantCandidateCount', 'postBodyPlusHeaderCount', 'postBodyPlusActionsCount', 'postBodyPlusHeaderAndActionsCount', 'noBodyMatchCount', 'ambiguousCount'];
+  return {
+    ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
+    bestSupportedTextParityClass: POST_CANDIDATE_PARITY_CLASSES.has(value.bestSupportedTextParityClass) ? value.bestSupportedTextParityClass : 'SAFE_EVALUATION_ERROR',
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateTextParityCandidate) : [],
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -588,6 +642,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.acknowledgementSemantic = sanitizeAcknowledgementSemantic(shape.value);
         } else if (shape?.postPublicationStructural === true) {
           record.postPublicationStructural = sanitizePostPublicationStructural(shape.value);
+        } else if (shape?.postCandidateTextParity === true) {
+          record.postCandidateTextParity = sanitizePostCandidateTextParity(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -600,7 +656,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY';
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' || stage === POST_CANDIDATE_TEXT_PARITY_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -654,6 +710,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       acknowledgementShapeSummary: (value) => persist('ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SHAPE', {}, true, { value, acknowledgementShape: true }),
       acknowledgementSemanticSummary: (value) => persist('ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SEMANTIC', {}, true, { value, acknowledgementSemantic: true }),
       postPublicationStructuralSummary: (value) => persist('POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL', {}, true, { value, postPublicationStructural: true }),
+      postCandidateTextParitySummary: (value) => persist(POST_CANDIDATE_TEXT_PARITY_STAGE, 'POST_CANDIDATE_TEXT_PARITY', {}, true, { value, postCandidateTextParity: true }),
     });
   }
 

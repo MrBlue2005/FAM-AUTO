@@ -13,6 +13,117 @@ function normaliseEphemeralText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// This is deliberately the existing immutable-post comparison normalization:
+// diagnostics may explain its result, but never alter it.
+function normalizeImmutablePostText(value) {
+  return String(value || '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
+}
+
+function bounded(value, maximum = 1000) { return Math.max(0, Math.min(maximum, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0)); }
+
+function textViewParity(readerType, rawValue, immutableText, readSucceeded = true) {
+  const value = normalizeImmutablePostText(rawValue);
+  const immutable = normalizeImmutablePostText(immutableText);
+  const lengthRelation = !value ? 'EMPTY' : value.length === immutable.length ? 'EXACT_LENGTH' : value.length < immutable.length ? 'SHORTER' : 'LONGER';
+  return {
+    readerType,
+    readSucceeded: readSucceeded === true,
+    normalizedLength: bounded(value.length),
+    lineCount: value ? bounded(value.split('\n').length) : 0,
+    newlineCount: value ? bounded((value.match(/\n/g) || []).length) : 0,
+    exactImmutableMatch: Boolean(immutable) && value === immutable,
+    containsImmutableText: Boolean(immutable) && value.includes(immutable),
+    immutableTextPrefixMatch: Boolean(immutable) && value.startsWith(immutable),
+    immutableTextSuffixMatch: Boolean(immutable) && value.endsWith(immutable),
+    lengthRelation,
+  };
+}
+
+function classifyCandidateTextShape(candidate, views) {
+  if (candidate.hasNestedArticleTextSurface === true) return 'AMBIGUOUS';
+  if (!views.some((view) => view.readSucceeded)) return 'EMPTY_OR_UNAVAILABLE';
+  if (views.some((view) => view.readerType !== 'DESCENDANT_TEXT_BLOCKS' && view.exactImmutableMatch)) return 'EXACT_POST_BODY_ONLY';
+  const contains = views.some((view) => view.containsImmutableText);
+  if (!contains) return views.every((view) => view.lengthRelation === 'EMPTY') ? 'EMPTY_OR_UNAVAILABLE' : 'NO_BODY_MATCH';
+  if (candidate.hasAuthorHeaderTextSurface && candidate.hasActionControlTextSurface) return 'POST_BODY_PLUS_HEADER_AND_ACTIONS';
+  if (candidate.hasAuthorHeaderTextSurface) return 'POST_BODY_PLUS_HEADER';
+  if (candidate.hasActionControlTextSurface) return 'POST_BODY_PLUS_ACTIONS';
+  return 'BODY_SUBSTRING_PRESENT';
+}
+
+// Raw DOM strings are accepted only within this function and reduced
+// immediately to privacy-safe comparison metadata.
+function diagnoseArticleTextParity(raw = {}, immutableText) {
+  try {
+    const viewValues = raw.textViews || {};
+    const views = [
+      ['CURRENT_READER', viewValues.currentReader], ['TEXT_CONTENT', viewValues.textContent],
+      ['INNER_TEXT', viewValues.innerText], ['VISUAL_TEXT', viewValues.visualText],
+      ['DESCENDANT_TEXT_BLOCKS', viewValues.descendantTextBlocks],
+    ].map(([readerType, source]) => textViewParity(readerType, source?.value, immutableText, source?.readSucceeded !== false));
+    const immutable = normalizeImmutablePostText(immutableText);
+    const descendants = Array.isArray(raw.descendantTexts) ? raw.descendantTexts.slice(0, 24) : [];
+    const exactDescendants = descendants.filter((item) => normalizeImmutablePostText(item?.value) === immutable && immutable);
+    const containsView = views.find((view) => view.containsImmutableText);
+    const legacyExact = raw.immutableTextExactMatch === true;
+    const candidate = {
+      candidateFamily: raw.candidateFamily,
+      visible: raw.visible === true,
+      attached: raw.attached === true,
+      hasActionControlTextSurface: raw.hasActionControlTextSurface === true,
+      hasTimestampTextSurface: raw.hasTimestampTextSurface === true,
+      hasAuthorHeaderTextSurface: raw.hasAuthorHeaderTextSurface === true,
+      hasNestedArticleTextSurface: raw.hasNestedArticleTextSurface === true,
+      hasExtraTextBeforeImmutable: containsView ? !containsView.immutableTextPrefixMatch : false,
+      hasExtraTextAfterImmutable: containsView ? !containsView.immutableTextSuffixMatch : false,
+      exactImmutableDescendantMatch: exactDescendants.length > 0,
+      exactImmutableDescendantMatchCount: bounded(exactDescendants.length),
+      matchedDescendantVisible: exactDescendants.some((item) => item.visible === true),
+      matchedDescendantAttached: exactDescendants.some((item) => item.attached === true),
+      exactTextViewMatchObserved: legacyExact || views.some((view) => view.exactImmutableMatch),
+      exactDescendantMatchObserved: exactDescendants.length > 0,
+      views,
+    };
+    candidate.candidateTextShape = classifyCandidateTextShape(candidate, views);
+    return candidate;
+  } catch {
+    return {
+      candidateFamily: raw.candidateFamily, visible: raw.visible === true, attached: raw.attached === true,
+      hasExtraTextBeforeImmutable: false, hasExtraTextAfterImmutable: false, hasActionControlTextSurface: false,
+      hasTimestampTextSurface: false, hasAuthorHeaderTextSurface: false, hasNestedArticleTextSurface: true,
+      candidateTextShape: 'AMBIGUOUS', exactImmutableDescendantMatch: false, exactImmutableDescendantMatchCount: 0,
+      matchedDescendantVisible: false, matchedDescendantAttached: false, exactTextViewMatchObserved: false,
+      exactDescendantMatchObserved: false, views: [],
+    };
+  }
+}
+
+function summarizeArticleTextParity(candidates = []) {
+  const countView = (readerType) => candidates.filter((candidate) => candidate.views?.some((view) => view.readerType === readerType && view.exactImmutableMatch)).length;
+  const countShape = (shape) => candidates.filter((candidate) => candidate.candidateTextShape === shape).length;
+  const exactWhole = countView('CURRENT_READER') || countView('TEXT_CONTENT') || countView('INNER_TEXT');
+  const exactDescendant = candidates.filter((candidate) => candidate.exactImmutableDescendantMatch).length;
+  const visual = countView('VISUAL_TEXT');
+  const bodySubstring = candidates.filter((candidate) => candidate.views?.some((view) => view.containsImmutableText)).length;
+  const bestSupportedTextParityClass = exactWhole ? 'EXACT_WHOLE_CANDIDATE_MATCH'
+    : exactDescendant ? 'EXACT_DESCENDANT_BODY_MATCH'
+      : visual ? 'VISUAL_RECONSTRUCTION_REQUIRED'
+        : bodySubstring ? 'IMMUTABLE_BODY_PRESENT_WITH_EXTRA_UI_TEXT'
+          : candidates.some((candidate) => candidate.candidateTextShape === 'AMBIGUOUS') ? 'SAFE_EVALUATION_ERROR'
+            : 'NO_IMMUTABLE_BODY_SIGNAL';
+  return {
+    candidateCountInspected: candidates.length,
+    currentReaderExactMatchCount: countView('CURRENT_READER'), textContentExactMatchCount: countView('TEXT_CONTENT'),
+    innerTextExactMatchCount: countView('INNER_TEXT'), visualTextExactMatchCount: visual,
+    descendantBlockExactMatchCount: countView('DESCENDANT_TEXT_BLOCKS'), bodySubstringCandidateCount: bodySubstring,
+    exactImmutableDescendantCandidateCount: exactDescendant,
+    postBodyPlusHeaderCount: countShape('POST_BODY_PLUS_HEADER'), postBodyPlusActionsCount: countShape('POST_BODY_PLUS_ACTIONS'),
+    postBodyPlusHeaderAndActionsCount: countShape('POST_BODY_PLUS_HEADER_AND_ACTIONS'), noBodyMatchCount: countShape('NO_BODY_MATCH'),
+    ambiguousCount: countShape('AMBIGUOUS'), bestSupportedTextParityClass,
+    candidates,
+  };
+}
+
 // This accepts transient page text only to immediately reduce it to fixed,
 // non-reversible semantic booleans and enums.  It must never return text.
 function classifyAcknowledgementSemanticText(renderedText, accessibilityText) {
@@ -167,11 +278,42 @@ async function inspectAcknowledgementShapes(page, options = {}) {
         out.push({ key: `${index}:${node.tagName}:${candidateRole || 'none'}:${live}`, candidateFamily: family, tagName: tagName(node), role: candidateRole, visible: visible(node), attached: node.isConnected === true, ariaLive: live, textClassification, accessibilityClassification, nestedTextPresent, candidateDepth: depth(node), ...semanticClassification, ...sourceInfo(node) });
         if (out.length >= 64) break;
       }
+      const visualText = (root) => {
+        try {
+          const blockTags = new Set(['DIV', 'P', 'LI', 'SECTION', 'ARTICLE']); const lines = [];
+          const visit = (node, line) => {
+            if (node.nodeType === Node.TEXT_NODE) { line.value += String(node.nodeValue || ''); return; }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            if (node.tagName === 'BR') { lines.push(line.value); line.value = ''; return; }
+            const block = blockTags.has(node.tagName) && line.value.length > 0;
+            if (block) { lines.push(line.value); line.value = ''; }
+            for (const child of Array.from(node.childNodes)) visit(child, line);
+            if (block && line.value.length > 0) { lines.push(line.value); line.value = ''; }
+          };
+          const line = { value: '' }; visit(root, line); if (line.value.length > 0) lines.push(line.value);
+          return lines.join('\n');
+        } catch { return ''; }
+      };
       const articleNodes = Array.from(document.querySelectorAll('[role="article"], [role="feed"] > *, article')).slice(0, 16);
       const articles = articleNodes.map((node, index) => {
-        const roleValue = String(node.getAttribute('role') || '').toLowerCase(); const text = String(node.innerText || node.textContent || '');
+        const roleValue = String(node.getAttribute('role') || '').toLowerCase();
+        const textContent = String(node.textContent || ''); const innerText = String(node.innerText || '');
+        const currentReader = String(node.innerText || node.textContent || '');
         const articleFamily = roleValue === 'article' ? 'ARTICLE_ROLE' : roleValue === 'feeditem' ? 'FEED_ITEM_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE';
-        return { key: `${index}:${articleFamily}`, candidateFamily: articleFamily, visible: visible(node), attached: node.isConnected === true, containsTextSurface: Boolean(text.trim()), containsMediaSurface: node.querySelector('img,video') !== null, containsTimestampLikeSurface: node.querySelector('time') !== null, containsActionBarLikeSurface: node.querySelector('[role="button"], button') !== null, immutableTextExactMatch: Boolean(immutableText) && text.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim() === immutableText };
+        const descendants = Array.from(node.querySelectorAll('div,span,p,[role="textbox"],article,[role="article"]')).filter((child) => child !== node).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true }));
+        return {
+          key: `${index}:${articleFamily}`, candidateFamily: articleFamily, visible: visible(node), attached: node.isConnected === true,
+          containsTextSurface: Boolean(currentReader.trim()), containsMediaSurface: node.querySelector('img,video') !== null,
+          containsTimestampLikeSurface: node.querySelector('time') !== null, containsActionBarLikeSurface: node.querySelector('[role="button"], button') !== null,
+          hasAuthorHeaderTextSurface: node.querySelector('header,[role="heading"]') !== null,
+          hasNestedArticleTextSurface: node.querySelector('article,[role="article"]') !== null,
+          textViews: {
+            currentReader: { value: currentReader, readSucceeded: true }, textContent: { value: textContent, readSucceeded: true },
+            innerText: { value: innerText, readSucceeded: true }, visualText: { value: visualText(node), readSucceeded: true },
+            descendantTextBlocks: { value: descendants.map((child) => child.value).join('\n'), readSucceeded: true },
+          },
+          descendantTexts: descendants,
+        };
       });
       return { candidates: out, articles };
     }, { source: ACKNOWLEDGEMENT_PATTERN.source, flags: ACKNOWLEDGEMENT_PATTERN.flags, immutableText: String(options.immutableText || '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim() });
@@ -229,12 +371,20 @@ function createAcknowledgementShapeObserver(page, options = {}) {
     }
     for (const raw of (Array.isArray(captureResult?.articles) ? captureResult.articles : [])) {
       if (!raw?.key || articleEntries.size >= 16 && !articleEntries.has(raw.key)) continue;
+      // Raw DOM text is reduced here, before any observer state or terminal
+      // diagnostic can retain it.
+      const article = diagnoseArticleTextParity(raw, options.immutableText);
       const existing = articleEntries.get(raw.key);
       if (existing) {
         existing.lastSnapshot = currentSnapshot; existing.lastObservedRelativeBucket = relativeBucket(now() - startedAt);
         existing.observationCount = Math.min(1000, existing.observationCount + 1);
-        existing.immutableTextExactMatch = existing.immutableTextExactMatch || raw.immutableTextExactMatch === true;
-      } else articleEntries.set(raw.key, { ...raw, firstSnapshot: currentSnapshot, lastSnapshot: currentSnapshot, firstObservedRelativeBucket: relativeBucket(now() - startedAt), lastObservedRelativeBucket: relativeBucket(now() - startedAt), observationCount: 1 });
+        existing.immutableTextExactMatch = existing.immutableTextExactMatch || article.exactTextViewMatchObserved === true;
+        existing.exactTextViewMatchObserved = existing.exactTextViewMatchObserved || article.exactTextViewMatchObserved === true;
+        existing.exactDescendantMatchObserved = existing.exactDescendantMatchObserved || article.exactDescendantMatchObserved === true;
+        existing.exactImmutableDescendantMatch = existing.exactImmutableDescendantMatch || article.exactImmutableDescendantMatch === true;
+        existing.exactImmutableDescendantMatchCount = Math.max(existing.exactImmutableDescendantMatchCount || 0, article.exactImmutableDescendantMatchCount || 0);
+        existing.views = article.views;
+      } else articleEntries.set(raw.key, { ...article, immutableTextExactMatch: article.exactTextViewMatchObserved === true, firstSnapshot: currentSnapshot, lastSnapshot: currentSnapshot, firstObservedRelativeBucket: relativeBucket(now() - startedAt), lastObservedRelativeBucket: relativeBucket(now() - startedAt), observationCount: 1 });
     }
     if (currentSnapshot === 0) startVisible = visibleAtThisSnapshot;
   };
@@ -339,6 +489,14 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         pageState, acknowledgementCandidates: candidates.map(({ key, firstSnapshot, lastSnapshot, languageSeen, ...candidate }) => candidate), articleCandidates: articles,
       };
     },
+    textParitySummary() {
+      const candidates = [...articleEntries.values()].map(({ key, firstSnapshot, lastSnapshot, ...article }) => ({
+        ...article,
+        exactTextViewMatchObserved: article.exactTextViewMatchObserved === true || article.immutableTextExactMatch === true,
+        exactDescendantMatchObserved: article.exactDescendantMatchObserved === true,
+      }));
+      return summarizeArticleTextParity(candidates);
+    },
   });
 }
 
@@ -348,6 +506,9 @@ module.exports = {
   SEMANTIC_CLASSIFICATIONS,
   LANGUAGE_CLASSIFICATIONS,
   classifyAcknowledgementSemanticText,
+  normalizeImmutablePostText,
+  diagnoseArticleTextParity,
+  summarizeArticleTextParity,
   createAcknowledgementShapeObserver,
   inspectAcknowledgementShapes,
 };
