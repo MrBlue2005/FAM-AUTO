@@ -7,7 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
-const { createAcknowledgementShapeObserver } = require('../app/facebook/acknowledgementDiagnostics');
+const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText } = require('../app/facebook/acknowledgementDiagnostics');
 const { submitScopedPublishControl } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
 
@@ -31,6 +31,7 @@ function diagnostic() {
     postSubmitVerificationStarted: (value) => records.push({ stage: 'START', value }),
     postSubmitVerificationSummary: (value) => records.push({ stage: 'SUMMARY', value }),
     acknowledgementShapeSummary: (value) => records.push({ stage: 'ACK_SHAPE_SUMMARY', value }),
+    acknowledgementSemanticSummary: (value) => records.push({ stage: 'ACK_SEMANTIC_SUMMARY', value }),
     postSubmitClickStarted: (value) => records.push({ stage: 'CLICK_START', value }),
     postSubmitClickReturned: (value) => records.push({ stage: 'CLICK_RETURNED', value }),
     postSubmitClickFailed: (value) => records.push({ stage: 'CLICK_FAILED', value }),
@@ -53,7 +54,8 @@ async function acknowledgementSummary(snapshots) {
     schedule: () => 0, cancel: () => {},
   });
   while (index < snapshots.length) { await observer.observe(); clock += 1000; }
-  return observer.stop();
+  const shape = observer.stop();
+  return { shape, semantic: observer.semanticSummary() };
 }
 function summary(records) { return records.find((record) => record.stage === 'SUMMARY')?.value; }
 function assertSummary(records, expected) {
@@ -69,6 +71,7 @@ test('post-submit summary records strict success without changing both-predicate
     acknowledgementClassification: 'MATCH_FOUND', composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'PASSED',
     successPredicate: 'BOTH_PREDICATES_PASSED', failurePredicate: 'NONE',
   });
+  assert.ok(sink.records.some((record) => record.stage === 'ACK_SEMANTIC_SUMMARY'));
 });
 
 test('post-submit summary distinguishes acknowledgement timeout from composer-hidden success', async () => {
@@ -137,7 +140,7 @@ test('post-submit sink redacts raw Facebook material and protects the terminal s
 });
 
 test('acknowledgement observation classifies current text, status, alert, aria-live, accessibility-only and nested candidates without changing matcher parity', async () => {
-  const summary = await acknowledgementSummary([[
+  const { shape: summary } = await acknowledgementSummary([[
     acknowledgementCandidate({ key: 'text', candidateFamily: 'CURRENT_TEXT_MATCH', textClassification: 'MATCHES_CURRENT_ACK_PATTERN' }),
     acknowledgementCandidate({ key: 'status', candidateFamily: 'ROLE_STATUS', role: 'status' }),
     acknowledgementCandidate({ key: 'alert', candidateFamily: 'ROLE_ALERT', role: 'alert' }),
@@ -153,9 +156,9 @@ test('acknowledgement observation classifies current text, status, alert, aria-l
 });
 
 test('acknowledgement observation records a transient candidate and excludes unrelated controls from the supplied structural discovery', async () => {
-  const summary = await acknowledgementSummary([[acknowledgementCandidate({ key: 'transient', candidateFamily: 'ROLE_STATUS', role: 'status' })], [], []]);
+  const { shape: summary } = await acknowledgementSummary([[acknowledgementCandidate({ key: 'transient', candidateFamily: 'ROLE_STATUS', role: 'status' })], [], []]);
   assert.equal(summary.transientCandidateCount, 1); assert.equal(summary.totalDistinctCandidatesObserved, 1);
-  const unrelated = await acknowledgementSummary([[]]);
+  const { shape: unrelated } = await acknowledgementSummary([[]]);
   assert.equal(unrelated.totalDistinctCandidatesObserved, 0); assert.equal(unrelated.exactCurrentMatcherResult, 'NO_MATCH');
 });
 
@@ -169,5 +172,70 @@ test('acknowledgement-shape persistence redacts raw content and protects the bou
     const terminal = persisted.records.find((record) => record.stage === 'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY');
     assert.ok(terminal); assert.equal(terminal.acknowledgementShape.candidates[0].role, 'status');
     assert.doesNotMatch(JSON.stringify(persisted), /private Facebook acknowledgement|private accessible name|facebook\.example/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('acknowledgement semantic classifier recognizes Romanian and English publication success only with publication context', () => {
+  const romanian = classifyAcknowledgementSemanticText('Postarea ta a fost publicată cu succes.', '');
+  const english = classifyAcknowledgementSemanticText('Your post was published successfully.', '');
+  assert.equal(romanian.semanticClassification, 'PUBLICATION_SUCCESS_LIKE');
+  assert.equal(romanian.languageClassification, 'RO');
+  assert.equal(english.semanticClassification, 'PUBLICATION_SUCCESS_LIKE');
+  assert.equal(english.languageClassification, 'EN');
+});
+
+test('acknowledgement semantic classifier separates generic, unrelated, failure, error, and empty notices', () => {
+  assert.equal(classifyAcknowledgementSemanticText('Operation completed successfully.', '').semanticClassification, 'GENERIC_SUCCESS_LIKE');
+  assert.equal(classifyAcknowledgementSemanticText('You have a new notification.', '').semanticClassification, 'UNRELATED_NOTIFICATION_LIKE');
+  assert.equal(classifyAcknowledgementSemanticText('Postarea nu s-a putut fi publicată.', '').semanticClassification, 'PUBLICATION_FAILURE_LIKE');
+  assert.equal(classifyAcknowledgementSemanticText('Something went wrong.', '').semanticClassification, 'GENERIC_ERROR_LIKE');
+  assert.equal(classifyAcknowledgementSemanticText('', '').semanticClassification, 'EMPTY_OR_UNAVAILABLE');
+});
+
+test('semantic observer retains role-alert aria-live publication success and its transient timing without changing matcher authority', async () => {
+  const { semantic } = await acknowledgementSummary([[
+    acknowledgementCandidate({
+      key: 'alert', candidateFamily: 'ROLE_ALERT', role: 'alert', ariaLive: 'POLITE',
+      semanticText: 'Your post was published successfully.',
+    }),
+  ], [], []]);
+  assert.equal(semantic.publicationSuccessLikeCount, 1);
+  assert.equal(semantic.roleAlertPublicationSuccessLikeCount, 1);
+  assert.equal(semantic.ariaLivePublicationSuccessLikeCount, 1);
+  assert.equal(semantic.transientPublicationSuccessLikeCount, 1);
+  assert.equal(semantic.currentMatcherMatched, false);
+  assert.equal(semantic.semanticPublicationSuccessObserved, true);
+  assert.deepEqual(semantic.candidates[0], {
+    candidateFamily: 'ROLE_ALERT', role: 'alert', ariaLive: 'POLITE', visible: true, attached: true,
+    semanticClassification: 'PUBLICATION_SUCCESS_LIKE', languageClassification: 'EN',
+    hasPublicationConcept: true, hasSuccessConcept: true, hasFailureConcept: false,
+    hasPostObjectConcept: true, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false,
+    firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'UNDER_1S', observationCount: 1, transient: true,
+  });
+});
+
+test('semantic acknowledgement persistence redacts text material and retains protected terminal summary under pressure', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-ack-semantic-diagnostic-'));
+  try {
+    const taskId = 'live_execution_ack_semantic';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 2048, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    for (let index = 0; index < 12; index += 1) sink.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    sink.acknowledgementSemanticSummary({
+      totalSemanticCandidates: 1, publicationSuccessLikeCount: 1, languageENObserved: true,
+      publicationConceptObserved: true, successConceptObserved: true, postObjectConceptObserved: true,
+      semanticPublicationSuccessObserved: true,
+      candidates: [{
+        candidateFamily: 'ROLE_ALERT', role: 'alert', ariaLive: 'POLITE', visible: true, attached: true,
+        semanticClassification: 'PUBLICATION_SUCCESS_LIKE', languageClassification: 'EN',
+        hasPublicationConcept: true, hasSuccessConcept: true, hasPostObjectConcept: true,
+        firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'UNDER_5S', observationCount: 2, transient: true,
+        rawText: 'private acknowledgement token 123', normalizedText: 'private acknowledgement token 123', textHash: 'abc123', ariaLabel: 'private name', url: 'https://facebook.example/private',
+      }],
+    });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
+    const terminal = persisted.records.find((record) => record.stage === 'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY');
+    assert.ok(terminal); assert.equal(terminal.acknowledgementSemantic.publicationSuccessLikeCount, 1);
+    assert.equal(terminal.acknowledgementSemantic.candidates[0].semanticClassification, 'PUBLICATION_SUCCESS_LIKE');
+    assert.doesNotMatch(JSON.stringify(persisted), /private acknowledgement|token 123|abc123|private name|facebook\.example/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

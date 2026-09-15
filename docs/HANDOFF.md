@@ -4,6 +4,10 @@
 
 The strict post-submit verifier now writes bounded, task-local, privacy-safe click and terminal verification summaries. They distinguish retained-composer-hidden and acknowledgement-observation predicate outcomes, plus safe composer/acknowledgement state classifications, without recording Facebook text, labels, URLs, DOM, cookies, or identities. The existing two-predicate AND requirement, 120-second timeout, marker ordering, one-submit limit, retry policy, and browser cleanup semantics are unchanged.
 
+## G5.7CK acknowledgement semantic diagnostics
+
+The existing bounded acknowledgement observer now reduces already-admitted transient status, alert, and aria-live surfaces into fixed semantic and language enums plus concept booleans and relative-time buckets. Its protected terminal summary contains no raw or normalized text, hashes, tokens, labels, DOM metadata, URLs, identities, or post content. This is diagnostic-only: the regex matcher, strict two-predicate success rule, 120-second timeout, `OUTCOME_UNKNOWN`, marker ordering, cleanup, and retry protections are unchanged.
+
 ## G5.7CH acknowledgement-shape diagnostics
 
 During the already-existing post-submit verification window only, bounded page-scoped observation records possible acknowledgement surfaces (`CURRENT_TEXT_MATCH`, status, alert, and aria-live families) and transient appearance using safe structural enums/counters. The protected terminal summary never contains text, accessible names, labels, URLs, DOM paths, cookies, tokens, account identity, or post content. These observations are not success predicates: the existing regex, strict two-predicate AND verification, 120-second timeout, `OUTCOME_UNKNOWN` handling, click ordering, cleanup, and no-retry policy remain unchanged.

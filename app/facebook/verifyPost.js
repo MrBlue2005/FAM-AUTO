@@ -78,6 +78,8 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const acknowledgementShapeSummary = acknowledgementShapes.stop();
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
+    const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
+    try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
     return composer.passed && acknowledgement.passed;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);

@@ -26,6 +26,7 @@ const STAGES = new Set([
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
+  'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -43,6 +44,7 @@ const REASON_CLASSES = new Set([
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION',
   'ACKNOWLEDGEMENT_SHAPE',
+  'ACKNOWLEDGEMENT_SEMANTIC',
 ]);
 
 const COUNTERS = new Set([
@@ -126,6 +128,7 @@ const PROTECTED_STAGES = new Set([
   PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE,
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
+  'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -407,6 +410,55 @@ function sanitizeAcknowledgementShape(value = {}) {
   return { ...Object.fromEntries(keys.map((key) => [key, boundedInteger(value[key]) || 0])), currentMatcherWouldHaveMatched: value.currentMatcherWouldHaveMatched === true, exactCurrentMatcherResult: ACK_MATCHER_RESULTS.has(value.exactCurrentMatcherResult) ? value.exactCurrentMatcherResult : 'SAFE_EVALUATION_ERROR', candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizeAcknowledgementCandidate) : [] };
 }
 
+const ACK_SEMANTIC_CLASSES = new Set([
+  'PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'GENERIC_SUCCESS_LIKE',
+  'GENERIC_ERROR_LIKE', 'UNRELATED_NOTIFICATION_LIKE', 'EMPTY_OR_UNAVAILABLE',
+  'AMBIGUOUS', 'SAFE_EVALUATION_ERROR',
+]);
+const ACK_SEMANTIC_LANGUAGES = new Set(['RO', 'EN', 'OTHER', 'UNKNOWN']);
+const ACK_RELATIVE_BUCKETS = new Set(['UNDER_1S', 'UNDER_5S', 'UNDER_15S', 'UNDER_30S', 'OVER_30S']);
+const ACK_SEMANTIC_FEATURES = [
+  'hasPublicationConcept', 'hasSuccessConcept', 'hasFailureConcept',
+  'hasPostObjectConcept', 'hasGroupConcept', 'hasRetryConcept', 'hasErrorConcept',
+];
+
+function sanitizeAcknowledgementSemanticCandidate(value = {}) {
+  const bool = (key) => value[key] === true;
+  return {
+    candidateFamily: ACK_FAMILIES.has(value.candidateFamily) ? value.candidateFamily : 'OTHER_SAFE_ACK_SURFACE',
+    role: ACK_ROLES.has(value.role) ? value.role : 'other',
+    ariaLive: ACK_ARIA_LIVE.has(value.ariaLive) ? value.ariaLive : 'NONE',
+    visible: bool('visible'), attached: bool('attached'),
+    semanticClassification: ACK_SEMANTIC_CLASSES.has(value.semanticClassification) ? value.semanticClassification : 'SAFE_EVALUATION_ERROR',
+    languageClassification: ACK_SEMANTIC_LANGUAGES.has(value.languageClassification) ? value.languageClassification : 'UNKNOWN',
+    ...Object.fromEntries(ACK_SEMANTIC_FEATURES.map((key) => [key, bool(key)])),
+    firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.firstObservedRelativeBucket) ? value.firstObservedRelativeBucket : 'UNDER_1S',
+    lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.lastObservedRelativeBucket) ? value.lastObservedRelativeBucket : 'UNDER_1S',
+    observationCount: boundedInteger(value.observationCount) || 0,
+    transient: bool('transient'),
+  };
+}
+
+function sanitizeAcknowledgementSemantic(value = {}) {
+  const counts = [
+    'totalSemanticCandidates', 'publicationSuccessLikeCount', 'publicationFailureLikeCount',
+    'genericSuccessLikeCount', 'genericErrorLikeCount', 'unrelatedNotificationLikeCount',
+    'ambiguousCount', 'roleAlertPublicationSuccessLikeCount',
+    'roleStatusPublicationSuccessLikeCount', 'ariaLivePublicationSuccessLikeCount',
+    'transientPublicationSuccessLikeCount',
+  ];
+  const flags = [
+    ...ACK_SEMANTIC_FEATURES.map((key) => key.replace(/^has/, '').replace(/Concept$/, 'ConceptObserved').replace(/^([A-Z])/, (match) => match.toLowerCase())),
+    'languageROObserved', 'languageENObserved', 'languageOtherObserved',
+    'currentMatcherMatched', 'semanticPublicationSuccessObserved',
+  ];
+  return {
+    ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
+    ...Object.fromEntries(flags.map((key) => [key, value[key] === true])),
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizeAcknowledgementSemanticCandidate) : [],
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -465,6 +517,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.postSubmitVerification = sanitizePostSubmitVerification(shape.value);
         } else if (shape?.acknowledgementShape === true) {
           record.acknowledgementShape = sanitizeAcknowledgementShape(shape.value);
+        } else if (shape?.acknowledgementSemantic === true) {
+          record.acknowledgementSemantic = sanitizeAcknowledgementSemantic(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -528,6 +582,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       postSubmitVerificationStarted: (value) => persist('POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_STARTED', {}, false, { value, postSubmitVerification: true }),
       postSubmitVerificationSummary: (value) => persist(POST_SUBMIT_VERIFICATION_SUMMARY_STAGE, 'POST_SUBMIT_VERIFICATION', {}, true, { value, postSubmitVerification: true }),
       acknowledgementShapeSummary: (value) => persist('ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SHAPE', {}, true, { value, acknowledgementShape: true }),
+      acknowledgementSemanticSummary: (value) => persist('ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SEMANTIC', {}, true, { value, acknowledgementSemantic: true }),
     });
   }
 
@@ -556,6 +611,8 @@ module.exports = {
   sanitizePublishControlDiscovery,
   sanitizePostSubmitClick,
   sanitizePostSubmitVerification,
+  sanitizeAcknowledgementSemanticCandidate,
+  sanitizeAcknowledgementSemantic,
   MAX_PUBLISH_CONTROL_CANDIDATES,
   MAX_PUBLISH_CONTROL_SNAPSHOTS,
   STAGES,

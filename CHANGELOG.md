@@ -4,6 +4,11 @@
 
 - Added protected, bounded task-local diagnostics for real publish click return/failure and terminal strict-verification classification. The records distinguish composer-hidden from acknowledgement-observation failures using only safe enums, booleans, counters, and elapsed-time buckets.
 
+## Phase G5.7CK - post-click acknowledgement semantic discriminator
+
+- Added a diagnostic-only, bounded semantic classification for acknowledgement surfaces that are already admitted by the existing observer. The protected terminal summary stores only fixed semantic/language enums, concept booleans, structural correlation, and relative timing buckets.
+- The strict acknowledgement matcher and success contract remain authoritative. No text, normalized text, hashes, tokens, labels, DOM data, URLs, identities, or post content is persisted; timeout, `OUTCOME_UNKNOWN`, marker ordering, submit, cleanup, and retry behavior are unchanged.
+
 ## Phase G5.7CH - post-click acknowledgement-shape diagnostics
 
 - Added bounded, privacy-safe observation of status, alert, aria-live, current-pattern, and accessibility-only acknowledgement-shaped surfaces during the existing post-submit verification window. A protected summary captures only safe structural classifications and transient counters; it does not alter the acknowledgement matcher, success semantics, timeout, submit path, cleanup, or retry policy.
