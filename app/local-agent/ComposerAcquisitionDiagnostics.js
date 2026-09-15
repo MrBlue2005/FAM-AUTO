@@ -134,6 +134,15 @@ const PROTECTED_STAGES = new Set([
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
+const CRITICAL_TERMINAL_STAGES = new Set([
+  POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
+  'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
+]);
+const TERMINAL_DIAGNOSTIC_STAGES = new Set([
+  'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
+  'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
+]);
+const DIAGNOSTIC_PRIORITY = Object.freeze({ ORDINARY: 0, PROTECTED: 1, TERMINAL: 2, CRITICAL_TERMINAL: 3 });
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -527,10 +536,24 @@ function rotate(directory) {
   }
 }
 
-function removeOldestUnprotected(records) {
-  const index = records.findIndex((record) => !PROTECTED_STAGES.has(record.stage));
-  if (index < 0) return false;
-  records.splice(index, 1);
+function recordPriority(record) {
+  if (CRITICAL_TERMINAL_STAGES.has(record?.stage)) return DIAGNOSTIC_PRIORITY.CRITICAL_TERMINAL;
+  if (TERMINAL_DIAGNOSTIC_STAGES.has(record?.stage)) return DIAGNOSTIC_PRIORITY.TERMINAL;
+  if (PROTECTED_STAGES.has(record?.stage)) return DIAGNOSTIC_PRIORITY.PROTECTED;
+  return DIAGNOSTIC_PRIORITY.ORDINARY;
+}
+
+// Deterministic oldest-first eviction inside a priority class.  A new record
+// can displace only lower-priority evidence; critical terminal summaries
+// therefore never displace each other and are never sacrificed for snapshots.
+function evictLowerPriority(records, incomingPriority) {
+  let bestIndex = -1; let bestPriority = Infinity;
+  for (let index = 0; index < records.length; index += 1) {
+    const priority = recordPriority(records[index]);
+    if (priority < incomingPriority && priority < bestPriority) { bestIndex = index; bestPriority = priority; }
+  }
+  if (bestIndex < 0) return false;
+  records.splice(bestIndex, 1);
   return true;
 }
 
@@ -597,12 +620,13 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           && previous.reason_class === reasonClass
           && JSON.stringify(previous.counters) === JSON.stringify(counters)
           && JSON.stringify(previous.flags) === JSON.stringify(flags)) return;
+        const incomingPriority = recordPriority(record);
         if (terminal) {
-          while (records.length >= maxRecords && removeOldestUnprotected(records)) { /* retain protected diagnostic evidence */ }
-          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes && removeOldestUnprotected(records)) { /* retain protected diagnostic evidence */ }
+          while (records.length >= maxRecords && evictLowerPriority(records, incomingPriority)) { /* lower priorities yield first */ }
+          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes && evictLowerPriority(records, incomingPriority)) { /* preserve critical terminals */ }
         }
         if (records.length < maxRecords) records.push(record);
-        const value = { version: 1, task_id: safeId, records: records.slice(-maxRecords) };
+        const value = { version: 1, task_id: safeId, records };
         if (Buffer.byteLength(JSON.stringify(value), 'utf8') <= maxBytes) atomicWrite(filePath, value);
       } catch {
         // Local diagnostics are observability only and cannot block a safe
@@ -663,6 +687,8 @@ module.exports = {
   sanitizePostPublicationStructural,
   MAX_PUBLISH_CONTROL_CANDIDATES,
   MAX_PUBLISH_CONTROL_SNAPSHOTS,
+  DIAGNOSTIC_PRIORITY,
+  recordPriority,
   STAGES,
   createComposerAcquisitionDiagnosticSink,
 };

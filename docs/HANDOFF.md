@@ -12,6 +12,10 @@ The existing bounded acknowledgement observer now reduces already-admitted trans
 
 The existing post-submit verification window now also records one protected, bounded structural summary. It reduces acknowledgement surfaces to fixed source/container/ancestor enums and observes bounded article-like structures with boolean-only, in-memory immutable-text parity. No Facebook text, normalized text, hashes, accessibility strings, DOM metadata, URLs, cookies, tokens, identities, or task content is persisted. This is diagnostic-only: matcher authority, strict two-predicate success semantics, the 120-second timeout, `OUTCOME_UNKNOWN`, marker order, click behavior, cleanup, and no-retry protections are unchanged.
 
+## G5.7CS terminal diagnostic retention
+
+The task-local diagnostic cap remains 32 KiB. Retention now uses deterministic priority eviction: ordinary records, then protected evidence, then terminal diagnostics yield before critical terminal summaries. `POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY` and `POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY` are both critical and cannot evict one another; lower-priority snapshots are removed first to reserve their bounded space. Persistence remains best-effort and cannot affect browser execution, verification, markers, cleanup, or retries.
+
 ## G5.7CH acknowledgement-shape diagnostics
 
 During the already-existing post-submit verification window only, bounded page-scoped observation records possible acknowledgement surfaces (`CURRENT_TEXT_MATCH`, status, alert, and aria-live families) and transient appearance using safe structural enums/counters. The protected terminal summary never contains text, accessible names, labels, URLs, DOM paths, cookies, tokens, account identity, or post content. These observations are not success predicates: the existing regex, strict two-predicate AND verification, 120-second timeout, `OUTCOME_UNKNOWN` handling, click ordering, cleanup, and no-retry policy remain unchanged.

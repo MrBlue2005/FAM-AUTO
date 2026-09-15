@@ -124,7 +124,7 @@ test('post-submit sink redacts raw Facebook material and protects the terminal s
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-post-submit-diagnostic-'));
   try {
     const taskId = 'live_execution_post_submit_diagnostic';
-    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 2048, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 32 * 1024, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
     for (let index = 0; index < 12; index += 1) sink.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
     sink.postSubmitVerificationSummary({
       clickReturned: true, verificationStarted: true, verificationElapsedMs: 120000, verificationElapsedBucket: 'AT_OR_OVER_TIMEOUT',
@@ -288,5 +288,54 @@ test('post-publication structural persistence redacts raw text and remains prote
     const terminal = persisted.records.find((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY');
     assert.ok(terminal); assert.equal(terminal.postPublicationStructural.structuralSuccessEvidenceClass, 'COMPOSER_ONLY');
     assert.doesNotMatch(JSON.stringify(persisted), /private Facebook text|private accessible name|private post text|secret-hash/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+function pressureMediaSummary(seed) {
+  return {
+    rawMediaSelectorCount: 16, visibleMediaCandidateCount: 16, possibleUploadAttachmentCount: 0,
+    uiAvatarOrIconCount: 16, decorativeCount: 0, videoCandidateCount: 0, unknownCount: 0,
+    countOperationSucceeded: true, inspectionResult: 'OK',
+    candidates: Array.from({ length: 16 }, (_, index) => ({ tagName: 'IMG', visible: true, attached: true, naturalWidthBucket: 'SMALL', naturalHeightBucket: 'SMALL', hasSrc: true, srcScheme: 'HTTPS', hasAlt: false, hasAriaHidden: true, role: 'presentation', ancestorButton: false, ancestorPresentation: true, ancestorEditable: true, candidateDepth: 10 + index + seed, mediaCategory: 'UI_AVATAR_OR_ICON' })),
+  };
+}
+
+function criticalPostSubmitSummary() {
+  return { clickReturned: true, verificationStarted: true, verificationElapsedMs: 120000, verificationElapsedBucket: 'AT_OR_OVER_TIMEOUT', retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'DETACHED', acknowledgementCandidateCount: 0, acknowledgementClassification: 'NONE', canonicalTargetStillValid: true, composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'FAILED_TIMEOUT', successPredicate: 'NOT_SATISFIED', failurePredicate: 'ACKNOWLEDGEMENT_NOT_OBSERVED' };
+}
+
+function criticalStructuralSummary() {
+  return { ackSurfaceCount: 1, composerHiddenObserved: true, publishControlGoneObserved: true, canonicalTargetStillValid: true, structuralSuccessEvidenceClass: 'COMPOSER_ONLY', pageState: { retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'DETACHED', targetCanonicalValid: true, dialogCountBucket: 'ZERO', visibleDialogCountBucket: 'ZERO' }, acknowledgementCandidates: [{ role: 'status', accessibleNameSource: 'TEXT_CONTENT', textSource: 'DIRECT_TEXT_NODE', semanticContainer: 'STATUS_CONTAINER_LIKE' }] };
+}
+
+test('near-32KiB pressure evicts lower-priority diagnostics and retains both critical post-submit summaries', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-retention-'));
+  try {
+    const taskId = 'live_execution_critical_retention';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    for (let index = 0; index < 12; index += 1) sink.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    for (let index = 0; index < 8; index += 1) sink.zeroMediaInspectionSummary(pressureMediaSummary(index));
+    sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
+    sink.postPublicationStructuralSummary(criticalStructuralSummary());
+    const file = path.join(directory, `${taskId}.json`); const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.ok(fs.statSync(file).size <= 32 * 1024);
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY'));
+    assert.ok(persisted.records.some((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY'));
+    assert.ok(persisted.records.filter((record) => record.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY').length < 8);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('critical terminal retention preserves existing critical evidence and remains non-blocking', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-nonblocking-'));
+  try {
+    const taskId = 'live_execution_critical_nonblocking';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 32 * 1024, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
+    sink.postPublicationStructuralSummary({ ...criticalStructuralSummary(), acknowledgementCandidates: Array.from({ length: 16 }, () => ({ rawText: 'private text', ariaLabel: 'private label' })) });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
+    assert.equal(persisted.records.filter((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY').length, 1);
+    assert.equal(persisted.records.filter((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY').length, 1);
+    assert.doesNotMatch(JSON.stringify(persisted), /private text|private label/i);
+    assert.doesNotThrow(() => sink.postPublicationStructuralSummary({ ...criticalStructuralSummary(), acknowledgementCandidates: Array.from({ length: 16 }, () => ({ rawText: 'still private' })) }));
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

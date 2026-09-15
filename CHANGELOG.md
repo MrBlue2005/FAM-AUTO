@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7CS - terminal diagnostic retention
+
+- Added deterministic priority eviction under the unchanged 32 KiB task-local diagnostics cap.
+- Reserved critical terminal retention for both post-submit verification and post-publication structural summaries; ordinary and lower-priority evidence is evicted first.
+- Diagnostic persistence remains non-blocking and does not affect verifier, side-effect, cleanup, or retry behavior.
+
 ## Phase G5.7CO - post-publication structural-source diagnostics
 
 - Added protected, privacy-safe structural diagnostics for acknowledgement sources and bounded article-like post candidates during the existing post-submit verification window.
