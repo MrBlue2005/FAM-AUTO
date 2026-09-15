@@ -83,13 +83,19 @@ function safeCandidate(value = {}) {
     hasGroupConcept: typeof value.hasGroupConcept === 'boolean' ? value.hasGroupConcept : semantic.hasGroupConcept,
     hasRetryConcept: typeof value.hasRetryConcept === 'boolean' ? value.hasRetryConcept : semantic.hasRetryConcept,
     hasErrorConcept: typeof value.hasErrorConcept === 'boolean' ? value.hasErrorConcept : semantic.hasErrorConcept,
+    accessibleNameSource: ['NONE', 'TEXT_CONTENT', 'ARIA_LABEL', 'ARIA_LABELLEDBY', 'DESCENDANT_TEXT', 'OTHER_ACCESSIBLE_SOURCE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR'].includes(value.accessibleNameSource) ? value.accessibleNameSource : 'SAFE_EVALUATION_ERROR',
+    textSource: ['NONE', 'DIRECT_TEXT_NODE', 'DESCENDANT_TEXT', 'MIXED_TEXT_STRUCTURE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR'].includes(value.textSource) ? value.textSource : 'SAFE_EVALUATION_ERROR',
+    semanticContainer: ['TOAST_LIKE', 'LIVE_REGION_LIKE', 'DIALOG_LIKE', 'BUTTON_LIKE', 'STATUS_CONTAINER_LIKE', 'ALERT_CONTAINER_LIKE', 'GENERIC_CONTAINER', 'UNKNOWN'].includes(value.semanticContainer) ? value.semanticContainer : 'UNKNOWN',
+    interactiveAncestor: value.interactiveAncestor === true, dialogAncestor: value.dialogAncestor === true, formAncestor: value.formAncestor === true, liveRegionAncestor: value.liveRegionAncestor === true,
+    nearestSemanticAncestor: ['DIALOG', 'ALERT', 'STATUS', 'LIVE_REGION', 'FORM', 'NAVIGATION', 'MAIN', 'ARTICLE', 'BUTTON', 'GENERIC', 'NONE'].includes(value.nearestSemanticAncestor) ? value.nearestSemanticAncestor : 'NONE',
+    ancestorRoleCount: Math.max(0, Math.min(1000, Number(value.ancestorRoleCount) || 0)), ancestorLiveRegionCount: Math.max(0, Math.min(1000, Number(value.ancestorLiveRegionCount) || 0)), interactiveAncestorCount: Math.max(0, Math.min(1000, Number(value.interactiveAncestorCount) || 0)),
   };
 }
 
-async function inspectAcknowledgementShapes(page) {
+async function inspectAcknowledgementShapes(page, options = {}) {
   if (!page || typeof page.evaluate !== 'function') return { result: 'UNAVAILABLE', candidates: [] };
   try {
-    const candidates = await page.evaluate(({ source, flags }) => {
+    const captured = await page.evaluate(({ source, flags, immutableText }) => {
       const expression = new RegExp(source, flags);
       const visible = (node) => {
         const style = window.getComputedStyle(node); const rect = node.getBoundingClientRect();
@@ -101,6 +107,32 @@ async function inspectAcknowledgementShapes(page) {
       const role = (node) => { const value = String(node.getAttribute('role') || '').trim().toLowerCase(); return value === 'status' || value === 'alert' ? value : value ? 'other' : null; };
       const readTextValue = (node) => { try { return { value: String(node.innerText || node.textContent || '').trim(), error: false }; } catch { return { value: '', error: true }; } };
       const readAccessibilityValue = (node) => { try { return { value: String(node.getAttribute('aria-label') || node.getAttribute('title') || '').trim(), error: false }; } catch { return { value: '', error: true }; } };
+      const sourceInfo = (node) => {
+        try {
+          const direct = Array.from(node.childNodes).some((child) => child.nodeType === Node.TEXT_NODE && String(child.nodeValue || '').trim());
+          const descendant = Array.from(node.children).some((child) => String(child.innerText || child.textContent || '').trim());
+          const ariaLabelledby = Boolean(node.getAttribute('aria-labelledby'));
+          const ariaLabel = Boolean(node.getAttribute('aria-label'));
+          const textSource = direct && descendant ? 'MIXED_TEXT_STRUCTURE' : direct ? 'DIRECT_TEXT_NODE' : descendant ? 'DESCENDANT_TEXT' : 'NONE';
+          const accessibleNameSource = ariaLabel ? 'ARIA_LABEL' : ariaLabelledby ? 'ARIA_LABELLEDBY' : direct ? 'TEXT_CONTENT' : descendant ? 'DESCENDANT_TEXT' : 'NONE';
+          let current = node.parentElement; let nearestSemanticAncestor = 'NONE'; let ancestorRoleCount = 0; let ancestorLiveRegionCount = 0; let interactiveAncestorCount = 0; let interactiveAncestor = false; let dialogAncestor = false; let formAncestor = false; let liveRegionAncestor = false;
+          for (let depth = 0; current && depth < 12; depth += 1, current = current.parentElement) {
+            const roleValue = String(current.getAttribute('role') || '').toLowerCase(); const live = String(current.getAttribute('aria-live') || '').trim();
+            if (roleValue) ancestorRoleCount += 1; if (live) ancestorLiveRegionCount += 1;
+            const interactive = current.tagName === 'BUTTON' || roleValue === 'button' || current.tagName === 'A'; if (interactive) { interactiveAncestor = true; interactiveAncestorCount += 1; }
+            if (roleValue === 'dialog') { dialogAncestor = true; if (nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'DIALOG'; }
+            else if (roleValue === 'alert') { if (nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'ALERT'; }
+            else if (roleValue === 'status') { if (nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'STATUS'; }
+            else if (live) { liveRegionAncestor = true; if (nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'LIVE_REGION'; }
+            else if (current.tagName === 'FORM') { formAncestor = true; if (nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'FORM'; }
+            else if (current.tagName === 'ARTICLE' && nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'ARTICLE';
+            else if (current.tagName === 'MAIN' && nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'MAIN';
+            else if ((current.tagName === 'NAV' || roleValue === 'navigation') && nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'NAVIGATION';
+            else if (interactive && nearestSemanticAncestor === 'NONE') nearestSemanticAncestor = 'BUTTON';
+          }
+          return { accessibleNameSource, textSource, semanticContainer: role(node) === 'alert' ? 'ALERT_CONTAINER_LIKE' : role(node) === 'status' ? 'STATUS_CONTAINER_LIKE' : ariaLive(node) !== 'NONE' ? 'LIVE_REGION_LIKE' : dialogAncestor ? 'DIALOG_LIKE' : interactiveAncestor ? 'BUTTON_LIKE' : 'GENERIC_CONTAINER', interactiveAncestor, dialogAncestor, formAncestor, liveRegionAncestor, nearestSemanticAncestor, ancestorRoleCount: Math.min(1000, ancestorRoleCount), ancestorLiveRegionCount: Math.min(1000, ancestorLiveRegionCount), interactiveAncestorCount: Math.min(1000, interactiveAncestorCount) };
+        } catch { return { accessibleNameSource: 'SAFE_EVALUATION_ERROR', textSource: 'SAFE_EVALUATION_ERROR', semanticContainer: 'UNKNOWN', interactiveAncestor: false, dialogAncestor: false, formAncestor: false, liveRegionAncestor: false, nearestSemanticAncestor: 'NONE', ancestorRoleCount: 0, ancestorLiveRegionCount: 0, interactiveAncestorCount: 0 }; }
+      };
       const readText = (value) => value.error ? 'SAFE_TEXT_EVALUATION_ERROR' : value.value ? (expression.test(value.value) ? 'MATCHES_CURRENT_ACK_PATTERN' : 'NON_MATCHING_TEXT_PRESENT') : 'EMPTY_OR_UNAVAILABLE';
       const readAccessibility = (value) => value.error ? 'SAFE_ACCESSIBILITY_EVALUATION_ERROR' : value.value ? (expression.test(value.value) ? 'MATCHES_CURRENT_ACK_PATTERN' : 'NON_MATCHING_ACCESSIBLE_NAME_PRESENT') : 'EMPTY_OR_UNAVAILABLE';
       const semantic = (text, accessibility) => {
@@ -132,12 +164,18 @@ async function inspectAcknowledgementShapes(page) {
             : candidateRole === 'alert' ? 'ROLE_ALERT'
               : live !== 'NONE' ? 'ARIA_LIVE_REGION' : 'OTHER_SAFE_ACK_SURFACE';
         const nestedTextPresent = node.children.length > 0 && Array.from(node.children).some((child) => String(child.textContent || '').trim().length > 0);
-        out.push({ key: `${index}:${node.tagName}:${candidateRole || 'none'}:${live}`, candidateFamily: family, tagName: tagName(node), role: candidateRole, visible: visible(node), attached: node.isConnected === true, ariaLive: live, textClassification, accessibilityClassification, nestedTextPresent, candidateDepth: depth(node), ...semanticClassification });
+        out.push({ key: `${index}:${node.tagName}:${candidateRole || 'none'}:${live}`, candidateFamily: family, tagName: tagName(node), role: candidateRole, visible: visible(node), attached: node.isConnected === true, ariaLive: live, textClassification, accessibilityClassification, nestedTextPresent, candidateDepth: depth(node), ...semanticClassification, ...sourceInfo(node) });
         if (out.length >= 64) break;
       }
-      return out;
-    }, { source: ACKNOWLEDGEMENT_PATTERN.source, flags: ACKNOWLEDGEMENT_PATTERN.flags });
-    return { result: 'AVAILABLE', candidates: Array.isArray(candidates) ? candidates : [] };
+      const articleNodes = Array.from(document.querySelectorAll('[role="article"], [role="feed"] > *, article')).slice(0, 16);
+      const articles = articleNodes.map((node, index) => {
+        const roleValue = String(node.getAttribute('role') || '').toLowerCase(); const text = String(node.innerText || node.textContent || '');
+        const articleFamily = roleValue === 'article' ? 'ARTICLE_ROLE' : roleValue === 'feeditem' ? 'FEED_ITEM_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE';
+        return { key: `${index}:${articleFamily}`, candidateFamily: articleFamily, visible: visible(node), attached: node.isConnected === true, containsTextSurface: Boolean(text.trim()), containsMediaSurface: node.querySelector('img,video') !== null, containsTimestampLikeSurface: node.querySelector('time') !== null, containsActionBarLikeSurface: node.querySelector('[role="button"], button') !== null, immutableTextExactMatch: Boolean(immutableText) && text.normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim() === immutableText };
+      });
+      return { candidates: out, articles };
+    }, { source: ACKNOWLEDGEMENT_PATTERN.source, flags: ACKNOWLEDGEMENT_PATTERN.flags, immutableText: String(options.immutableText || '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim() });
+    return { result: 'AVAILABLE', candidates: Array.isArray(captured?.candidates) ? captured.candidates : [], articles: Array.isArray(captured?.articles) ? captured.articles : [] };
   } catch {
     return { result: 'SAFE_EVALUATION_ERROR', candidates: [] };
   }
@@ -145,10 +183,10 @@ async function inspectAcknowledgementShapes(page) {
 
 function createAcknowledgementShapeObserver(page, options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
-  const capture = typeof options.capture === 'function' ? options.capture : () => inspectAcknowledgementShapes(page);
+  const capture = typeof options.capture === 'function' ? options.capture : () => inspectAcknowledgementShapes(page, { immutableText: options.immutableText });
   const schedule = typeof options.schedule === 'function' ? options.schedule : setTimeout;
   const cancel = typeof options.cancel === 'function' ? options.cancel : clearTimeout;
-  const startedAt = now(); const entries = new Map(); const timers = []; let snapshot = 0; let stopped = false; let result = 'UNAVAILABLE'; let startVisible = 0;
+  const startedAt = now(); const entries = new Map(); const articleEntries = new Map(); const timers = []; let snapshot = 0; let stopped = false; let result = 'UNAVAILABLE'; let startVisible = 0;
   const observe = async () => {
     if (stopped || snapshot >= MAX_ACKNOWLEDGEMENT_SNAPSHOTS) return;
     const currentSnapshot = snapshot; snapshot += 1;
@@ -188,6 +226,15 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         observationCount: 1,
         languageSeen: new Set([candidate.languageClassification]),
       });
+    }
+    for (const raw of (Array.isArray(captureResult?.articles) ? captureResult.articles : [])) {
+      if (!raw?.key || articleEntries.size >= 16 && !articleEntries.has(raw.key)) continue;
+      const existing = articleEntries.get(raw.key);
+      if (existing) {
+        existing.lastSnapshot = currentSnapshot; existing.lastObservedRelativeBucket = relativeBucket(now() - startedAt);
+        existing.observationCount = Math.min(1000, existing.observationCount + 1);
+        existing.immutableTextExactMatch = existing.immutableTextExactMatch || raw.immutableTextExactMatch === true;
+      } else articleEntries.set(raw.key, { ...raw, firstSnapshot: currentSnapshot, lastSnapshot: currentSnapshot, firstObservedRelativeBucket: relativeBucket(now() - startedAt), lastObservedRelativeBucket: relativeBucket(now() - startedAt), observationCount: 1 });
     }
     if (currentSnapshot === 0) startVisible = visibleAtThisSnapshot;
   };
@@ -268,6 +315,28 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         currentMatcherMatched: candidates.some((candidate) => candidate.currentMatcherMatched),
         semanticPublicationSuccessObserved: publicationSuccess.length > 0,
         candidates: candidates.map(({ languageSeen, currentMatcherMatched, ...candidate }) => candidate),
+      };
+    },
+    structuralSummary(pageState = {}) {
+      const candidates = [...entries.values()];
+      const rawArticles = [...articleEntries.values()];
+      const newArticles = rawArticles.filter((article) => article.firstSnapshot > 0);
+      const articles = rawArticles.map(({ key, firstSnapshot, lastSnapshot, ...article }) => ({ ...article, transient: lastSnapshot < snapshot - 1 }));
+      const count = (predicate) => candidates.filter(predicate).length;
+      const articleVisible = articles.filter((article) => article.visible).length;
+      const exact = articles.filter((article) => article.immutableTextExactMatch).length;
+      const composerHiddenObserved = pageState.composerState === 'ATTACHED_HIDDEN' || pageState.composerState === 'DETACHED';
+      const structuralSuccessEvidenceClass = exact > 0 && newArticles.some((article) => article.immutableTextExactMatch) ? 'IMMUTABLE_TEXT_POST_CANDIDATE'
+        : newArticles.length > 0 && composerHiddenObserved ? 'MULTIPLE_STRUCTURAL_SIGNALS'
+          : newArticles.length > 0 ? 'NEW_ARTICLE_STRUCTURE_ONLY'
+            : composerHiddenObserved ? 'COMPOSER_ONLY' : 'NONE';
+      return {
+        ackSurfaceCount: candidates.length, toastLikeCount: count((candidate) => candidate.semanticContainer === 'TOAST_LIKE'), liveRegionLikeCount: count((candidate) => candidate.semanticContainer === 'LIVE_REGION_LIKE'), statusContainerLikeCount: count((candidate) => candidate.semanticContainer === 'STATUS_CONTAINER_LIKE'), alertContainerLikeCount: count((candidate) => candidate.semanticContainer === 'ALERT_CONTAINER_LIKE'),
+        accessibleNameFromTextCount: count((candidate) => candidate.accessibleNameSource === 'TEXT_CONTENT' || candidate.accessibleNameSource === 'DESCENDANT_TEXT'), accessibleNameFromAriaCount: count((candidate) => candidate.accessibleNameSource === 'ARIA_LABEL' || candidate.accessibleNameSource === 'ARIA_LABELLEDBY'), accessibleNameUnavailableCount: count((candidate) => candidate.accessibleNameSource === 'UNAVAILABLE' || candidate.accessibleNameSource === 'SAFE_EVALUATION_ERROR'),
+        composerHiddenObserved, publishControlGoneObserved: pageState.publishControlPresent === false, canonicalTargetStillValid: pageState.targetCanonicalValid === true,
+        articleLikeCandidateCount: articles.length, visibleArticleLikeCandidateCount: articleVisible, immutableTextExactMatchCandidateCount: exact,
+        newArticleLikeCandidateObservedAfterClick: newArticles.length > 0, exactImmutableTextCandidateObservedAfterClick: newArticles.some((article) => article.immutableTextExactMatch), structuralSuccessEvidenceClass,
+        pageState, acknowledgementCandidates: candidates.map(({ key, firstSnapshot, lastSnapshot, languageSeen, ...candidate }) => candidate), articleCandidates: articles,
       };
     },
   });

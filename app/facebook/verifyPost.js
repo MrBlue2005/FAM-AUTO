@@ -54,6 +54,24 @@ async function observeAcknowledgement(successMessage, acknowledgementPassed) {
   } catch { return { acknowledgementCandidateCount: 0, acknowledgementClassification: 'SAFE_EVALUATION_ERROR' }; }
 }
 
+async function observePostPublicationStructure(page, publishControl, composerState, canonicalTargetStillValid) {
+  const bucket = (count) => !Number.isSafeInteger(count) || count < 0 ? 'UNKNOWN' : count === 0 ? 'ZERO' : count === 1 ? 'ONE' : 'MULTIPLE';
+  try {
+    const [publishControlPresent, publishControlVisible, dialogCounts] = await Promise.all([
+      publishControl && typeof publishControl.count === 'function' ? publishControl.count().then((count) => Number(count) > 0).catch(() => false) : Promise.resolve(false),
+      publishControl && typeof publishControl.isVisible === 'function' ? publishControl.isVisible().catch(() => false) : Promise.resolve(false),
+      page && typeof page.evaluate === 'function' ? page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll('[role="dialog"]'));
+        const isVisible = (node) => { const style = window.getComputedStyle(node); const rect = node.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0; };
+        return { all: all.length, visible: all.filter(isVisible).length };
+      }).catch(() => null) : Promise.resolve(null),
+    ]);
+    return { ...composerState, publishControlPresent, publishControlVisible, targetCanonicalValid: canonicalTargetStillValid === true, dialogCountBucket: bucket(dialogCounts?.all), visibleDialogCountBucket: bucket(dialogCounts?.visible) };
+  } catch {
+    return { ...composerState, publishControlPresent: false, publishControlVisible: false, targetCanonicalValid: canonicalTargetStillValid === true, dialogCountBucket: 'UNKNOWN', visibleDialogCountBucket: 'UNKNOWN' };
+  }
+}
+
 function failurePredicate(composer, acknowledgement) {
   if (composer.passed && acknowledgement.passed) return 'NONE';
   if (!composer.passed && !acknowledgement.passed) return 'BOTH_FAILED';
@@ -69,7 +87,7 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     const successMessage = page.getByText(/postarea (ta )?(a fost|este acum) publicat[ăa]|your post (was|is now) published/i).first();
     // Starts without awaiting: this cannot delay, replace, or broaden either
     // existing verification predicate.
-    const acknowledgementShapes = createAcknowledgementShapeObserver(page, { now, capture: options.captureAcknowledgementShapes, schedule: options.scheduleAcknowledgementObservation, cancel: options.cancelAcknowledgementObservation });
+    const acknowledgementShapes = createAcknowledgementShapeObserver(page, { now, capture: options.captureAcknowledgementShapes, schedule: options.scheduleAcknowledgementObservation, cancel: options.cancelAcknowledgementObservation, immutableText: options.immutableText });
     acknowledgementShapes.start();
     const [composer, acknowledgement] = await Promise.all([waitPredicate(composerDialog, 'hidden', timeout), waitPredicate(successMessage, 'visible', timeout)]);
     const [composerState, acknowledgementState] = await Promise.all([observeComposerState(composerDialog), observeAcknowledgement(successMessage, acknowledgement.passed)]);
@@ -80,6 +98,8 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
+    const postPublicationStructuralSummary = acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid));
+    try { diagnostic?.postPublicationStructuralSummary?.(postPublicationStructuralSummary); } catch { /* observability only */ }
     return composer.passed && acknowledgement.passed;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);

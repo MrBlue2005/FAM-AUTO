@@ -27,6 +27,7 @@ const STAGES = new Set([
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
+  'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
 ]);
 
 const REASON_CLASSES = new Set([
@@ -45,6 +46,7 @@ const REASON_CLASSES = new Set([
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION',
   'ACKNOWLEDGEMENT_SHAPE',
   'ACKNOWLEDGEMENT_SEMANTIC',
+  'POST_PUBLICATION_STRUCTURAL',
 ]);
 
 const COUNTERS = new Set([
@@ -129,6 +131,7 @@ const PROTECTED_STAGES = new Set([
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
+  'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'COMPOSER_ACQUISITION_FAILED',
 ]);
 
@@ -459,6 +462,47 @@ function sanitizeAcknowledgementSemantic(value = {}) {
   };
 }
 
+const STRUCTURAL_ACCESSIBLE_SOURCES = new Set(['NONE', 'TEXT_CONTENT', 'ARIA_LABEL', 'ARIA_LABELLEDBY', 'DESCENDANT_TEXT', 'OTHER_ACCESSIBLE_SOURCE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
+const STRUCTURAL_TEXT_SOURCES = new Set(['NONE', 'DIRECT_TEXT_NODE', 'DESCENDANT_TEXT', 'MIXED_TEXT_STRUCTURE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
+const STRUCTURAL_CONTAINERS = new Set(['TOAST_LIKE', 'LIVE_REGION_LIKE', 'DIALOG_LIKE', 'BUTTON_LIKE', 'STATUS_CONTAINER_LIKE', 'ALERT_CONTAINER_LIKE', 'GENERIC_CONTAINER', 'UNKNOWN']);
+const STRUCTURAL_ANCESTORS = new Set(['DIALOG', 'ALERT', 'STATUS', 'LIVE_REGION', 'FORM', 'NAVIGATION', 'MAIN', 'ARTICLE', 'BUTTON', 'GENERIC', 'NONE']);
+const ARTICLE_FAMILIES = new Set(['ARTICLE_ROLE', 'FEED_ITEM_ROLE', 'POST_CONTAINER_LIKE', 'UNKNOWN_ARTICLE_LIKE']);
+const STRUCTURAL_EVIDENCE_CLASSES = new Set(['NONE', 'COMPOSER_ONLY', 'NEW_ARTICLE_STRUCTURE_ONLY', 'IMMUTABLE_TEXT_POST_CANDIDATE', 'MULTIPLE_STRUCTURAL_SIGNALS', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const PAGE_COMPOSER_STATES = new Set(['ATTACHED_VISIBLE', 'ATTACHED_HIDDEN', 'DETACHED', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
+const BUCKETS = new Set(['ZERO', 'ONE', 'MULTIPLE', 'UNKNOWN']);
+
+function sanitizePostPublicationStructuralCandidate(value = {}) {
+  return {
+    candidateFamily: ACK_FAMILIES.has(value.candidateFamily) ? value.candidateFamily : 'OTHER_SAFE_ACK_SURFACE',
+    role: ACK_ROLES.has(value.role) ? value.role : 'other', ariaLive: ACK_ARIA_LIVE.has(value.ariaLive) ? value.ariaLive : 'NONE',
+    visible: value.visible === true, attached: value.attached === true,
+    accessibleNameSource: STRUCTURAL_ACCESSIBLE_SOURCES.has(value.accessibleNameSource) ? value.accessibleNameSource : 'SAFE_EVALUATION_ERROR',
+    textSource: STRUCTURAL_TEXT_SOURCES.has(value.textSource) ? value.textSource : 'SAFE_EVALUATION_ERROR',
+    semanticContainer: STRUCTURAL_CONTAINERS.has(value.semanticContainer) ? value.semanticContainer : 'UNKNOWN',
+    interactiveAncestor: value.interactiveAncestor === true, dialogAncestor: value.dialogAncestor === true,
+    formAncestor: value.formAncestor === true, liveRegionAncestor: value.liveRegionAncestor === true,
+    candidateDepth: boundedInteger(value.candidateDepth) || 0,
+    nearestSemanticAncestor: STRUCTURAL_ANCESTORS.has(value.nearestSemanticAncestor) ? value.nearestSemanticAncestor : 'NONE',
+    ancestorRoleCount: boundedInteger(value.ancestorRoleCount) || 0, ancestorLiveRegionCount: boundedInteger(value.ancestorLiveRegionCount) || 0,
+    interactiveAncestorCount: boundedInteger(value.interactiveAncestorCount) || 0,
+  };
+}
+
+function sanitizePostPublicationStructural(value = {}) {
+  const bool = (key) => value[key] === true;
+  const counts = ['ackSurfaceCount', 'toastLikeCount', 'liveRegionLikeCount', 'statusContainerLikeCount', 'alertContainerLikeCount', 'accessibleNameFromTextCount', 'accessibleNameFromAriaCount', 'accessibleNameUnavailableCount', 'articleLikeCandidateCount', 'visibleArticleLikeCandidateCount', 'immutableTextExactMatchCandidateCount'];
+  const state = value.pageState || {};
+  return {
+    ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
+    composerHiddenObserved: bool('composerHiddenObserved'), publishControlGoneObserved: bool('publishControlGoneObserved'), canonicalTargetStillValid: bool('canonicalTargetStillValid'),
+    newArticleLikeCandidateObservedAfterClick: bool('newArticleLikeCandidateObservedAfterClick'), exactImmutableTextCandidateObservedAfterClick: bool('exactImmutableTextCandidateObservedAfterClick'),
+    structuralSuccessEvidenceClass: STRUCTURAL_EVIDENCE_CLASSES.has(value.structuralSuccessEvidenceClass) ? value.structuralSuccessEvidenceClass : 'SAFE_EVALUATION_ERROR',
+    pageState: { retainedComposerAttached: state.retainedComposerAttached === true, retainedComposerVisible: state.retainedComposerVisible === true, composerState: PAGE_COMPOSER_STATES.has(state.composerState) ? state.composerState : 'SAFE_EVALUATION_ERROR', publishControlPresent: state.publishControlPresent === true, publishControlVisible: state.publishControlVisible === true, targetCanonicalValid: state.targetCanonicalValid === true, dialogCountBucket: BUCKETS.has(state.dialogCountBucket) ? state.dialogCountBucket : 'UNKNOWN', visibleDialogCountBucket: BUCKETS.has(state.visibleDialogCountBucket) ? state.visibleDialogCountBucket : 'UNKNOWN' },
+    acknowledgementCandidates: Array.isArray(value.acknowledgementCandidates) ? value.acknowledgementCandidates.slice(0, 16).map(sanitizePostPublicationStructuralCandidate) : [],
+    articleCandidates: Array.isArray(value.articleCandidates) ? value.articleCandidates.slice(0, 16).map((candidate) => ({ candidateFamily: ARTICLE_FAMILIES.has(candidate.candidateFamily) ? candidate.candidateFamily : 'UNKNOWN_ARTICLE_LIKE', visible: candidate.visible === true, attached: candidate.attached === true, containsTextSurface: candidate.containsTextSurface === true, containsMediaSurface: candidate.containsMediaSurface === true, containsTimestampLikeSurface: candidate.containsTimestampLikeSurface === true, containsActionBarLikeSurface: candidate.containsActionBarLikeSurface === true, immutableTextExactMatch: candidate.immutableTextExactMatch === true, firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.firstObservedRelativeBucket) ? candidate.firstObservedRelativeBucket : 'UNDER_1S', lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.lastObservedRelativeBucket) ? candidate.lastObservedRelativeBucket : 'UNDER_1S', observationCount: boundedInteger(candidate.observationCount) || 0, transient: candidate.transient === true })) : [],
+  };
+}
+
 function readRecords(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -519,6 +563,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.acknowledgementShape = sanitizeAcknowledgementShape(shape.value);
         } else if (shape?.acknowledgementSemantic === true) {
           record.acknowledgementSemantic = sanitizeAcknowledgementSemantic(shape.value);
+        } else if (shape?.postPublicationStructural === true) {
+          record.postPublicationStructural = sanitizePostPublicationStructural(shape.value);
         } else if (shape?.selectorParity === true) {
           if (shape?.summary) record.selectorParitySummary = sanitizeSelectorParitySummary(shape.summary);
           else record.selectorParity = sanitizeSelectorParity(shape.value);
@@ -531,7 +577,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY';
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -583,6 +629,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       postSubmitVerificationSummary: (value) => persist(POST_SUBMIT_VERIFICATION_SUMMARY_STAGE, 'POST_SUBMIT_VERIFICATION', {}, true, { value, postSubmitVerification: true }),
       acknowledgementShapeSummary: (value) => persist('ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SHAPE', {}, true, { value, acknowledgementShape: true }),
       acknowledgementSemanticSummary: (value) => persist('ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SEMANTIC', {}, true, { value, acknowledgementSemantic: true }),
+      postPublicationStructuralSummary: (value) => persist('POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL', {}, true, { value, postPublicationStructural: true }),
     });
   }
 
@@ -613,6 +660,7 @@ module.exports = {
   sanitizePostSubmitVerification,
   sanitizeAcknowledgementSemanticCandidate,
   sanitizeAcknowledgementSemantic,
+  sanitizePostPublicationStructural,
   MAX_PUBLISH_CONTROL_CANDIDATES,
   MAX_PUBLISH_CONTROL_SNAPSHOTS,
   STAGES,

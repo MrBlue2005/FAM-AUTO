@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7CO - post-publication structural-source diagnostics
+
+- Added protected, privacy-safe structural diagnostics for acknowledgement sources and bounded article-like post candidates during the existing post-submit verification window.
+- Added boolean-only immutable-task-text parity observation for diagnostics; it is not a publication-success predicate.
+- Preserved acknowledgement matching, success semantics, timeout, side-effect marker, cleanup, and no-retry behavior.
+
 ## Phase G5.7CC - post-submit verification diagnostics
 
 - Added protected, bounded task-local diagnostics for real publish click return/failure and terminal strict-verification classification. The records distinguish composer-hidden from acknowledgement-observation failures using only safe enums, booleans, counters, and elapsed-time buckets.

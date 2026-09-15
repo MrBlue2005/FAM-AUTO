@@ -32,6 +32,7 @@ function diagnostic() {
     postSubmitVerificationSummary: (value) => records.push({ stage: 'SUMMARY', value }),
     acknowledgementShapeSummary: (value) => records.push({ stage: 'ACK_SHAPE_SUMMARY', value }),
     acknowledgementSemanticSummary: (value) => records.push({ stage: 'ACK_SEMANTIC_SUMMARY', value }),
+    postPublicationStructuralSummary: (value) => records.push({ stage: 'POST_PUBLICATION_STRUCTURAL_SUMMARY', value }),
     postSubmitClickStarted: (value) => records.push({ stage: 'CLICK_START', value }),
     postSubmitClickReturned: (value) => records.push({ stage: 'CLICK_RETURNED', value }),
     postSubmitClickFailed: (value) => records.push({ stage: 'CLICK_FAILED', value }),
@@ -237,5 +238,55 @@ test('semantic acknowledgement persistence redacts text material and retains pro
     assert.ok(terminal); assert.equal(terminal.acknowledgementSemantic.publicationSuccessLikeCount, 1);
     assert.equal(terminal.acknowledgementSemantic.candidates[0].semanticClassification, 'PUBLICATION_SUCCESS_LIKE');
     assert.doesNotMatch(JSON.stringify(persisted), /private acknowledgement|token 123|abc123|private name|facebook\.example/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('post-publication structural summary classifies safe acknowledgement sources and containers', async () => {
+  let index = 0; let clock = 0;
+  const observer = createAcknowledgementShapeObserver(null, {
+    now: () => clock,
+    capture: async () => ({ result: 'AVAILABLE', candidates: [
+      acknowledgementCandidate({ key: 'status', candidateFamily: 'ROLE_STATUS', role: 'status', accessibleNameSource: 'TEXT_CONTENT', textSource: 'DIRECT_TEXT_NODE', semanticContainer: 'STATUS_CONTAINER_LIKE' }),
+      acknowledgementCandidate({ key: 'alert', candidateFamily: 'ROLE_ALERT', role: 'alert', accessibleNameSource: 'DESCENDANT_TEXT', textSource: 'DESCENDANT_TEXT', semanticContainer: 'ALERT_CONTAINER_LIKE', dialogAncestor: true, nearestSemanticAncestor: 'DIALOG' }),
+      acknowledgementCandidate({ key: 'live', candidateFamily: 'ARIA_LIVE_REGION', ariaLive: 'POLITE', semanticContainer: 'LIVE_REGION_LIKE', liveRegionAncestor: true }),
+      acknowledgementCandidate({ key: 'generic', semanticContainer: 'GENERIC_CONTAINER' }),
+    ], articles: [] }), schedule: () => 0, cancel: () => {},
+  });
+  await observer.observe(); clock += 1000;
+  const structural = observer.structuralSummary({ composerState: 'ATTACHED_HIDDEN', retainedComposerAttached: true, retainedComposerVisible: false, targetCanonicalValid: true, dialogCountBucket: 'ONE', visibleDialogCountBucket: 'ZERO' });
+  assert.equal(structural.statusContainerLikeCount, 1); assert.equal(structural.alertContainerLikeCount, 1); assert.equal(structural.liveRegionLikeCount, 1);
+  assert.equal(structural.accessibleNameFromTextCount, 2); assert.equal(structural.structuralSuccessEvidenceClass, 'COMPOSER_ONLY');
+  assert.equal(structural.acknowledgementCandidates.find((candidate) => candidate.role === 'alert').nearestSemanticAncestor, 'DIALOG');
+});
+
+test('post-publication structural summary distinguishes new article structure, immutable text parity, wrong text, and pre-existing articles', async () => {
+  let clock = 0; let index = 0;
+  const observer = createAcknowledgementShapeObserver(null, {
+    now: () => clock,
+    capture: async () => ({ result: 'AVAILABLE', candidates: [], articles: [
+      { key: 'existing', candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true, containsTextSurface: true, containsMediaSurface: false, containsTimestampLikeSurface: true, containsActionBarLikeSurface: true, immutableTextExactMatch: false },
+      ...(index++ ? [{ key: 'new-match', candidateFamily: 'POST_CONTAINER_LIKE', visible: true, attached: true, containsTextSurface: true, containsMediaSurface: false, containsTimestampLikeSurface: true, containsActionBarLikeSurface: true, immutableTextExactMatch: true }, { key: 'new-wrong', candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true, containsTextSurface: true, containsMediaSurface: false, containsTimestampLikeSurface: false, containsActionBarLikeSurface: true, immutableTextExactMatch: false }] : []),
+    ] }), schedule: () => 0, cancel: () => {},
+  });
+  await observer.observe(); clock += 1000; await observer.observe();
+  const structural = observer.structuralSummary({ composerState: 'ATTACHED_HIDDEN' });
+  assert.equal(structural.newArticleLikeCandidateObservedAfterClick, true);
+  assert.equal(structural.immutableTextExactMatchCandidateCount, 1);
+  assert.equal(structural.exactImmutableTextCandidateObservedAfterClick, true);
+  assert.equal(structural.structuralSuccessEvidenceClass, 'IMMUTABLE_TEXT_POST_CANDIDATE');
+  assert.equal(structural.articleCandidates.find((candidate) => candidate.candidateFamily === 'ARTICLE_ROLE').immutableTextExactMatch, false);
+});
+
+test('post-publication structural persistence redacts raw text and remains protected under pressure', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-post-publication-structural-'));
+  try {
+    const taskId = 'live_execution_post_publication_structural';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 4, maxBytes: 4096, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
+    for (let index = 0; index < 12; index += 1) sink.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
+    sink.postPublicationStructuralSummary({ ackSurfaceCount: 1, composerHiddenObserved: true, targetCanonicalStillValid: true, structuralSuccessEvidenceClass: 'COMPOSER_ONLY', pageState: { composerState: 'ATTACHED_HIDDEN' }, acknowledgementCandidates: [{ role: 'alert', rawText: 'private Facebook text', ariaLabel: 'private accessible name' }], articleCandidates: [{ candidateFamily: 'ARTICLE_ROLE', immutableTextExactMatch: true, rawText: 'private post text', hash: 'secret-hash' }] });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
+    const terminal = persisted.records.find((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY');
+    assert.ok(terminal); assert.equal(terminal.postPublicationStructural.structuralSuccessEvidenceClass, 'COMPOSER_ONLY');
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook text|private accessible name|private post text|secret-hash/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

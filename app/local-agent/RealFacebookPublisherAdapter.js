@@ -191,7 +191,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       requirePrepared(task);
       let canonicalTargetStillValid = false;
       try { verifyTarget(browser.page.url(), targetCanonical); canonicalTargetStillValid = true; } catch { /* diagnostic only */ }
-      const verified = await verifyPublished(browser.page, composer.locator, 120000, { diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid });
+      const verified = await verifyPublished(browser.page, composer.locator, 120000, { diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid, immutableText: task?.payload?.post?.text, publishControl: publishButton });
       return verified ? { verified: true, state: 'VERIFIED_SUCCESS' } : { verified: false, state: 'AMBIGUOUS' };
     },
     cleanup,
