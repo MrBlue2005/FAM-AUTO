@@ -170,6 +170,11 @@ const BODY_ISOLATION_CLASSES = new Set(['EXACT_SINGLE_SUBTREE', 'EXACT_CONTIGUOU
 const BODY_SUMMARY_CLASSES = new Set(['EXACT_SINGLE_SUBTREE', 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE', 'IMMUTABLE_BODY_ISOLATED_FROM_EXTRA_UI', 'BODY_PRESENT_BUT_NOT_ISOLATABLE', 'NO_RELIABLE_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
 const POST_CANDIDATE_CORRELATION = /^POST_CANDIDATE_[1-9]\d{0,2}$/;
 const BODY_SUBTREE_TAGS = new Set(['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION', 'OTHER']);
+const BODY_BLOCK_ROLES = new Set(['BODY_CANDIDATE', 'HEADER_OR_AUTHOR', 'TIMESTAMP', 'ACTION_OR_CONTROL', 'COMMENT_OR_REPLY', 'NESTED_ARTICLE', 'INTERACTIVE_WRAPPER', 'GENERIC_TEXT_WRAPPER', 'LEAF_TEXT', 'HIDDEN', 'DETACHED', 'UNKNOWN']);
+const BODY_BLOCK_ELIGIBILITY = new Set(['ELIGIBLE_BODY_TEXT', 'REJECT_HEADER', 'REJECT_TIMESTAMP', 'REJECT_ACTION_CONTROL', 'REJECT_COMMENT_REPLY', 'REJECT_NESTED_ARTICLE', 'REJECT_INTERACTIVE', 'REJECT_HIDDEN', 'REJECT_DETACHED', 'REJECT_EMPTY', 'REJECT_AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const BODY_COVERAGE = new Set(['NO_BODY_SIGNAL', 'PARTIAL_BODY_SIGNAL', 'WHOLE_BODY_PLUS_EXTRA', 'EXACT_BODY']);
+const BODY_SEQUENCE_REJECTIONS = new Set(['NONE', 'INCLUDES_HEADER', 'INCLUDES_TIMESTAMP', 'INCLUDES_ACTION', 'INCLUDES_COMMENT_REPLY', 'INCLUDES_NESTED_ARTICLE', 'INCLUDES_INTERACTIVE', 'HIDDEN_OR_DETACHED', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const BODY_BLOCK_PATTERNS = new Set(['EXACT_LEAF_EXISTS', 'EXACT_WRAPPER_EXISTS', 'BODY_SPLIT_ACROSS_SIBLINGS', 'BODY_PLUS_HEADER_CONTAMINATION', 'BODY_PLUS_ACTION_CONTAMINATION', 'BODY_PLUS_HEADER_AND_ACTION_CONTAMINATION', 'BODY_INSIDE_INTERACTIVE_WRAPPER', 'BODY_INSIDE_GENERIC_WRAPPER', 'BODY_SIGNAL_AMBIGUOUS', 'NO_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -626,7 +631,24 @@ function sanitizePostCandidateBodySubtree(value = {}) {
     visible: value.visible === true, attached: value.attached === true,
     hasDirectTextNode: value.hasDirectTextNode === true, hasDescendantText: value.hasDescendantText === true,
     hasInteractiveDescendant: value.hasInteractiveDescendant === true, hasArticleDescendant: value.hasArticleDescendant === true,
+    blockIndex: Math.min(24, boundedInteger(value.blockIndex) || 0),
+    parentBlockIndex: value.parentBlockIndex === null ? null : Math.min(24, boundedInteger(value.parentBlockIndex) || 0),
+    childBlockIndices: Array.isArray(value.childBlockIndices) ? value.childBlockIndices.slice(0, 12).map((item) => Math.min(24, boundedInteger(item) || 0)).filter(Boolean) : [],
+    interactive: value.interactive === true, interactiveAncestor: value.interactiveAncestor === true,
+    nestedArticle: value.nestedArticle === true, commentReplyAncestor: value.commentReplyAncestor === true,
+    headerLikeAncestor: value.headerLikeAncestor === true, timestampLikeAncestor: value.timestampLikeAncestor === true, actionLikeAncestor: value.actionLikeAncestor === true,
+    childTextBlockCount: Math.min(24, boundedInteger(value.childTextBlockCount) || 0), interactiveDescendantCount: Math.min(24, boundedInteger(value.interactiveDescendantCount) || 0),
+    blockRole: BODY_BLOCK_ROLES.has(value.blockRole) ? value.blockRole : 'UNKNOWN', eligibility: BODY_BLOCK_ELIGIBILITY.has(value.eligibility) ? value.eligibility : 'SAFE_EVALUATION_ERROR', coverage: BODY_COVERAGE.has(value.coverage) ? value.coverage : 'NO_BODY_SIGNAL',
     ...sanitizePostCandidateTextView(value),
+  };
+}
+
+function sanitizePostCandidateBodySequence(value = {}) {
+  return {
+    sequenceStartBlockIndex: Math.min(24, boundedInteger(value.sequenceStartBlockIndex) || 0), sequenceBlockCount: Math.min(8, boundedInteger(value.sequenceBlockCount) || 0),
+    allVisible: value.allVisible === true, allAttached: value.allAttached === true,
+    sequenceExactImmutableMatch: value.sequenceExactImmutableMatch === true, sequenceContainsImmutableText: value.sequenceContainsImmutableText === true,
+    rejectionReason: BODY_SEQUENCE_REJECTIONS.has(value.rejectionReason) ? value.rejectionReason : 'SAFE_EVALUATION_ERROR',
   };
 }
 
@@ -658,14 +680,16 @@ function sanitizePostCandidateBodySubtreeCandidate(value = {}) {
     remainedVisibleThroughObservation: value.remainedVisibleThroughObservation === true,
     remainedAttachedThroughObservation: value.remainedAttachedThroughObservation === true,
     subtrees: Array.isArray(value.subtrees) ? value.subtrees.slice(0, 24).map(sanitizePostCandidateBodySubtree) : [],
+    contiguousSequences: Array.isArray(value.contiguousSequences) ? value.contiguousSequences.slice(0, 24).map(sanitizePostCandidateBodySequence) : [],
   };
 }
 
 function sanitizePostCandidateBodySubtreeSummary(value = {}) {
-  const counts = ['candidateCountInspected', 'bodySubstringCandidateCount', 'minimalExactBodySubtreeCandidateCount', 'exactContiguousBlockSequenceCandidateCount', 'bodyWithHeaderOutsideCount', 'bodyWithActionsOutsideCount', 'bodyWithHeaderAndActionsOutsideCount', 'bodyPresentButNotIsolatableCount', 'ambiguousCount', 'newAfterClickExactBodyCandidateCount', 'visibleAttachedExactBodyCandidateCount'];
+  const counts = ['candidateCountInspected', 'bodySubstringCandidateCount', 'minimalExactBodySubtreeCandidateCount', 'exactContiguousBlockSequenceCandidateCount', 'bodyWithHeaderOutsideCount', 'bodyWithActionsOutsideCount', 'bodyWithHeaderAndActionsOutsideCount', 'bodyPresentButNotIsolatableCount', 'ambiguousCount', 'newAfterClickExactBodyCandidateCount', 'visibleAttachedExactBodyCandidateCount', 'bodyBlockCount', 'eligibleBodyBlockCount', 'headerRejectedCount', 'timestampRejectedCount', 'actionRejectedCount', 'commentReplyRejectedCount', 'nestedArticleRejectedCount', 'interactiveRejectedCount', 'hiddenRejectedCount', 'detachedRejectedCount', 'ambiguousRejectedCount', 'exactBodyBlockCount', 'wholeBodyPlusExtraBlockCount', 'partialBodySignalBlockCount', 'exactContiguousSequenceCount', 'wholeBodyPlusExtraSequenceCount'];
   return {
     ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
     bestSupportedBodyIsolationClass: BODY_SUMMARY_CLASSES.has(value.bestSupportedBodyIsolationClass) ? value.bestSupportedBodyIsolationClass : 'SAFE_EVALUATION_ERROR',
+    bestObservedBlockPattern: BODY_BLOCK_PATTERNS.has(value.bestObservedBlockPattern) ? value.bestObservedBlockPattern : 'SAFE_EVALUATION_ERROR', detailTruncated: value.detailTruncated === true,
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }

@@ -359,6 +359,30 @@ test('post-candidate body-subtree diagnostics recognize bounded contiguous block
   assert.equal(summarizeArticleBodySubtrees([sequence, notIsolatable, ambiguous]).bestSupportedBodyIsolationClass, 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE');
 });
 
+test('body-block eligibility diagnostics classify bounded structural shapes without changing body extraction', () => {
+  const exactLeaf = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body', { parentBlockIndex: 2 })]), 'immutable body');
+  assert.equal(exactLeaf.subtrees[0].blockRole, 'LEAF_TEXT'); assert.equal(exactLeaf.subtrees[0].eligibility, 'ELIGIBLE_BODY_TEXT');
+  assert.equal(exactLeaf.subtrees[0].coverage, 'EXACT_BODY');
+
+  const shapes = diagnoseArticleBodySubtrees(bodyArticle([
+    bodySubtree('header', { headerLikeAncestor: true }), bodySubtree('immutable', { parentBlockIndex: 1 }),
+    bodySubtree('body', { parentBlockIndex: 1 }), bodySubtree('action', { actionLikeAncestor: true }),
+    bodySubtree('comment', { commentReplyAncestor: true }), bodySubtree('nested', { nestedArticle: true }),
+    bodySubtree('interactive', { interactiveAncestor: true }), bodySubtree('hidden', { visible: false, hidden: true }),
+    bodySubtree('detached', { attached: false, detached: true }), bodySubtree('immutable body extra', { ambiguous: true }),
+  ], { textViews: { currentReader: { value: 'header immutable body action' }, textContent: { value: 'header immutable body action' }, innerText: { value: 'header immutable body action' }, visualText: { value: 'header immutable body action' }, descendantTextBlocks: { value: 'header\nimmutable\nbody\naction' } } }), 'immutable\nbody');
+  const eligibility = shapes.subtrees.map((block) => block.eligibility);
+  for (const expected of ['REJECT_HEADER', 'REJECT_ACTION_CONTROL', 'REJECT_COMMENT_REPLY', 'REJECT_NESTED_ARTICLE', 'REJECT_INTERACTIVE', 'REJECT_HIDDEN', 'REJECT_DETACHED', 'REJECT_AMBIGUOUS']) assert.ok(eligibility.includes(expected));
+  assert.deepEqual(shapes.subtrees.find((block) => block.blockIndex === 1).childBlockIndices, [2, 3]);
+  assert.ok(shapes.contiguousSequences.some((sequence) => sequence.sequenceExactImmutableMatch && sequence.sequenceBlockCount === 2));
+  const summary = summarizeArticleBodySubtrees([shapes]);
+  assert.equal(summary.exactContiguousSequenceCount > 0, true); assert.equal(summary.headerRejectedCount, 1);
+  assert.equal(summary.actionRejectedCount, 1); assert.equal(summary.commentReplyRejectedCount, 1);
+  assert.equal(summary.nestedArticleRejectedCount, 1); assert.equal(summary.interactiveRejectedCount, 1);
+  assert.equal(summary.hiddenRejectedCount, 1); assert.equal(summary.detachedRejectedCount, 1);
+  assert.equal(summary.ambiguousRejectedCount, 1);
+});
+
 test('post-candidate body-subtree correlation follows the same candidate across temporal observations', async () => {
   let snapshot = 0; let clock = 0;
   const existing = bodyArticle([bodySubtree('immutable body')], { key: 'existing' });
@@ -383,11 +407,11 @@ test('post-candidate body-subtree persistence excludes raw content, hashes, DOM 
   try {
     const taskId = 'live_execution_post_candidate_body';
     const sink = createComposerAcquisitionDiagnosticSink({ directory, now: () => '2026-09-16T00:00:00.000Z' }).forTask(taskId);
-    const body = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('private Facebook post', { selector: '#private', className: 'private', domPath: '/html/body', facebookId: 'fb-123' })]), 'private Facebook post');
+    const body = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('private Facebook post', { selector: '#private', className: 'private', domPath: '/html/body', facebookId: 'fb-123', rawLabel: 'private label', cookie: 'secret-cookie' })]), 'private Facebook post');
     sink.postCandidateBodySubtreeSummary({ ...summarizeArticleBodySubtrees([body]), rawText: 'private Facebook post', hash: 'secret-hash', selector: '#private', domPath: '/html/body', facebookId: 'fb-123' });
     const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
-    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook post|secret-hash|#private|\/html\/body|fb-123/i);
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook post|secret-hash|#private|\/html\/body|fb-123|private label|secret-cookie/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 

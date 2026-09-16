@@ -1,5 +1,7 @@
 # Changelog
 
+- Added bounded, privacy-safe body-block eligibility diagnostics for the already-selected refreshed-target post candidate. The existing critical body-subtree terminal summary now records structural roles, rejection reasons, parent/child correlations, coverage and contiguous-sequence classifications without retaining post text, hashes, DOM identifiers, or changing verifier behavior.
+
 ## G5.7DN - trusted post-body extraction within selected candidate
 
 - The canonical-target reload verifier now accepts a refreshed post only when a visible, attached, already-qualified article contains the immutable body directly, after bounded structural UI exclusion, or as one exact contiguous visible body-block sequence. Header, timestamp, control, interactive, nested-article, hidden, and detached structures are excluded structurally; no generated classes, DOM IDs, raw text, or page-wide search are used.

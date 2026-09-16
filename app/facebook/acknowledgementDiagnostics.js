@@ -17,6 +17,10 @@ const BODY_EXTRACTION_RESULT = Object.freeze({
   BODY_NOT_FOUND: 'BODY_NOT_FOUND',
   SAFE_EVALUATION_ERROR: 'SAFE_EVALUATION_ERROR',
 });
+const BODY_BLOCK_ROLES = new Set(['BODY_CANDIDATE', 'HEADER_OR_AUTHOR', 'TIMESTAMP', 'ACTION_OR_CONTROL', 'COMMENT_OR_REPLY', 'NESTED_ARTICLE', 'INTERACTIVE_WRAPPER', 'GENERIC_TEXT_WRAPPER', 'LEAF_TEXT', 'HIDDEN', 'DETACHED', 'UNKNOWN']);
+const BODY_BLOCK_ELIGIBILITY = new Set(['ELIGIBLE_BODY_TEXT', 'REJECT_HEADER', 'REJECT_TIMESTAMP', 'REJECT_ACTION_CONTROL', 'REJECT_COMMENT_REPLY', 'REJECT_NESTED_ARTICLE', 'REJECT_INTERACTIVE', 'REJECT_HIDDEN', 'REJECT_DETACHED', 'REJECT_EMPTY', 'REJECT_AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const BODY_COVERAGE = new Set(['NO_BODY_SIGNAL', 'PARTIAL_BODY_SIGNAL', 'WHOLE_BODY_PLUS_EXTRA', 'EXACT_BODY']);
+const BODY_SEQUENCE_REJECTIONS = new Set(['NONE', 'INCLUDES_HEADER', 'INCLUDES_TIMESTAMP', 'INCLUDES_ACTION', 'INCLUDES_COMMENT_REPLY', 'INCLUDES_NESTED_ARTICLE', 'INCLUDES_INTERACTIVE', 'HIDDEN_OR_DETACHED', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 
 function normaliseEphemeralText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -46,6 +50,41 @@ function textViewParity(readerType, rawValue, immutableText, readSucceeded = tru
     immutableTextSuffixMatch: Boolean(immutable) && value.endsWith(immutable),
     lengthRelation,
   };
+}
+
+function bodyCoverage(parity) {
+  if (parity.exactImmutableMatch) return 'EXACT_BODY';
+  if (parity.containsImmutableText) return 'WHOLE_BODY_PLUS_EXTRA';
+  return parity.normalizedLength ? 'PARTIAL_BODY_SIGNAL' : 'NO_BODY_SIGNAL';
+}
+
+// This classification is intentionally diagnostic-only.  The verifier below
+// continues to use its pre-existing bodyBlocks selection and sequence rules.
+function classifyBodyBlock(raw, parity) {
+  try {
+    const role = raw?.detached ? 'DETACHED'
+      : raw?.hidden ? 'HIDDEN'
+        : raw?.commentReplyAncestor ? 'COMMENT_OR_REPLY'
+          : raw?.nestedArticle || raw?.hasArticleDescendant ? 'NESTED_ARTICLE'
+            : raw?.headerLikeAncestor ? 'HEADER_OR_AUTHOR'
+              : raw?.timestampLikeAncestor ? 'TIMESTAMP'
+                : raw?.actionLikeAncestor ? 'ACTION_OR_CONTROL'
+                  : raw?.interactive || raw?.interactiveAncestor || raw?.hasInteractiveDescendant ? 'INTERACTIVE_WRAPPER'
+                    : raw?.hasDirectTextNode ? 'LEAF_TEXT'
+                      : raw?.hasDescendantText ? 'GENERIC_TEXT_WRAPPER' : 'UNKNOWN';
+    const eligibility = raw?.readSucceeded === false ? 'SAFE_EVALUATION_ERROR'
+      : raw?.detached ? 'REJECT_DETACHED'
+        : raw?.hidden ? 'REJECT_HIDDEN'
+          : raw?.commentReplyAncestor ? 'REJECT_COMMENT_REPLY'
+            : raw?.nestedArticle || raw?.hasArticleDescendant ? 'REJECT_NESTED_ARTICLE'
+              : raw?.headerLikeAncestor ? 'REJECT_HEADER'
+                : raw?.timestampLikeAncestor ? 'REJECT_TIMESTAMP'
+                  : raw?.actionLikeAncestor ? 'REJECT_ACTION_CONTROL'
+                    : raw?.interactive || raw?.interactiveAncestor || raw?.hasInteractiveDescendant ? 'REJECT_INTERACTIVE'
+                      : !parity.normalizedLength ? 'REJECT_EMPTY'
+                        : raw?.ambiguous ? 'REJECT_AMBIGUOUS' : 'ELIGIBLE_BODY_TEXT';
+    return { blockRole: BODY_BLOCK_ROLES.has(role) ? role : 'UNKNOWN', eligibility: BODY_BLOCK_ELIGIBILITY.has(eligibility) ? eligibility : 'SAFE_EVALUATION_ERROR' };
+  } catch { return { blockRole: 'UNKNOWN', eligibility: 'SAFE_EVALUATION_ERROR' }; }
 }
 
 function classifyCandidateTextShape(candidate, views) {
@@ -144,19 +183,28 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
     const rawSubtrees = Array.isArray(raw.bodySubtrees) ? raw.bodySubtrees.slice(0, 24) : [];
     const subtrees = rawSubtrees.map((subtree, index) => {
       const parity = textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false);
+      const classified = classifyBodyBlock(subtree, parity);
       return {
         candidateCorrelationId: raw.candidateCorrelationId,
-        subtreeIndex: index + 1,
+        subtreeIndex: index + 1, blockIndex: index + 1,
         depthRelativeToCandidate: bounded(subtree?.depthRelativeToCandidate, 24),
         tagFamily: ['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION'].includes(subtree?.tagFamily) ? subtree.tagFamily : 'OTHER',
         visible: subtree?.visible === true, attached: subtree?.attached === true,
         hasDirectTextNode: subtree?.hasDirectTextNode === true, hasDescendantText: subtree?.hasDescendantText === true,
         hasInteractiveDescendant: subtree?.hasInteractiveDescendant === true, hasArticleDescendant: subtree?.hasArticleDescendant === true,
+        interactive: subtree?.interactive === true, interactiveAncestor: subtree?.interactiveAncestor === true,
+        nestedArticle: subtree?.nestedArticle === true, commentReplyAncestor: subtree?.commentReplyAncestor === true,
+        headerLikeAncestor: subtree?.headerLikeAncestor === true, timestampLikeAncestor: subtree?.timestampLikeAncestor === true,
+        actionLikeAncestor: subtree?.actionLikeAncestor === true,
+        childTextBlockCount: bounded(subtree?.childTextBlockCount, 24), interactiveDescendantCount: bounded(subtree?.interactiveDescendantCount, 24),
+        parentBlockIndex: Number.isInteger(subtree?.parentBlockIndex) && subtree.parentBlockIndex > 0 ? bounded(subtree.parentBlockIndex, 24) : null,
+        blockRole: classified.blockRole, eligibility: classified.eligibility, coverage: bodyCoverage(parity),
         structuralUiExcluded: subtree?.structuralUiExcluded === true,
         value: subtree?.value,
         ...parity,
       };
     });
+    for (const block of subtrees) block.childBlockIndices = subtrees.filter((item) => item.parentBlockIndex === block.blockIndex).map((item) => item.blockIndex).slice(0, 12);
     // Only a text block captured from the already-qualified article and not
     // structurally classified as UI can prove the immutable body. The raw
     // Facebook text never escapes this function.
@@ -176,6 +224,27 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         }
       }
     }
+    const contiguousSequences = [];
+    for (let start = 0; start < Math.min(subtrees.length, 24); start += 1) {
+      const sequence = []; let joined = ''; let rejectionReason = 'NONE';
+      for (let end = start; end < Math.min(subtrees.length, start + 8); end += 1) {
+        const block = subtrees[end]; sequence.push(block);
+        const eligibilityRejection = {
+          REJECT_HEADER: 'INCLUDES_HEADER', REJECT_TIMESTAMP: 'INCLUDES_TIMESTAMP', REJECT_ACTION_CONTROL: 'INCLUDES_ACTION',
+          REJECT_COMMENT_REPLY: 'INCLUDES_COMMENT_REPLY', REJECT_NESTED_ARTICLE: 'INCLUDES_NESTED_ARTICLE', REJECT_INTERACTIVE: 'INCLUDES_INTERACTIVE',
+          REJECT_HIDDEN: 'HIDDEN_OR_DETACHED', REJECT_DETACHED: 'HIDDEN_OR_DETACHED', REJECT_AMBIGUOUS: 'AMBIGUOUS', SAFE_EVALUATION_ERROR: 'SAFE_EVALUATION_ERROR',
+        }[block.eligibility];
+        if (eligibilityRejection && rejectionReason === 'NONE') rejectionReason = eligibilityRejection;
+        const next = normalizeImmutablePostText(block.value); joined = joined ? `${joined}\n${next}` : next;
+        const parity = textViewParity('INNER_TEXT', joined, immutable);
+        if (parity.containsImmutableText || parity.exactImmutableMatch) contiguousSequences.push({
+          sequenceStartBlockIndex: block ? subtrees[start].blockIndex : 0, sequenceBlockCount: sequence.length,
+          allVisible: sequence.every((item) => item.visible), allAttached: sequence.every((item) => item.attached),
+          sequenceExactImmutableMatch: parity.exactImmutableMatch, sequenceContainsImmutableText: parity.containsImmutableText,
+          rejectionReason: BODY_SEQUENCE_REJECTIONS.has(rejectionReason) ? rejectionReason : 'SAFE_EVALUATION_ERROR',
+        });
+      }
+    }
     const hasBody = candidate.views.some((view) => view.containsImmutableText);
     const header = candidate.hasAuthorHeaderTextSurface; const actions = candidate.hasActionControlTextSurface;
     const isolate = exact.length || sequenceCount;
@@ -192,7 +261,7 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
               : sequenceCount ? 'EXACT_CONTIGUOUS_BLOCK_SEQUENCE'
                 : hasBody ? 'BODY_PRESENT_BUT_NOT_ISOLATABLE' : 'NO_BODY_SIGNAL';
     return {
-      candidateCorrelationId: raw.candidateCorrelationId, inspected: true, candidate, subtrees,
+      candidateCorrelationId: raw.candidateCorrelationId, inspected: true, candidate, subtrees, contiguousSequences,
       minimalExactBodySubtreeFound: exact.length > 0, minimalExactBodySubtreeCount: bounded(exact.length),
       minimalMatchVisible: exact.some((item) => item.visible), minimalMatchAttached: exact.some((item) => item.attached),
       minimalMatchDepth: bounded(exact[0]?.depthRelativeToCandidate, 24),
@@ -218,6 +287,20 @@ function summarizeArticleBodySubtrees(candidates = []) {
       : exact.length ? 'IMMUTABLE_BODY_ISOLATED_FROM_EXTRA_UI'
         : count('BODY_PRESENT_BUT_NOT_ISOLATABLE') ? 'BODY_PRESENT_BUT_NOT_ISOLATABLE'
           : inspected.some((candidate) => candidate.bodyIsolationClass === 'SAFE_EVALUATION_ERROR') ? 'SAFE_EVALUATION_ERROR' : 'NO_RELIABLE_BODY_SIGNAL';
+  const blocks = inspected.flatMap((candidate) => candidate.subtrees || []);
+  const sequences = inspected.flatMap((candidate) => candidate.contiguousSequences || []);
+  const rejected = (eligibility) => blocks.filter((block) => block.eligibility === eligibility).length;
+  const bestObservedBlockPattern = blocks.some((block) => block.coverage === 'EXACT_BODY' && block.hasDirectTextNode) ? 'EXACT_LEAF_EXISTS'
+    : blocks.some((block) => block.coverage === 'EXACT_BODY') ? 'EXACT_WRAPPER_EXISTS'
+      : sequences.some((sequence) => sequence.sequenceExactImmutableMatch && sequence.sequenceBlockCount > 1) ? 'BODY_SPLIT_ACROSS_SIBLINGS'
+        : blocks.some((block) => block.coverage === 'WHOLE_BODY_PLUS_EXTRA' && block.headerLikeAncestor && block.actionLikeAncestor) ? 'BODY_PLUS_HEADER_AND_ACTION_CONTAMINATION'
+          : blocks.some((block) => block.coverage === 'WHOLE_BODY_PLUS_EXTRA' && block.headerLikeAncestor) ? 'BODY_PLUS_HEADER_CONTAMINATION'
+            : blocks.some((block) => block.coverage === 'WHOLE_BODY_PLUS_EXTRA' && block.actionLikeAncestor) ? 'BODY_PLUS_ACTION_CONTAMINATION'
+              : blocks.some((block) => block.coverage !== 'NO_BODY_SIGNAL' && (block.interactive || block.interactiveAncestor)) ? 'BODY_INSIDE_INTERACTIVE_WRAPPER'
+                : blocks.some((block) => block.coverage !== 'NO_BODY_SIGNAL' && block.blockRole === 'GENERIC_TEXT_WRAPPER') ? 'BODY_INSIDE_GENERIC_WRAPPER'
+                  : blocks.some((block) => block.eligibility === 'REJECT_AMBIGUOUS') ? 'BODY_SIGNAL_AMBIGUOUS'
+                    : blocks.some((block) => block.eligibility === 'SAFE_EVALUATION_ERROR') ? 'SAFE_EVALUATION_ERROR'
+                      : 'NO_BODY_SIGNAL';
   return {
     candidateCountInspected: inspected.length,
     bodySubstringCandidateCount: inspected.filter((candidate) => candidate.candidate.views.some((view) => view.containsImmutableText)).length,
@@ -227,7 +310,12 @@ function summarizeArticleBodySubtrees(candidates = []) {
     bodyWithHeaderAndActionsOutsideCount: count('BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE'), bodyPresentButNotIsolatableCount: count('BODY_PRESENT_BUT_NOT_ISOLATABLE'), ambiguousCount: count('AMBIGUOUS'),
     newAfterClickExactBodyCandidateCount: exact.filter((candidate) => candidate.firstObservedAfterClick).length,
     visibleAttachedExactBodyCandidateCount: exact.filter((candidate) => candidate.candidate.visible && candidate.candidate.attached).length,
-    bestSupportedBodyIsolationClass, candidates,
+    bestSupportedBodyIsolationClass,
+    bodyBlockCount: blocks.length, eligibleBodyBlockCount: rejected('ELIGIBLE_BODY_TEXT'),
+    headerRejectedCount: rejected('REJECT_HEADER'), timestampRejectedCount: rejected('REJECT_TIMESTAMP'), actionRejectedCount: rejected('REJECT_ACTION_CONTROL'), commentReplyRejectedCount: rejected('REJECT_COMMENT_REPLY'), nestedArticleRejectedCount: rejected('REJECT_NESTED_ARTICLE'), interactiveRejectedCount: rejected('REJECT_INTERACTIVE'), hiddenRejectedCount: rejected('REJECT_HIDDEN'), detachedRejectedCount: rejected('REJECT_DETACHED'), ambiguousRejectedCount: rejected('REJECT_AMBIGUOUS'),
+    exactBodyBlockCount: blocks.filter((block) => block.coverage === 'EXACT_BODY').length, wholeBodyPlusExtraBlockCount: blocks.filter((block) => block.coverage === 'WHOLE_BODY_PLUS_EXTRA').length, partialBodySignalBlockCount: blocks.filter((block) => block.coverage === 'PARTIAL_BODY_SIGNAL').length,
+    exactContiguousSequenceCount: sequences.filter((sequence) => sequence.sequenceExactImmutableMatch).length, wholeBodyPlusExtraSequenceCount: sequences.filter((sequence) => sequence.sequenceContainsImmutableText && !sequence.sequenceExactImmutableMatch).length,
+    bestObservedBlockPattern, detailTruncated: false, candidates,
   };
 }
 
@@ -409,15 +497,33 @@ async function inspectAcknowledgementShapes(page, options = {}) {
         const articleFamily = roleValue === 'article' ? 'ARTICLE_ROLE' : roleValue === 'feeditem' ? 'FEED_ITEM_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE';
         const descendants = Array.from(node.querySelectorAll('div,span,p,[role="textbox"],article,[role="article"]')).filter((child) => child !== node).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true }));
         const relativeDepth = (child) => { let value = 0; let current = child; while (current?.parentElement && current.parentElement !== node && value < 24) { value += 1; current = current.parentElement; } return value + 1; };
-        const bodySubtrees = Array.from(node.querySelectorAll('div,span,p,article,section')).filter((child) => child !== node).slice(0, 24).map((child) => ({
-          value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true,
+        const subtreeNodes = Array.from(node.querySelectorAll('div,span,p,article,section')).filter((child) => child !== node).slice(0, 24);
+        const bodySubtrees = subtreeNodes.map((child, blockOffset) => {
+          const parent = child.parentElement;
+          const parentOffset = subtreeNodes.indexOf(parent);
+          const ancestor = (selector) => child.closest(selector);
+          const nestedArticle = child.querySelector('article,[role="article"]') !== null || child.closest('article,[role="article"]') !== node;
+          const interactive = child.matches('button,[role="button"],a,input,textarea,[contenteditable="true"]');
+          const interactiveAncestor = Boolean(ancestor('button,[role="button"],a,input,textarea,[contenteditable="true"]'));
+          const headerLikeAncestor = Boolean(ancestor('header,[role="heading"]'));
+          const timestampLikeAncestor = Boolean(ancestor('time'));
+          const actionLikeAncestor = Boolean(ancestor('[role="toolbar"],[role="menu"],button,[role="button"],a'));
+          const commentReplyAncestor = Boolean(ancestor('[role="comment"],[data-commentid],[data-testid*="comment"],[data-testid*="reply"]'));
+          const isVisible = visible(child); const isAttached = child.isConnected === true;
+          const textChildren = Array.from(child.children).filter((item) => String(item.innerText || item.textContent || '').trim());
+          return {
+          value: String(child.innerText || child.textContent || ''), visible: isVisible, attached: isAttached, hidden: !isVisible, detached: !isAttached,
           depthRelativeToCandidate: relativeDepth(child), tagFamily: ['DIV', 'SPAN', 'P', 'ARTICLE', 'SECTION'].includes(child.tagName) ? child.tagName : 'OTHER',
           hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()),
           hasDescendantText: Array.from(child.children).some((item) => String(item.innerText || item.textContent || '').trim()),
           hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null,
           hasArticleDescendant: child.querySelector('article,[role="article"]') !== null,
+          interactive, interactiveAncestor, nestedArticle, commentReplyAncestor, headerLikeAncestor, timestampLikeAncestor, actionLikeAncestor,
+          childTextBlockCount: Math.min(24, textChildren.length), interactiveDescendantCount: Math.min(24, child.querySelectorAll('button,[role="button"],a,input,textarea,[contenteditable="true"]').length),
+          parentBlockIndex: parentOffset >= 0 ? parentOffset + 1 : null,
           readSucceeded: true,
-        }));
+          };
+        });
         return {
           key: `${index}:${articleFamily}`, candidateFamily: articleFamily, visible: visible(node), attached: node.isConnected === true,
           containsTextSurface: Boolean(currentReader.trim()), containsMediaSurface: node.querySelector('img,video') !== null,
