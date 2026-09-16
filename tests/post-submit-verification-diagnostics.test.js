@@ -490,3 +490,113 @@ test('critical terminal retention preserves existing critical evidence and remai
     assert.doesNotThrow(() => sink.postPublicationStructuralSummary({ ...criticalStructuralSummary(), acknowledgementCandidates: Array.from({ length: 16 }, () => ({ rawText: 'still private' })) }));
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+function largeRequiredStructuralSummary() {
+  return {
+    ...criticalStructuralSummary(),
+    acknowledgementCandidates: Array.from({ length: 16 }, () => ({
+      candidateFamily: 'ROLE_STATUS', role: 'status', ariaLive: 'POLITE', visible: true, attached: true,
+      accessibleNameSource: 'ARIA_LABEL', textSource: 'NONE', semanticContainer: 'STATUS_CONTAINER_LIKE',
+      interactiveAncestor: false, dialogAncestor: false, formAncestor: false, liveRegionAncestor: false,
+      candidateDepth: 20, nearestSemanticAncestor: 'NONE', ancestorRoleCount: 2, ancestorLiveRegionCount: 0, interactiveAncestorCount: 0,
+    })),
+    articleCandidates: Array.from({ length: 16 }, (_, index) => ({
+      candidateCorrelationId: `POST_CANDIDATE_${index + 1}`, candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true,
+      containsTextSurface: true, containsMediaSurface: false, containsTimestampLikeSurface: true, containsActionBarLikeSurface: true,
+      immutableTextExactMatch: false, firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'OVER_30S', observationCount: 12, transient: false,
+    })),
+  };
+}
+
+function largeRequiredTextParitySummary() {
+  const view = { readerType: 'CURRENT_READER', readSucceeded: true, normalizedLength: 1000, lineCount: 100, newlineCount: 99, exactImmutableMatch: false, containsImmutableText: true, immutableTextPrefixMatch: false, immutableTextSuffixMatch: false, lengthRelation: 'LONGER' };
+  return {
+    candidateCountInspected: 16, currentReaderExactMatchCount: 0, textContentExactMatchCount: 0, innerTextExactMatchCount: 0,
+    visualTextExactMatchCount: 0, descendantBlockExactMatchCount: 0, bodySubstringCandidateCount: 16,
+    exactImmutableDescendantCandidateCount: 0, postBodyPlusHeaderCount: 0, postBodyPlusActionsCount: 0,
+    postBodyPlusHeaderAndActionsCount: 0, noBodyMatchCount: 0, ambiguousCount: 0,
+    bestSupportedTextParityClass: 'IMMUTABLE_BODY_PRESENT_WITH_EXTRA_UI_TEXT',
+    candidates: Array.from({ length: 16 }, (_, index) => ({
+      candidateCorrelationId: `POST_CANDIDATE_${index + 1}`, candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true,
+      candidateTextShape: 'BODY_SUBSTRING_PRESENT', hasExtraTextBeforeImmutable: true, hasExtraTextAfterImmutable: true,
+      hasActionControlTextSurface: false, hasTimestampTextSurface: false, hasAuthorHeaderTextSurface: false, hasNestedArticleTextSurface: false,
+      exactImmutableDescendantMatch: false, exactImmutableDescendantMatchCount: 0, matchedDescendantVisible: false, matchedDescendantAttached: false,
+      exactTextViewMatchObserved: false, exactDescendantMatchObserved: false, firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'OVER_30S', observationCount: 12,
+      wasPresentBeforeClickObservation: false, firstObservedAfterClick: true, remainedVisibleThroughObservation: true, remainedAttachedThroughObservation: true,
+      views: [view, { ...view, readerType: 'TEXT_CONTENT' }, { ...view, readerType: 'INNER_TEXT' }, { ...view, readerType: 'VISUAL_TEXT' }, { ...view, readerType: 'DESCENDANT_TEXT_BLOCKS' }],
+    })),
+  };
+}
+
+function largeRequiredBodySubtreeSummary() {
+  const subtree = { candidateCorrelationId: 'POST_CANDIDATE_1', subtreeIndex: 1, depthRelativeToCandidate: 2, tagFamily: 'DIV', visible: true, attached: true, hasDirectTextNode: true, hasDescendantText: true, hasInteractiveDescendant: false, hasArticleDescendant: false, readerType: 'DESCENDANT_TEXT_BLOCKS', readSucceeded: true, normalizedLength: 1000, lineCount: 100, newlineCount: 99, exactImmutableMatch: true, containsImmutableText: true, immutableTextPrefixMatch: true, immutableTextSuffixMatch: true, lengthRelation: 'EXACT_LENGTH' };
+  return {
+    candidateCountInspected: 16, bodySubstringCandidateCount: 16, minimalExactBodySubtreeCandidateCount: 16,
+    exactContiguousBlockSequenceCandidateCount: 16, bodyWithHeaderOutsideCount: 0, bodyWithActionsOutsideCount: 0,
+    bodyWithHeaderAndActionsOutsideCount: 0, bodyPresentButNotIsolatableCount: 0, ambiguousCount: 0,
+    newAfterClickExactBodyCandidateCount: 16, visibleAttachedExactBodyCandidateCount: 16,
+    bestSupportedBodyIsolationClass: 'EXACT_SINGLE_SUBTREE',
+    candidates: Array.from({ length: 16 }, (_, index) => ({
+      candidateCorrelationId: `POST_CANDIDATE_${index + 1}`,
+      candidate: { candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true },
+      bodyIsolationClass: 'EXACT_SINGLE_SUBTREE', minimalExactBodySubtreeFound: true, minimalExactBodySubtreeCount: 1,
+      minimalMatchVisible: true, minimalMatchAttached: true, minimalMatchDepth: 2, minimalMatchHasInteractiveDescendant: false, minimalMatchHasArticleDescendant: false,
+      exactContiguousBlockSequenceFound: false, exactContiguousBlockSequenceCount: 0, blockCountInBestMatch: 0,
+      bestSequenceVisible: false, bestSequenceAttached: false, extraTextBeforeBody: false, extraTextAfterBody: false,
+      headerOutsideBody: false, actionsOutsideBody: false, timestampOutsideBody: false,
+      firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'OVER_30S', observationCount: 12,
+      wasPresentBeforeClickObservation: false, firstObservedAfterClick: true, remainedVisibleThroughObservation: true, remainedAttachedThroughObservation: true,
+      subtrees: Array.from({ length: 24 }, (_, subtreeIndex) => ({ ...subtree, candidateCorrelationId: `POST_CANDIDATE_${index + 1}`, subtreeIndex })),
+    })),
+  };
+}
+
+function requiredSummaryWriters(sink) {
+  return {
+    POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY: () => sink.postSubmitVerificationSummary(criticalPostSubmitSummary()),
+    POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY: () => sink.postPublicationStructuralSummary(largeRequiredStructuralSummary()),
+    POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY: () => sink.postCandidateTextParitySummary(largeRequiredTextParitySummary()),
+    POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY: () => sink.postCandidateBodySubtreeSummary(largeRequiredBodySubtreeSummary()),
+  };
+}
+
+function assertAllRequiredCriticalSummaries(filePath) {
+  const persisted = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const stages = persisted.records.map((record) => record.stage);
+  for (const stage of ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY']) assert.ok(stages.includes(stage), `${stage} must survive`);
+  assert.ok(fs.statSync(filePath).size <= 32 * 1024);
+  return persisted;
+}
+
+test('real 32KiB starvation shape reserves capacity for the fourth required critical summary', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-fourth-'));
+  try {
+    const taskId = 'live_execution_critical_fourth';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-16T00:00:00.000Z' }).forTask(taskId);
+    for (let index = 0; index < 20; index += 1) sink.zeroMediaInspectionSummary(pressureMediaSummary(index));
+    const writers = requiredSummaryWriters(sink);
+    writers.POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY();
+    writers.POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY();
+    writers.POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY();
+    assert.doesNotThrow(() => writers.POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY());
+    const persisted = assertAllRequiredCriticalSummaries(path.join(directory, `${taskId}.json`));
+    const body = persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree;
+    assert.equal(body.detailTruncated, true);
+    assert.deepEqual(body.candidates, []);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('all required critical terminal insertion orders retain aggregate evidence', () => {
+  const stages = ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'];
+  const permutations = (items) => items.length < 2 ? [items] : items.flatMap((item, index) => permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-order-'));
+  try {
+    for (const [index, order] of permutations(stages).entries()) {
+      const taskId = `live_execution_critical_order_${index}`;
+      const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-16T00:00:00.000Z' }).forTask(taskId);
+      const writers = requiredSummaryWriters(sink);
+      order.forEach((stage) => writers[stage]());
+      assertAllRequiredCriticalSummaries(path.join(directory, `${taskId}.json`));
+    }
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

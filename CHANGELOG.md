@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase G5.7DC - required critical terminal diagnostic reservation
+
+- The unchanged 32 KiB per-task diagnostic cap now reserves deterministic capacity for exactly four required critical terminal summaries: post-submit verification, post-publication structure, post-candidate text parity, and post-candidate body-subtree parity. Lower-priority diagnostics cannot consume this reservation.
+- Required summaries are order-independent. If a bounded candidate-detail payload would exceed its per-summary allocation, only optional candidate/subtree detail is removed and `detailTruncated=true` is retained alongside aggregate counters, classifications, and core booleans.
+- Persistence remains local, privacy-safe, and non-blocking. It does not alter acknowledgement matching, verifier outcome, timeout, side-effect markers, cleanup, leases, retry policy, or browser behavior.
+
 ## Phase G5.7CZ - post-candidate body-subtree diagnostics
 
 - Added a fourth critical terminal summary, `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`, under the unchanged 32 KiB task-local cap. It assigns bounded task-local opaque candidate indices and reduces only plausible visible, attached article candidates into safe subtree/contiguous-block parity metadata and temporal observations.

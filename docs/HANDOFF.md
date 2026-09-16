@@ -445,6 +445,10 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
+### G5.7DC required critical terminal diagnostic reservation
+
+The fixed 32 KiB task-local composer-diagnostic file now reserves deterministic capacity for all four required critical terminal summaries: `POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY`, `POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY`, `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY`, and `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`. Lower-priority records cannot consume the reserved capacity, and required-summary insertion order is irrelevant. If a bounded candidate/subtree detail payload exceeds its per-summary budget, the sink preserves summary identity, aggregate counters, key classifications, and critical booleans, removes only optional detail, and records `detailTruncated=true`. The file cap, privacy boundary, verifier behavior, acknowledgement matcher, timeout, marker ordering, cleanup, and retry behavior remain unchanged.
+
 ### G5.7CV post-candidate text-parity diagnostics
 
 The post-submit observer now writes a critical terminal `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY` under the unchanged 32 KiB task-local cap. It compares current, `textContent`, `innerText`, visual-line, and bounded descendant text views only in memory, then stores safe parity metadata that identifies whole-body matches, descendant-body matches, header/action contamination, representation differences, or ambiguity. No text, fragments, hashes, selectors, DOM paths, classes, IDs, or Facebook content are persisted. It is diagnostic-only and cannot affect acknowledgement matching, `VERIFIED_SUCCESS`, `OUTCOME_UNKNOWN`, the timeout, marker ordering, submission, cleanup, or retry behavior.

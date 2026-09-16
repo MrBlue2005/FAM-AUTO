@@ -146,6 +146,15 @@ const CRITICAL_TERMINAL_STAGES = new Set([
   'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY',
 ]);
+// These four summaries are the complete, deliberately fixed set required to
+// diagnose the post-click result.  A priority alone cannot reserve room for a
+// later member of this set: earlier critical records could otherwise consume
+// the whole file.  Keep each record below a deterministic ceiling and reserve
+// space for every member before accepting lower-priority evidence.
+const REQUIRED_CRITICAL_TERMINAL_STAGES = new Set(CRITICAL_TERMINAL_STAGES);
+const REQUIRED_CRITICAL_RECORD_MAX_BYTES = 7000;
+const REQUIRED_CRITICAL_FILE_OVERHEAD_BYTES = 768;
+const REQUIRED_CRITICAL_RESERVE_BYTES = (REQUIRED_CRITICAL_TERMINAL_STAGES.size * REQUIRED_CRITICAL_RECORD_MAX_BYTES) + REQUIRED_CRITICAL_FILE_OVERHEAD_BYTES;
 const TERMINAL_DIAGNOSTIC_STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
@@ -667,6 +676,48 @@ function recordPriority(record) {
   return DIAGNOSTIC_PRIORITY.ORDINARY;
 }
 
+function isRequiredCritical(record) {
+  return REQUIRED_CRITICAL_TERMINAL_STAGES.has(record?.stage);
+}
+
+function serializedTaskBytes(taskId, records) {
+  return Buffer.byteLength(JSON.stringify({ version: 1, task_id: taskId, records }), 'utf8');
+}
+
+function requiredCriticalDetailKey(stage) {
+  if (stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY') return 'postPublicationStructural';
+  if (stage === POST_CANDIDATE_TEXT_PARITY_STAGE) return 'postCandidateTextParity';
+  if (stage === POST_CANDIDATE_BODY_SUBTREE_STAGE) return 'postCandidateBodySubtree';
+  return null;
+}
+
+// Candidate arrays are optional observability detail. Aggregate counters,
+// classifications, and booleans remain intact when a required terminal record
+// needs to be compacted. This clone is local-only and contains already-redacted
+// values exclusively.
+function compactRequiredCriticalRecord(record, maxBytes) {
+  if (Buffer.byteLength(JSON.stringify(record), 'utf8') <= maxBytes) return record;
+  const compacted = JSON.parse(JSON.stringify(record));
+  const key = requiredCriticalDetailKey(compacted.stage);
+  if (key && compacted[key] && Array.isArray(compacted[key].candidates)) {
+    compacted[key].candidates = [];
+    compacted[key].detailTruncated = true;
+  }
+  return compacted;
+}
+
+function evictForRequiredCritical(records) {
+  let bestIndex = -1; let bestPriority = Infinity;
+  for (let index = 0; index < records.length; index += 1) {
+    if (isRequiredCritical(records[index])) continue;
+    const priority = recordPriority(records[index]);
+    if (priority < bestPriority) { bestIndex = index; bestPriority = priority; }
+  }
+  if (bestIndex < 0) return false;
+  records.splice(bestIndex, 1);
+  return true;
+}
+
 // Deterministic oldest-first eviction inside a priority class.  A new record
 // can displace only lower-priority evidence; critical terminal summaries
 // therefore never displace each other and are never sacrificed for snapshots.
@@ -686,6 +737,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
   const now = options.now || (() => new Date().toISOString());
   const maxRecords = Math.max(4, Math.min(Number(options.maxRecords) || MAX_RECORDS_PER_TASK, MAX_RECORDS_PER_TASK));
   const maxBytes = Math.max(1024, Math.min(Number(options.maxBytes) || MAX_FILE_BYTES, MAX_FILE_BYTES));
+  const criticalReservationEnabled = maxBytes >= REQUIRED_CRITICAL_RESERVE_BYTES;
+  const nonCriticalByteBudget = criticalReservationEnabled ? maxBytes - REQUIRED_CRITICAL_RESERVE_BYTES : maxBytes;
 
   function forTask(taskId) {
     const safeId = safeTaskId(taskId);
@@ -748,12 +801,34 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           && previous.reason_class === reasonClass
           && JSON.stringify(previous.counters) === JSON.stringify(counters)
           && JSON.stringify(previous.flags) === JSON.stringify(flags)) return;
+        const requiredCritical = isRequiredCritical(record);
         const incomingPriority = recordPriority(record);
-        if (terminal) {
-          while (records.length >= maxRecords && evictLowerPriority(records, incomingPriority)) { /* lower priorities yield first */ }
-          while (records.length && Buffer.byteLength(JSON.stringify({ version: 1, task_id: safeId, records: [...records, record] }), 'utf8') > maxBytes && evictLowerPriority(records, incomingPriority)) { /* preserve critical terminals */ }
+        const effectiveMaxRecords = criticalReservationEnabled ? Math.max(maxRecords, REQUIRED_CRITICAL_TERMINAL_STAGES.size) : maxRecords;
+        let incomingRecord = requiredCritical ? compactRequiredCriticalRecord(record, REQUIRED_CRITICAL_RECORD_MAX_BYTES) : record;
+
+        // A repeated required summary supersedes its earlier snapshot without
+        // displacing any other required terminal summary.
+        if (requiredCritical) {
+          const priorIndex = records.findIndex((item) => item.stage === incomingRecord.stage);
+          if (priorIndex >= 0) records.splice(priorIndex, 1);
         }
-        if (records.length < maxRecords) records.push(record);
+
+        if (requiredCritical && criticalReservationEnabled) {
+          while (records.length >= effectiveMaxRecords && evictForRequiredCritical(records)) { /* required terminals yield only lower classes */ }
+          while (serializedTaskBytes(safeId, [...records, incomingRecord]) > maxBytes && evictForRequiredCritical(records)) { /* ordinary -> protected -> terminal -> non-required critical */ }
+        } else if (criticalReservationEnabled) {
+          // Non-required records never consume capacity reserved for any of the
+          // four required terminals, even before those terminals are emitted.
+          const nonCriticalRecords = () => records.filter((item) => !isRequiredCritical(item));
+          while (serializedTaskBytes(safeId, [...nonCriticalRecords(), incomingRecord]) > nonCriticalByteBudget
+            && evictLowerPriority(records, incomingPriority)) { /* lower priorities yield first */ }
+          if (serializedTaskBytes(safeId, [...nonCriticalRecords(), incomingRecord]) > nonCriticalByteBudget) return;
+        } else if (terminal) {
+          while (records.length >= effectiveMaxRecords && evictLowerPriority(records, incomingPriority)) { /* lower priorities yield first */ }
+          while (records.length && serializedTaskBytes(safeId, [...records, incomingRecord]) > maxBytes && evictLowerPriority(records, incomingPriority)) { /* preserve critical terminals */ }
+        }
+
+        if (records.length < effectiveMaxRecords && serializedTaskBytes(safeId, [...records, incomingRecord]) <= maxBytes) records.push(incomingRecord);
         const value = { version: 1, task_id: safeId, records };
         if (Buffer.byteLength(JSON.stringify(value), 'utf8') <= maxBytes) atomicWrite(filePath, value);
       } catch {
