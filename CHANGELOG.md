@@ -1,5 +1,10 @@
 # Changelog
 
+## G5.7DN - trusted post-body extraction within selected candidate
+
+- The canonical-target reload verifier now accepts a refreshed post only when a visible, attached, already-qualified article contains the immutable body directly, after bounded structural UI exclusion, or as one exact contiguous visible body-block sequence. Header, timestamp, control, interactive, nested-article, hidden, and detached structures are excluded structurally; no generated classes, DOM IDs, raw text, or page-wide search are used.
+- Substring-only, comments/replies, nested/unrelated articles, hidden or detached body signals, and duplicate exact candidates remain insufficient or fail closed. The pre-click zero baseline, mandatory trusted `0 -> 1` newness transition, one-click/no-retry policy, acknowledgement path, and `OUTCOME_UNKNOWN` behavior are unchanged.
+
 ## G5.7DI - pre-click exact-post baseline for trusted newness
 
 - The target-reload verifier now accepts refreshed-target success only after a read-only, same-canonical-target baseline proved zero exact trusted immutable-body post candidates before `ATTEMPT_STARTED` and the sole publish click, followed by exactly one trusted exact candidate after the one bounded reload.

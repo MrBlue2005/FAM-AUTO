@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { RESULT, BASELINE_RESULT, classifyRefreshedTargetCandidates, classifyPreClickBaseline, capturePreClickBaseline, verifyRefreshedTargetPost } = require('../app/facebook/targetReloadVerification');
+const { BODY_EXTRACTION_RESULT, diagnoseArticleBodySubtrees } = require('../app/facebook/acknowledgementDiagnostics');
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
 
 const TEXT = 'Exact immutable smoke body\nSecond line';
@@ -94,6 +95,42 @@ test('target reload accepts isolated header/action and contiguous body structure
     { value: 'Second line', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
   ] });
   assert.equal(classifyRefreshedTargetCandidates([split], TEXT, { trustedNewness: true }).resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
+});
+
+test('trusted body extraction accepts only structurally isolated article body blocks', () => {
+  const bodyOnly = diagnoseArticleBodySubtrees(candidate(), TEXT);
+  assert.equal(bodyOnly.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT);
+  const headerAndBody = diagnoseArticleBodySubtrees(candidate({ hasAuthorHeaderTextSurface: true }), TEXT);
+  assert.equal(headerAndBody.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION);
+  const bodyAndActions = diagnoseArticleBodySubtrees(candidate({ hasActionControlTextSurface: true }), TEXT);
+  assert.equal(bodyAndActions.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION);
+  const combined = diagnoseArticleBodySubtrees(candidate({ hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true }), TEXT);
+  assert.equal(combined.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION);
+  const contiguous = diagnoseArticleBodySubtrees(candidate({ bodySubtrees: [
+    { value: 'Exact immutable smoke body', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
+    { value: 'Second line', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
+  ] }), TEXT);
+  assert.equal(contiguous.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS);
+  const excludedCommentText = diagnoseArticleBodySubtrees(candidate({ bodySubtrees: [{ value: TEXT, visible: true, attached: true, structuralUiExcluded: true, readSucceeded: true }] }), TEXT);
+  assert.equal(excludedCommentText.bodyExtractionResult, BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY);
+  assert.equal(classifyRefreshedTargetCandidates([candidate({ commentOrReply: true })], TEXT, { trustedNewness: true }).resultClass, RESULT.NOT_FOUND);
+  assert.equal(classifyRefreshedTargetCandidates([candidate({ hasNestedArticleTextSurface: true })], TEXT, { trustedNewness: true }).resultClass, RESULT.STRUCTURE_UNTRUSTED);
+  assert.equal(classifyRefreshedTargetCandidates([candidate({ visible: false })], TEXT, { trustedNewness: true }).resultClass, RESULT.NOT_FOUND);
+  assert.equal(classifyRefreshedTargetCandidates([candidate({ attached: false })], TEXT, { trustedNewness: true }).resultClass, RESULT.NOT_FOUND);
+});
+
+test('structural UI exclusion establishes only a trusted 0-to-1 target reload transition', async () => {
+  const page = { url: () => 'https://www.facebook.com/groups/exact', goto: async () => {} };
+  const verify = (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); };
+  const zero = classifyPreClickBaseline([], TEXT);
+  const isolated = candidate({ hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true });
+  const verified = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [isolated], trustedNewness: true, preClickBaseline: zero });
+  assert.equal(verified.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
+  assert.equal(verified.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION);
+  assert.equal(verified.bodyExactAfterUiExclusionCount, 1);
+  const nonzero = classifyPreClickBaseline([isolated], TEXT);
+  const closed = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [isolated], trustedNewness: false, preClickBaseline: nonzero });
+  assert.equal(closed.resultClass, RESULT.DUPLICATE_UNRESOLVED);
 });
 
 test('target reload performs one canonical navigation and rejects before/after target mismatches and navigation failure', async () => {

@@ -508,6 +508,7 @@ const TARGET_RELOAD_RESULT_CLASSES = new Set(['VERIFIED_EXACT_TARGET_POST', 'NOT
 const TARGET_RELOAD_AMBIGUITY_REASONS = new Set(['NONE', 'MULTIPLE_EXACT_CANDIDATES', 'NO_TRUSTED_NEWNESS', 'NESTED_ARTICLE', 'SAFE_EVALUATION_ERROR']);
 const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_ONE_EXACT_POST', 'BASELINE_MULTIPLE_EXACT_POSTS', 'BASELINE_TARGET_MISMATCH', 'BASELINE_UNAVAILABLE', 'BASELINE_SAFE_EVALUATION_ERROR']);
 const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO_TO_MULTIPLE', 'NONZERO_BASELINE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
+const BODY_EXTRACTION_RESULTS = new Set(['EXACT_BODY_DIRECT', 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION', 'EXACT_BODY_CONTIGUOUS_BLOCKS', 'BODY_SUBSTRING_ONLY', 'BODY_AMBIGUOUS', 'BODY_NOT_FOUND', 'SAFE_EVALUATION_ERROR']);
 
 function sanitizeTargetReloadVerification(value = {}) {
   const count = (key) => boundedInteger(value[key]) || 0;
@@ -516,6 +517,7 @@ function sanitizeTargetReloadVerification(value = {}) {
     canonicalTargetBeforeNavigation: value.canonicalTargetBeforeNavigation === true, canonicalTargetAfterNavigation: value.canonicalTargetAfterNavigation === true, navigationSucceeded: value.navigationSucceeded === true,
     candidateCount: Math.min(16, count('candidateCount')), visibleAttachedCandidateCount: Math.min(16, count('visibleAttachedCandidateCount')),
     exactBodyCandidateCount: Math.min(16, count('exactBodyCandidateCount')), structurallyTrustedExactCandidateCount: Math.min(16, count('structurallyTrustedExactCandidateCount')), duplicateExactCandidateCount: Math.min(16, count('duplicateExactCandidateCount')),
+    bodyExtractionAttempted: value.bodyExtractionAttempted === true, bodyExtractionResult: BODY_EXTRACTION_RESULTS.has(value.bodyExtractionResult) ? value.bodyExtractionResult : 'SAFE_EVALUATION_ERROR', bodyExactAfterUiExclusionCount: Math.min(16, count('bodyExactAfterUiExclusionCount')), bodyExactContiguousBlockCount: Math.min(16, count('bodyExactContiguousBlockCount')),
     resultClass: TARGET_RELOAD_RESULT_CLASSES.has(value.resultClass) ? value.resultClass : 'SAFE_EVALUATION_ERROR', ambiguityReason: TARGET_RELOAD_AMBIGUITY_REASONS.has(value.ambiguityReason) ? value.ambiguityReason : 'SAFE_EVALUATION_ERROR', verificationElapsedMs: boundedDuration(value.verificationElapsedMs),
     baselineAttempted: value.baselineAttempted === true, baselineCanonicalTargetValid: value.baselineCanonicalTargetValid === true,
     baselineCandidateCount: Math.min(16, count('baselineCandidateCount')), baselineExactTrustedPostCount: Math.min(16, count('baselineExactTrustedPostCount')),

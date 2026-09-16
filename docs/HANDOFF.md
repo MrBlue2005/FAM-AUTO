@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7DN trusted post-body extraction within the selected candidate
+
+The bounded refreshed-target verifier now derives privacy-safe body proof only within an already-qualified visible, attached post/article candidate. It accepts direct exact body equality, exact equality after structural exclusion of header/timestamp/control/interactive UI, or an exact contiguous visible body-block sequence. It never accepts substring-only text or searches globally; comments/replies, nested articles, hidden/detached structures, and duplicate exact candidates remain fail-closed. The pre-click baseline and required `0 -> 1` trusted-newness transition still govern post-publication success, with no retry after `ATTEMPT_STARTED`.
+
 ## G5.7DF target-scoped post-publication reload verification
 
 After the durable `ATTEMPT_STARTED` marker and the sole scoped publish click return, the live verifier keeps the existing strict composer-hidden plus acknowledgement success path. If the composer is hidden but no acknowledgement arrives during a bounded grace period, it may perform exactly one navigation to the already-canonical immutable target URL in the same authenticated page/context. It revalidates the canonical target before and after navigation and examines only bounded visible, attached article/post structures for an exact normalized immutable body isolated as one subtree or one contiguous block sequence. There is no page-wide text proof, substring proof, control discovery, click, retry, or second navigation.

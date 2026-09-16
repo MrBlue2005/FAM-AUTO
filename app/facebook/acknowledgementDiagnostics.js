@@ -8,6 +8,15 @@ const MAX_ACKNOWLEDGEMENT_SNAPSHOTS = 6;
 const SNAPSHOT_DELAYS_MS = Object.freeze([0, 250, 1000, 5000, 30000, 90000]);
 const SEMANTIC_CLASSIFICATIONS = new Set(['PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'GENERIC_SUCCESS_LIKE', 'GENERIC_ERROR_LIKE', 'UNRELATED_NOTIFICATION_LIKE', 'EMPTY_OR_UNAVAILABLE', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const LANGUAGE_CLASSIFICATIONS = new Set(['RO', 'EN', 'OTHER', 'UNKNOWN']);
+const BODY_EXTRACTION_RESULT = Object.freeze({
+  EXACT_BODY_DIRECT: 'EXACT_BODY_DIRECT',
+  EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION: 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION',
+  EXACT_BODY_CONTIGUOUS_BLOCKS: 'EXACT_BODY_CONTIGUOUS_BLOCKS',
+  BODY_SUBSTRING_ONLY: 'BODY_SUBSTRING_ONLY',
+  BODY_AMBIGUOUS: 'BODY_AMBIGUOUS',
+  BODY_NOT_FOUND: 'BODY_NOT_FOUND',
+  SAFE_EVALUATION_ERROR: 'SAFE_EVALUATION_ERROR',
+});
 
 function normaliseEphemeralText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -143,19 +152,26 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         visible: subtree?.visible === true, attached: subtree?.attached === true,
         hasDirectTextNode: subtree?.hasDirectTextNode === true, hasDescendantText: subtree?.hasDescendantText === true,
         hasInteractiveDescendant: subtree?.hasInteractiveDescendant === true, hasArticleDescendant: subtree?.hasArticleDescendant === true,
+        structuralUiExcluded: subtree?.structuralUiExcluded === true,
+        value: subtree?.value,
         ...parity,
       };
     });
-    const exact = subtrees.filter((subtree) => subtree.visible && subtree.attached && subtree.exactImmutableMatch);
+    // Only a text block captured from the already-qualified article and not
+    // structurally classified as UI can prove the immutable body. The raw
+    // Facebook text never escapes this function.
+    const bodyBlocks = subtrees.filter((subtree) => subtree.visible && subtree.attached
+      && !subtree.structuralUiExcluded && !subtree.hasInteractiveDescendant && !subtree.hasArticleDescendant);
+    const exact = bodyBlocks.filter((subtree) => subtree.exactImmutableMatch);
     let sequenceCount = 0; let bestBlockCount = 0; let sequenceVisible = false; let sequenceAttached = false;
     if (!exact.length && immutable) {
-      for (let start = 0; start < subtrees.length; start += 1) {
+      for (let start = 0; start < bodyBlocks.length; start += 1) {
         let joined = '';
-        for (let end = start; end < Math.min(subtrees.length, start + 8); end += 1) {
-          const source = rawSubtrees[end]; const next = normalizeImmutablePostText(source?.value);
+        for (let end = start; end < Math.min(bodyBlocks.length, start + 8); end += 1) {
+          const next = normalizeImmutablePostText(bodyBlocks[end]?.value);
           joined = joined ? `${joined}\n${next}` : next;
           if (normalizeImmutablePostText(joined) !== immutable) continue;
-          const sequence = subtrees.slice(start, end + 1);
+          const sequence = bodyBlocks.slice(start, end + 1);
           if (sequence.every((item) => item.visible && item.attached)) { sequenceCount += 1; bestBlockCount = bestBlockCount || sequence.length; sequenceVisible = true; sequenceAttached = true; }
         }
       }
@@ -163,6 +179,11 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
     const hasBody = candidate.views.some((view) => view.containsImmutableText);
     const header = candidate.hasAuthorHeaderTextSurface; const actions = candidate.hasActionControlTextSurface;
     const isolate = exact.length || sequenceCount;
+    const hasStructuralUi = candidate.hasAuthorHeaderTextSurface || candidate.hasActionControlTextSurface || candidate.hasTimestampTextSurface || subtrees.some((subtree) => subtree.structuralUiExcluded);
+    const bodyExtractionResult = candidate.hasNestedArticleTextSurface ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS
+      : exact.length ? hasStructuralUi ? BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION : BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT
+        : sequenceCount ? BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS
+          : hasBody ? BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY : BODY_EXTRACTION_RESULT.BODY_NOT_FOUND;
     const bodyIsolationClass = candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS'
       : isolate && header && actions ? 'BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE'
         : isolate && header ? 'BODY_WITH_HEADER_OUTSIDE'
@@ -178,11 +199,13 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       minimalMatchHasInteractiveDescendant: exact.some((item) => item.hasInteractiveDescendant), minimalMatchHasArticleDescendant: exact.some((item) => item.hasArticleDescendant),
       exactContiguousBlockSequenceFound: sequenceCount > 0, exactContiguousBlockSequenceCount: bounded(sequenceCount), blockCountInBestMatch: bounded(bestBlockCount, 24),
       bestSequenceVisible: sequenceVisible, bestSequenceAttached: sequenceAttached,
-      bodyIsolationClass, extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
+      bodyIsolationClass, bodyExtractionAttempted: true, bodyExtractionResult,
+      bodyExactAfterUiExclusionCount: bounded(exact.filter(() => hasStructuralUi).length), bodyExactContiguousBlockCount: bounded(sequenceCount),
+      extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
       headerOutsideBody: isolate && header, actionsOutsideBody: isolate && actions, timestampOutsideBody: isolate && candidate.hasTimestampTextSurface,
     };
   } catch {
-    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR' };
+    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0 };
   }
 }
 
@@ -622,6 +645,7 @@ module.exports = {
   diagnoseArticleBodySubtrees,
   summarizeArticleBodySubtrees,
   summarizeArticleTextParity,
+  BODY_EXTRACTION_RESULT,
   createAcknowledgementShapeObserver,
   inspectAcknowledgementShapes,
 };

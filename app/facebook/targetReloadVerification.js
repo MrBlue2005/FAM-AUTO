@@ -3,7 +3,7 @@
 // Post-click verification deliberately has a much narrower authority than the
 // publisher. It can visit only the already-canonical task target and it never
 // holds, discovers, or clicks a publication control.
-const { diagnoseArticleBodySubtrees } = require('./acknowledgementDiagnostics');
+const { diagnoseArticleBodySubtrees, BODY_EXTRACTION_RESULT } = require('./acknowledgementDiagnostics');
 
 const RESULT = Object.freeze({
   VERIFIED_EXACT_TARGET_POST: 'VERIFIED_EXACT_TARGET_POST',
@@ -43,6 +43,10 @@ function summary(result = {}) {
     candidateCount: Math.max(0, Math.min(16, Number(result.candidateCount) || 0)),
     visibleAttachedCandidateCount: Math.max(0, Math.min(16, Number(result.visibleAttachedCandidateCount) || 0)),
     exactBodyCandidateCount: Math.max(0, Math.min(16, Number(result.exactBodyCandidateCount) || 0)),
+    bodyExtractionAttempted: result.bodyExtractionAttempted === true,
+    bodyExtractionResult: Object.values(BODY_EXTRACTION_RESULT).includes(result.bodyExtractionResult) ? result.bodyExtractionResult : BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR,
+    bodyExactAfterUiExclusionCount: Math.max(0, Math.min(16, Number(result.bodyExactAfterUiExclusionCount) || 0)),
+    bodyExactContiguousBlockCount: Math.max(0, Math.min(16, Number(result.bodyExactContiguousBlockCount) || 0)),
     structurallyTrustedExactCandidateCount: Math.max(0, Math.min(16, Number(result.structurallyTrustedExactCandidateCount) || 0)),
     duplicateExactCandidateCount: Math.max(0, Math.min(16, Number(result.duplicateExactCandidateCount) || 0)),
     resultClass: Object.values(RESULT).includes(result.resultClass) ? result.resultClass : RESULT.SAFE_EVALUATION_ERROR,
@@ -63,15 +67,16 @@ function classifyRefreshedTargetCandidates(candidates, immutableText, options = 
     const rows = eligibleCandidates(candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `RELOAD_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
-    const exact = visibleAttached.filter(({ body }) => body.minimalExactBodySubtreeFound || body.exactContiguousBlockSequenceFound);
+    const exact = visibleAttached.filter(({ body }) => [BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION, BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS].includes(body.bodyExtractionResult));
+    const nestedExact = visibleAttached.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface === true && (body.minimalExactBodySubtreeFound || body.exactContiguousBlockSequenceFound));
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
-    const base = { candidateCount: rows.length, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0 };
-    if (!trusted.length) return { ...base, resultClass: exact.length ? RESULT.STRUCTURE_UNTRUSTED : RESULT.NOT_FOUND, ambiguityReason: exact.length ? 'NESTED_ARTICLE' : 'NONE' };
+    const base = { candidateCount: rows.length, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length + nestedExact.length, bodyExtractionAttempted: true, bodyExtractionResult: trusted.length === 1 ? trusted[0].body.bodyExtractionResult : trusted.length > 1 || nestedExact.length ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS : visibleAttached.find(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY)?.body.bodyExtractionResult || BODY_EXTRACTION_RESULT.BODY_NOT_FOUND, bodyExactAfterUiExclusionCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION).length, bodyExactContiguousBlockCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS).length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0 };
+    if (!trusted.length) return { ...base, resultClass: nestedExact.length ? RESULT.STRUCTURE_UNTRUSTED : RESULT.NOT_FOUND, ambiguityReason: nestedExact.length ? 'NESTED_ARTICLE' : 'NONE' };
     if (trusted.length > 1) return { ...base, resultClass: RESULT.AMBIGUOUS, ambiguityReason: 'MULTIPLE_EXACT_CANDIDATES' };
     if (options.trustedNewness !== true) return { ...base, resultClass: RESULT.DUPLICATE_UNRESOLVED, ambiguityReason: 'NO_TRUSTED_NEWNESS' };
     return { ...base, resultClass: RESULT.VERIFIED_EXACT_TARGET_POST, ambiguityReason: 'NONE' };
   } catch {
-    return { candidateCount: 0, visibleAttachedCandidateCount: 0, exactBodyCandidateCount: 0, structurallyTrustedExactCandidateCount: 0, duplicateExactCandidateCount: 0, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' };
+    return { candidateCount: 0, visibleAttachedCandidateCount: 0, exactBodyCandidateCount: 0, bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, structurallyTrustedExactCandidateCount: 0, duplicateExactCandidateCount: 0, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' };
   }
 }
 
@@ -131,7 +136,17 @@ async function captureTargetCandidates(page, options = {}) {
       hasTimestampTextSurface: node.querySelector('time') !== null,
       textViews: { currentReader: { value: String(node.innerText || ''), readSucceeded: true }, textContent: { value: String(node.textContent || ''), readSucceeded: true }, innerText: { value: String(node.innerText || ''), readSucceeded: true }, visualText: { value: String(node.innerText || ''), readSucceeded: true }, descendantTextBlocks: { value: '', readSucceeded: true } },
       descendantTexts: Array.from(node.querySelectorAll('div,span,p')).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true })),
-      bodySubtrees: Array.from(node.querySelectorAll('div,span,p,article,section')).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','ARTICLE','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: child.querySelector('article,[role="article"]') !== null, readSucceeded: true })),
+      // Structural body blocks are bounded to this selected article. Header,
+      // timestamp, controls, interactive descendants, nested articles, and
+      // hidden/detached surfaces are excluded without classes, IDs, or text.
+      bodySubtrees: Array.from(node.querySelectorAll('div,span,p,section')).slice(0, 64).map((child) => {
+        const ownArticle = child.closest('article,[role="article"]');
+        const excluded = child.closest('header,time,button,[role="button"],a,[role="heading"],[role="toolbar"],[role="menu"],[role="navigation"],[role="status"],[role="alert"]') !== null
+          || ownArticle !== node || child.querySelector('article,[role="article"]') !== null;
+        const visibleChild = visible(child); const attachedChild = child.isConnected === true;
+        const childTextNodes = Array.from(child.children).filter((item) => item instanceof Element && visible(item) && item.isConnected && !item.closest('header,time,button,[role="button"],a,[role="heading"],[role="toolbar"],[role="menu"],[role="navigation"],[role="status"],[role="alert"]')).some((item) => String(item.innerText || item.textContent || '').trim());
+        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: child.querySelector('article,[role="article"]') !== null, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
+      }).filter((child) => child.visible && child.attached).slice(0, 24),
     }));
   }, options.composerHandle || null);
 }
