@@ -4,6 +4,7 @@ const { startBrowser } = require('../facebook/browserManager');
 const { openGroup } = require('../facebook/groupNavigation');
 const { createPost } = require('../facebook/postCreator');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
+const { verifyRefreshedTargetPost } = require('../facebook/targetReloadVerification');
 const { observeFacebookSession, requireNoExplicitNegativeSessionState } = require('./FacebookSessionReadinessExecutor');
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
@@ -74,6 +75,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const navigateGroup = options.openGroup || openGroup;
   const preparePost = options.createPost || createPost;
   const verifyPublished = options.verifyLivePostPublished || verifyLivePostPublished;
+  const verifyRefreshedTarget = options.verifyRefreshedTargetPost || verifyRefreshedTargetPost;
   const canonicalTarget = options.canonicalTarget || canonicalFacebookGroupTarget;
   const verifyTarget = options.verifyTarget || verifyCanonicalFacebookGroupTarget;
   const preparedComposer = options.requirePreparedComposer || requirePreparedComposer;
@@ -191,7 +193,17 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       requirePrepared(task);
       let canonicalTargetStillValid = false;
       try { verifyTarget(browser.page.url(), targetCanonical); canonicalTargetStillValid = true; } catch { /* diagnostic only */ }
-      const verified = await verifyPublished(browser.page, composer.locator, 120000, { diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid, immutableText: task?.payload?.post?.text, publishControl: publishButton });
+      const verified = await verifyPublished(browser.page, composer.locator, 120000, {
+        diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid,
+        immutableText: task?.payload?.post?.text, publishControl: publishButton,
+        // This post-attempt verifier owns at most one exact canonical-target
+        // navigation and has no access to the publication control.
+        verifyRefreshedTarget: () => verifyRefreshedTarget(browser.page, {
+          targetCanonical,
+          verifyTarget,
+          immutableText: task?.payload?.post?.text,
+        }),
+      });
       return verified ? { verified: true, state: 'VERIFIED_SUCCESS' } : { verified: false, state: 'AMBIGUOUS' };
     },
     cleanup,

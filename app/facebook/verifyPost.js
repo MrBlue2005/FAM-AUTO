@@ -37,6 +37,13 @@ async function waitPredicate(locator, state, timeout) {
   catch (error) { return { passed: false, result: predicateFailure(error) }; }
 }
 
+async function acknowledgementWithinGrace(acknowledgementPromise, graceMs) {
+  const configured = Number(graceMs);
+  const grace = Math.max(0, Math.min(10000, Number.isFinite(configured) ? configured : 5000));
+  const timeout = new Promise((resolve) => setTimeout(() => resolve({ passed: false, result: 'NOT_OBSERVED_BEFORE_RELOAD' }), grace));
+  return Promise.race([acknowledgementPromise, timeout]);
+}
+
 async function observeComposerState(composerDialog) {
   try {
     if (!composerDialog || typeof composerDialog.evaluate !== 'function' || typeof composerDialog.isVisible !== 'function') return { retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'UNAVAILABLE' };
@@ -78,8 +85,9 @@ function failurePredicate(composer, acknowledgement) {
   return composer.passed ? 'ACKNOWLEDGEMENT_NOT_OBSERVED' : 'COMPOSER_NOT_HIDDEN';
 }
 
-// Diagnostics are observational only. The two existing Playwright waits, their
-// timeout, and the strict AND success requirement remain exactly unchanged.
+// The acknowledgement matcher remains a valid success source. Once the
+// composer is provably hidden, a short bounded grace gives it an opportunity
+// to resolve before the single, canonical-target-only post-attempt verifier.
 async function verifyLivePostPublished(page, composerDialog, timeout = 120000, options = {}) {
   const diagnostic = options.diagnostic; const now = typeof options.now === 'function' ? options.now : () => Date.now(); const startedAt = now();
   try { diagnostic?.postSubmitVerificationStarted?.({ verificationTimeoutMs: timeout, composerHiddenPredicateEnabled: true, acknowledgementPredicateEnabled: true }); } catch { /* observability only */ }
@@ -89,16 +97,26 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     // existing verification predicate.
     const acknowledgementShapes = createAcknowledgementShapeObserver(page, { now, capture: options.captureAcknowledgementShapes, schedule: options.scheduleAcknowledgementObservation, cancel: options.cancelAcknowledgementObservation, immutableText: options.immutableText });
     acknowledgementShapes.start();
-    const [composer, acknowledgement] = await Promise.all([waitPredicate(composerDialog, 'hidden', timeout), waitPredicate(successMessage, 'visible', timeout)]);
+    const acknowledgementPromise = waitPredicate(successMessage, 'visible', timeout);
+    // Prevent a later navigation from turning a rejected observer promise into
+    // an unhandled rejection. Its outcome is used only before fallback starts.
+    acknowledgementPromise.catch(() => {});
+    const composer = await waitPredicate(composerDialog, 'hidden', timeout);
+    const acknowledgement = composer.passed ? await acknowledgementWithinGrace(acknowledgementPromise, options.acknowledgementGraceMs) : await acknowledgementPromise;
+    let targetReload = null;
+    if (composer.passed && !acknowledgement.passed && options.clickReturned === true && options.canonicalTargetStillValid === true && typeof options.verifyRefreshedTarget === 'function') {
+      targetReload = await options.verifyRefreshedTarget();
+    }
     const [composerState, acknowledgementState] = await Promise.all([observeComposerState(composerDialog), observeAcknowledgement(successMessage, acknowledgement.passed)]);
     const elapsed = Math.max(0, now() - startedAt);
-    const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: composer.passed && acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : 'NOT_SATISFIED', failurePredicate: failurePredicate(composer, acknowledgement) };
+    const targetVerified = targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST';
+    const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: composer.passed && (acknowledgement.passed || targetVerified) ? acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : 'TARGET_RELOAD_PROOF_PASSED' : 'NOT_SATISFIED', failurePredicate: composer.passed && targetVerified ? 'NONE' : failurePredicate(composer, acknowledgement) };
     try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const acknowledgementShapeSummary = acknowledgementShapes.stop();
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
-    const postPublicationStructuralSummary = acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid));
+    const postPublicationStructuralSummary = { ...acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid)), targetReloadVerification: targetReload };
     try { diagnostic?.postPublicationStructuralSummary?.(postPublicationStructuralSummary); } catch { /* observability only */ }
     // This is an after-the-fact, privacy-reduced explanation of article text
     // parity. It is never consulted by either existing success predicate.
@@ -106,7 +124,7 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     // Bounded retained-subtree correlation is also diagnostic-only.  It runs
     // after the existing waits and cannot alter their strict success result.
     try { diagnostic?.postCandidateBodySubtreeSummary?.(acknowledgementShapes.bodySubtreeSummary()); } catch { /* observability only */ }
-    return composer.passed && acknowledgement.passed;
+    return composer.passed && (acknowledgement.passed || targetVerified);
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);
     try { diagnostic?.postSubmitVerificationSummary?.({ clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'SAFE_EVALUATION_ERROR', acknowledgementCandidateCount: 0, acknowledgementClassification: 'SAFE_EVALUATION_ERROR', canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: 'NOT_COMPLETED', acknowledgementPredicate: 'NOT_COMPLETED', successPredicate: 'NOT_SATISFIED', failurePredicate: 'VERIFICATION_ERROR' }); } catch { /* observability only */ }

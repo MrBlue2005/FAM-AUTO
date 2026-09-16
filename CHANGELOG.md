@@ -1,5 +1,10 @@
 # Changelog
 
+## G5.7DF - target-scoped post-publication reload verifier
+
+- Added a bounded, post-attempt-only canonical target reload verifier as an alternative to the existing acknowledgement path. It requires a hidden retained composer, an already-returned sole publish click, canonical target validation before and after the one navigation, and exact isolated immutable-body evidence in one visible attached post/article structure.
+- Exact historical-identical content, duplicate candidates, nested articles, hidden/detached content, comments, and substring-only matches fail closed. Target reload diagnostics are merged into the existing critical structural summary, retaining the unchanged 32 KiB cap and deterministic reservation model.
+
 ## Phase G5.7DC - required critical terminal diagnostic reservation
 
 - The unchanged 32 KiB per-task diagnostic cap now reserves deterministic capacity for exactly four required critical terminal summaries: post-submit verification, post-publication structure, post-candidate text parity, and post-candidate body-subtree parity. Lower-priority diagnostics cannot consume this reservation.

@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## G5.7DF target-scoped post-publication reload verification
+
+After the durable `ATTEMPT_STARTED` marker and the sole scoped publish click return, the live verifier keeps the existing strict composer-hidden plus acknowledgement success path. If the composer is hidden but no acknowledgement arrives during a bounded grace period, it may perform exactly one navigation to the already-canonical immutable target URL in the same authenticated page/context. It revalidates the canonical target before and after navigation and examines only bounded visible, attached article/post structures for an exact normalized immutable body isolated as one subtree or one contiguous block sequence. There is no page-wide text proof, substring proof, control discovery, click, retry, or second navigation.
+
+The current DOM has no trusted privacy-safe freshness signal. Therefore an otherwise exact historical-identical match is `DUPLICATE_UNRESOLVED`, and multiple matches are `AMBIGUOUS`; both remain `OUTCOME_UNKNOWN`. Only an explicit trustworthy newness signal can permit `VERIFIED_EXACT_TARGET_POST`. The compact target-reload result is merged into the existing required structural terminal summary, preserving the fixed four-summary 32 KiB reservation.
+
 ## G5.7CZ post-candidate body-subtree diagnostics
 
 Post-submit observation now assigns each bounded article candidate a task-local sequential `POST_CANDIDATE_n` correlation ID. For only visible, attached candidates with immutable-body containment, it reduces a bounded retained descendant tree and adjacent text-block sequences into enums, booleans, counters, and observation buckets. The fourth critical terminal summary, `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`, correlates the same safe candidate with structural, parity, and temporal observations under the unchanged 32 KiB cap.

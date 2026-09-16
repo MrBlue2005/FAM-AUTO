@@ -600,3 +600,20 @@ test('all required critical terminal insertion orders retain aggregate evidence'
     }
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('target reload verification metadata is merged into the existing critical structural summary without raw target content', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-target-reload-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory }).forTask('target_reload_safe');
+    sink.postPublicationStructuralSummary({ ...criticalStructuralSummary(), targetReloadVerification: {
+      navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true,
+      candidateCount: 1, visibleAttachedCandidateCount: 1, exactBodyCandidateCount: 1, structurallyTrustedExactCandidateCount: 1, duplicateExactCandidateCount: 0,
+      resultClass: 'VERIFIED_EXACT_TARGET_POST', ambiguityReason: 'NONE', verificationElapsedMs: 1234,
+      rawUrl: 'https://facebook.example/private', rawText: 'private immutable post', selector: '[role=article]',
+    } });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'target_reload_safe.json'), 'utf8'));
+    const value = persisted.records.find((item) => item.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY').postPublicationStructural.targetReloadVerification;
+    assert.equal(value.resultClass, 'VERIFIED_EXACT_TARGET_POST'); assert.equal(value.navigationCount, 1);
+    assert.doesNotMatch(JSON.stringify(persisted), /facebook\.example|private immutable|role=article/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

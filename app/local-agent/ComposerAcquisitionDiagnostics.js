@@ -379,9 +379,9 @@ const POST_SUBMIT_ACKNOWLEDGEMENT_CLASSES = new Set([
   'NONE', 'MATCH_FOUND', 'CANDIDATES_PRESENT_NO_MATCH', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR',
 ]);
 const POST_SUBMIT_PREDICATE_RESULTS = new Set([
-  'PASSED', 'FAILED_TIMEOUT', 'FAILED_ERROR', 'NOT_COMPLETED',
+  'PASSED', 'FAILED_TIMEOUT', 'FAILED_ERROR', 'NOT_COMPLETED', 'NOT_OBSERVED_BEFORE_RELOAD',
 ]);
-const POST_SUBMIT_SUCCESS_PREDICATES = new Set(['BOTH_PREDICATES_PASSED', 'NOT_SATISFIED']);
+const POST_SUBMIT_SUCCESS_PREDICATES = new Set(['BOTH_PREDICATES_PASSED', 'TARGET_RELOAD_PROOF_PASSED', 'NOT_SATISFIED']);
 const POST_SUBMIT_FAILURE_PREDICATES = new Set([
   'NONE', 'COMPOSER_NOT_HIDDEN', 'ACKNOWLEDGEMENT_NOT_OBSERVED', 'BOTH_FAILED',
   'CLICK_FAILED', 'VERIFICATION_ERROR', 'OTHER_SAFE_FAILURE',
@@ -504,6 +504,19 @@ const STRUCTURAL_CONTAINERS = new Set(['TOAST_LIKE', 'LIVE_REGION_LIKE', 'DIALOG
 const STRUCTURAL_ANCESTORS = new Set(['DIALOG', 'ALERT', 'STATUS', 'LIVE_REGION', 'FORM', 'NAVIGATION', 'MAIN', 'ARTICLE', 'BUTTON', 'GENERIC', 'NONE']);
 const ARTICLE_FAMILIES = new Set(['ARTICLE_ROLE', 'FEED_ITEM_ROLE', 'POST_CONTAINER_LIKE', 'UNKNOWN_ARTICLE_LIKE']);
 const STRUCTURAL_EVIDENCE_CLASSES = new Set(['NONE', 'COMPOSER_ONLY', 'NEW_ARTICLE_STRUCTURE_ONLY', 'IMMUTABLE_TEXT_POST_CANDIDATE', 'MULTIPLE_STRUCTURAL_SIGNALS', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const TARGET_RELOAD_RESULT_CLASSES = new Set(['VERIFIED_EXACT_TARGET_POST', 'NOT_FOUND', 'AMBIGUOUS', 'TARGET_MISMATCH', 'NAVIGATION_FAILED', 'STRUCTURE_UNTRUSTED', 'DUPLICATE_UNRESOLVED', 'SAFE_EVALUATION_ERROR']);
+const TARGET_RELOAD_AMBIGUITY_REASONS = new Set(['NONE', 'MULTIPLE_EXACT_CANDIDATES', 'NO_TRUSTED_NEWNESS', 'NESTED_ARTICLE', 'SAFE_EVALUATION_ERROR']);
+
+function sanitizeTargetReloadVerification(value = {}) {
+  const count = (key) => boundedInteger(value[key]) || 0;
+  return {
+    navigationAttempted: value.navigationAttempted === true, navigationCount: Math.min(1, count('navigationCount')),
+    canonicalTargetBeforeNavigation: value.canonicalTargetBeforeNavigation === true, canonicalTargetAfterNavigation: value.canonicalTargetAfterNavigation === true, navigationSucceeded: value.navigationSucceeded === true,
+    candidateCount: Math.min(16, count('candidateCount')), visibleAttachedCandidateCount: Math.min(16, count('visibleAttachedCandidateCount')),
+    exactBodyCandidateCount: Math.min(16, count('exactBodyCandidateCount')), structurallyTrustedExactCandidateCount: Math.min(16, count('structurallyTrustedExactCandidateCount')), duplicateExactCandidateCount: Math.min(16, count('duplicateExactCandidateCount')),
+    resultClass: TARGET_RELOAD_RESULT_CLASSES.has(value.resultClass) ? value.resultClass : 'SAFE_EVALUATION_ERROR', ambiguityReason: TARGET_RELOAD_AMBIGUITY_REASONS.has(value.ambiguityReason) ? value.ambiguityReason : 'SAFE_EVALUATION_ERROR', verificationElapsedMs: boundedDuration(value.verificationElapsedMs),
+  };
+}
 const PAGE_COMPOSER_STATES = new Set(['ATTACHED_VISIBLE', 'ATTACHED_HIDDEN', 'DETACHED', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
 const BUCKETS = new Set(['ZERO', 'ONE', 'MULTIPLE', 'UNKNOWN']);
 
@@ -536,6 +549,7 @@ function sanitizePostPublicationStructural(value = {}) {
     pageState: { retainedComposerAttached: state.retainedComposerAttached === true, retainedComposerVisible: state.retainedComposerVisible === true, composerState: PAGE_COMPOSER_STATES.has(state.composerState) ? state.composerState : 'SAFE_EVALUATION_ERROR', publishControlPresent: state.publishControlPresent === true, publishControlVisible: state.publishControlVisible === true, targetCanonicalValid: state.targetCanonicalValid === true, dialogCountBucket: BUCKETS.has(state.dialogCountBucket) ? state.dialogCountBucket : 'UNKNOWN', visibleDialogCountBucket: BUCKETS.has(state.visibleDialogCountBucket) ? state.visibleDialogCountBucket : 'UNKNOWN' },
     acknowledgementCandidates: Array.isArray(value.acknowledgementCandidates) ? value.acknowledgementCandidates.slice(0, 16).map(sanitizePostPublicationStructuralCandidate) : [],
     articleCandidates: Array.isArray(value.articleCandidates) ? value.articleCandidates.slice(0, 16).map((candidate) => ({ candidateCorrelationId: POST_CANDIDATE_CORRELATION.test(candidate.candidateCorrelationId) ? candidate.candidateCorrelationId : undefined, candidateFamily: ARTICLE_FAMILIES.has(candidate.candidateFamily) ? candidate.candidateFamily : 'UNKNOWN_ARTICLE_LIKE', visible: candidate.visible === true, attached: candidate.attached === true, containsTextSurface: candidate.containsTextSurface === true, containsMediaSurface: candidate.containsMediaSurface === true, containsTimestampLikeSurface: candidate.containsTimestampLikeSurface === true, containsActionBarLikeSurface: candidate.containsActionBarLikeSurface === true, immutableTextExactMatch: candidate.immutableTextExactMatch === true, firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.firstObservedRelativeBucket) ? candidate.firstObservedRelativeBucket : 'UNDER_1S', lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(candidate.lastObservedRelativeBucket) ? candidate.lastObservedRelativeBucket : 'UNDER_1S', observationCount: boundedInteger(candidate.observationCount) || 0, transient: candidate.transient === true })) : [],
+    targetReloadVerification: sanitizeTargetReloadVerification(value.targetReloadVerification),
   };
 }
 
