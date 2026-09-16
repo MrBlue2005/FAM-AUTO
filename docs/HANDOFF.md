@@ -451,6 +451,10 @@ Use `.env.example` files as templates. Never place credentials or authentication
 
 ## Latest local validation
 
+### G5.7DI pre-click exact-post baseline for trusted newness
+
+The target-scoped reload verifier now obtains a read-only baseline after final canonical-target/readiness checks and before `ATTEMPT_STARTED`. Only a same-target `0 -> 1` transition of visible, attached, structurally trusted exact immutable-body post candidates may establish target-reload newness. The retained composer, comments/replies, dialogs/drafts, hidden/detached surfaces, nested article ambiguity, and substring-only content cannot satisfy the baseline or reload proof. Nonzero, unavailable, or target-mismatched baseline results fail before the marker and click; a unique fixture token remains operationally required but is never itself proof. Existing acknowledgement success, one-click/no-retry semantics, cleanup, and the fixed 32 KiB four-summary retention model remain unchanged.
+
 ### G5.7DC required critical terminal diagnostic reservation
 
 The fixed 32 KiB task-local composer-diagnostic file now reserves deterministic capacity for all four required critical terminal summaries: `POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY`, `POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY`, `POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY`, and `POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY`. Lower-priority records cannot consume the reserved capacity, and required-summary insertion order is irrelevant. If a bounded candidate/subtree detail payload exceeds its per-summary budget, the sink preserves summary identity, aggregate counters, key classifications, and critical booleans, removes only optional detail, and records `detailTruncated=true`. The file cap, privacy boundary, verifier behavior, acknowledgement matcher, timeout, marker ordering, cleanup, and retry behavior remain unchanged.

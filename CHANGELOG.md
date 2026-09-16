@@ -1,5 +1,10 @@
 # Changelog
 
+## G5.7DI - pre-click exact-post baseline for trusted newness
+
+- The target-reload verifier now accepts refreshed-target success only after a read-only, same-canonical-target baseline proved zero exact trusted immutable-body post candidates before `ATTEMPT_STARTED` and the sole publish click, followed by exactly one trusted exact candidate after the one bounded reload.
+- The retained composer and its descendants, comments/replies, dialogs/drafts, hidden/detached surfaces, nested article ambiguity, and substring-only text are excluded or fail closed. A nonzero, mismatched, unavailable, or evaluation-error baseline blocks before the attempt marker; acknowledgement success, the unchanged 32 KiB diagnostic cap, one-click maximum, cleanup, and no-retry policy remain intact.
+
 ## G5.7DF - target-scoped post-publication reload verifier
 
 - Added a bounded, post-attempt-only canonical target reload verifier as an alternative to the existing acknowledgement path. It requires a hidden retained composer, an already-returned sole publish click, canonical target validation before and after the one navigation, and exact isolated immutable-body evidence in one visible attached post/article structure.

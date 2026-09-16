@@ -4,7 +4,7 @@ const { startBrowser } = require('../facebook/browserManager');
 const { openGroup } = require('../facebook/groupNavigation');
 const { createPost } = require('../facebook/postCreator');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
-const { verifyRefreshedTargetPost } = require('../facebook/targetReloadVerification');
+const { verifyRefreshedTargetPost, capturePreClickBaseline, BASELINE_RESULT } = require('../facebook/targetReloadVerification');
 const { observeFacebookSession, requireNoExplicitNegativeSessionState } = require('./FacebookSessionReadinessExecutor');
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
@@ -76,6 +76,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const preparePost = options.createPost || createPost;
   const verifyPublished = options.verifyLivePostPublished || verifyLivePostPublished;
   const verifyRefreshedTarget = options.verifyRefreshedTargetPost || verifyRefreshedTargetPost;
+  const captureBaseline = options.capturePreClickBaseline || capturePreClickBaseline;
   const canonicalTarget = options.canonicalTarget || canonicalFacebookGroupTarget;
   const verifyTarget = options.verifyTarget || verifyCanonicalFacebookGroupTarget;
   const preparedComposer = options.requirePreparedComposer || requirePreparedComposer;
@@ -85,7 +86,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const findPublishControl = options.findPublishControl || findScopedPublishControl;
   const verifyPublishControl = options.verifyPublishControl || ensureScopedPublishControl;
   const composerDiagnostics = options.composerDiagnostics || createComposerAcquisitionDiagnosticSink();
-  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let traceStage = () => {}; let taskDiagnostics = null; let textInsertionMethod = 'CLIPBOARD_PASTE';
+  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let preClickBaseline = null; let traceStage = () => {}; let taskDiagnostics = null; let textInsertionMethod = 'CLIPBOARD_PASTE';
 
   function requirePrepared(task) {
     if (!browser || preparedTaskId !== task?.task_id || !composer) throw failure('PUBLISHER_NOT_PREPARED', 'Live publisher has not prepared this exact task.');
@@ -105,7 +106,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     }
   }
   async function cleanup() {
-    const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; traceStage = () => {}; taskDiagnostics = null; textInsertionMethod = 'CLIPBOARD_PASTE';
+    const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; preClickBaseline = null; traceStage = () => {}; taskDiagnostics = null; textInsertionMethod = 'CLIPBOARD_PASTE';
     if (current?.context) await current.context.close().catch(() => {});
   }
   async function verifyCurrentReadiness(task) {
@@ -118,6 +119,21 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     await verifyMedia(composer, task, { diagnostic: taskDiagnostics });
     publishButton = await findPublishControl(composer, { diagnostic: taskDiagnostics });
     return { sessionReady: true, targetReady: true, composerReady: true };
+  }
+
+  async function establishPreClickBaseline(task) {
+    // This is the final read-only target scan before the durable attempt
+    // marker. It deliberately retains the already validated target and
+    // excludes the open composer from article/post candidate matching.
+    preClickBaseline = await captureBaseline(browser.page, {
+      targetCanonical, verifyTarget, immutableText: task?.payload?.post?.text,
+      composerHandle: composer?.handle,
+    });
+    try { taskDiagnostics?.postPublicationStructuralSummary?.({ targetReloadVerification: preClickBaseline }); } catch { /* diagnostics are non-blocking */ }
+    if (preClickBaseline.baselineResultClass !== BASELINE_RESULT.ZERO) {
+      throw failure('FACEBOOK_PRECLICK_BASELINE_UNAVAILABLE', 'A zero exact-post baseline could not be established before publication.');
+    }
+    return preClickBaseline;
   }
 
   return {
@@ -170,7 +186,11 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     async verifyReady(task) {
       return verifyCurrentReadiness(task);
     },
-    async verifyAfterLeaseReadiness(task) { return verifyCurrentReadiness(task); },
+    async verifyAfterLeaseReadiness(task) {
+      const readiness = await verifyCurrentReadiness(task);
+      await establishPreClickBaseline(task);
+      return readiness;
+    },
     async verifyBeforeAttempt(task) {
       requirePrepared(task);
       await sessionReady(browser.page, traceStage);
@@ -202,7 +222,12 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
           targetCanonical,
           verifyTarget,
           immutableText: task?.payload?.post?.text,
+          // The only accepted source is the strict zero baseline captured by
+          // verifyAfterLeaseReadiness before ATTEMPT_STARTED and the sole click.
+          trustedNewness: preClickBaseline?.baselineResultClass === BASELINE_RESULT.ZERO,
+          preClickBaseline,
         }),
+        preClickBaseline,
       });
       return verified ? { verified: true, state: 'VERIFIED_SUCCESS' } : { verified: false, state: 'AMBIGUOUS' };
     },

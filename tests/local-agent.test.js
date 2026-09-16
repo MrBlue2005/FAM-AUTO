@@ -646,6 +646,7 @@ function fakeFacebookPublisher(options = {}) {
     findPublishControl: async () => { publishLookups += 1; if (options.publishError && (!options.publishErrorAt || publishLookups >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); return button; },
     verifyPublishControl: async () => { publishChecks += 1; if (options.publishError && (!options.publishErrorAt || publishChecks >= options.publishErrorAt)) throw Object.assign(new Error('publish unavailable'), { code: options.publishError }); },
     verifyLivePostPublished: async () => options.verified === undefined ? true : options.verified,
+    capturePreClickBaseline: options.capturePreClickBaseline || (async () => ({ baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, composerExcludedFromBaseline: true, commentsExcludedFromBaseline: true, baselineResultClass: 'BASELINE_ZERO_EXACT_POSTS' })),
   });
   return { adapter, calls, clicks: () => clicks, closed: () => closed, preparePostInputs, textVerificationOptions };
 }
@@ -904,6 +905,27 @@ test('real adapter remains outside marker persistence and is ordered by the live
   assert.equal(fake.clicks(), 1); assert.equal(fake.closed(), 1);
   const markerFailure = fakeFacebookPublisher(); const blocked = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: markerFailure.adapter });
   await assert.rejects(blocked(task, { transport: { ...transport, markSideEffectAttemptStarted: async () => { throw Object.assign(new Error('marker down'), { code: 'MARKER_FAILED' }); } } }), { code: 'MARKER_FAILED' }); assert.equal(markerFailure.clicks(), 0);
+});
+
+test('real adapter establishes the zero exact-post baseline after lease and before the sole attempt marker/click', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  const order = [];
+  const fake = fakeFacebookPublisher({ capturePreClickBaseline: async () => { order.push('BASELINE'); return { baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, composerExcludedFromBaseline: true, commentsExcludedFromBaseline: true, baselineResultClass: 'BASELINE_ZERO_EXACT_POSTS' }; } });
+  const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+  await execute(task, { transport: { agentId: 'agent_live', renewLease: async () => order.push('LEASE'), markSideEffectAttemptStarted: async () => order.push('MARK'), markSideEffectVerifiedSuccess: async () => order.push('VERIFIED') } });
+  assert.deepEqual(order, ['LEASE', 'BASELINE', 'MARK', 'VERIFIED']);
+  assert.equal(fake.clicks(), 1);
+});
+
+test('a nonzero or unavailable pre-click baseline fails before marker and never authorizes a second click', async () => {
+  const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
+  for (const baselineResultClass of ['BASELINE_ONE_EXACT_POST', 'BASELINE_SAFE_EVALUATION_ERROR']) {
+    const fake = fakeFacebookPublisher({ capturePreClickBaseline: async () => ({ baselineAttempted: true, baselineCanonicalTargetValid: baselineResultClass !== 'BASELINE_SAFE_EVALUATION_ERROR', baselineCandidateCount: 1, baselineExactTrustedPostCount: 1, baselineResultClass }) });
+    const calls = [];
+    const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });
+    await assert.rejects(execute(task, { transport: { agentId: 'agent_live', renewLease: async () => calls.push('LEASE'), markSideEffectAttemptStarted: async () => calls.push('MARK'), markSideEffectVerifiedSuccess: async () => calls.push('VERIFIED') } }), { code: 'FACEBOOK_PRECLICK_BASELINE_UNAVAILABLE' });
+    assert.deepEqual(calls, ['LEASE']); assert.equal(fake.clicks(), 0);
+  }
 });
 
 test('final cancellation after lease renewal prevents marker and submit', async () => {

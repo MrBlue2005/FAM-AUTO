@@ -506,6 +506,8 @@ const ARTICLE_FAMILIES = new Set(['ARTICLE_ROLE', 'FEED_ITEM_ROLE', 'POST_CONTAI
 const STRUCTURAL_EVIDENCE_CLASSES = new Set(['NONE', 'COMPOSER_ONLY', 'NEW_ARTICLE_STRUCTURE_ONLY', 'IMMUTABLE_TEXT_POST_CANDIDATE', 'MULTIPLE_STRUCTURAL_SIGNALS', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const TARGET_RELOAD_RESULT_CLASSES = new Set(['VERIFIED_EXACT_TARGET_POST', 'NOT_FOUND', 'AMBIGUOUS', 'TARGET_MISMATCH', 'NAVIGATION_FAILED', 'STRUCTURE_UNTRUSTED', 'DUPLICATE_UNRESOLVED', 'SAFE_EVALUATION_ERROR']);
 const TARGET_RELOAD_AMBIGUITY_REASONS = new Set(['NONE', 'MULTIPLE_EXACT_CANDIDATES', 'NO_TRUSTED_NEWNESS', 'NESTED_ARTICLE', 'SAFE_EVALUATION_ERROR']);
+const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_ONE_EXACT_POST', 'BASELINE_MULTIPLE_EXACT_POSTS', 'BASELINE_TARGET_MISMATCH', 'BASELINE_UNAVAILABLE', 'BASELINE_SAFE_EVALUATION_ERROR']);
+const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO_TO_MULTIPLE', 'NONZERO_BASELINE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
 
 function sanitizeTargetReloadVerification(value = {}) {
   const count = (key) => boundedInteger(value[key]) || 0;
@@ -515,6 +517,13 @@ function sanitizeTargetReloadVerification(value = {}) {
     candidateCount: Math.min(16, count('candidateCount')), visibleAttachedCandidateCount: Math.min(16, count('visibleAttachedCandidateCount')),
     exactBodyCandidateCount: Math.min(16, count('exactBodyCandidateCount')), structurallyTrustedExactCandidateCount: Math.min(16, count('structurallyTrustedExactCandidateCount')), duplicateExactCandidateCount: Math.min(16, count('duplicateExactCandidateCount')),
     resultClass: TARGET_RELOAD_RESULT_CLASSES.has(value.resultClass) ? value.resultClass : 'SAFE_EVALUATION_ERROR', ambiguityReason: TARGET_RELOAD_AMBIGUITY_REASONS.has(value.ambiguityReason) ? value.ambiguityReason : 'SAFE_EVALUATION_ERROR', verificationElapsedMs: boundedDuration(value.verificationElapsedMs),
+    baselineAttempted: value.baselineAttempted === true, baselineCanonicalTargetValid: value.baselineCanonicalTargetValid === true,
+    baselineCandidateCount: Math.min(16, count('baselineCandidateCount')), baselineExactTrustedPostCount: Math.min(16, count('baselineExactTrustedPostCount')),
+    baselineResultClass: BASELINE_RESULT_CLASSES.has(value.baselineResultClass) ? value.baselineResultClass : 'BASELINE_SAFE_EVALUATION_ERROR',
+    composerExcludedFromBaseline: value.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: value.commentsExcludedFromBaseline === true,
+    trustedNewnessEstablished: value.trustedNewnessEstablished === true,
+    postReloadExactTrustedPostCount: Math.min(16, count('postReloadExactTrustedPostCount')),
+    newnessTransitionClass: NEWNESS_TRANSITION_CLASSES.has(value.newnessTransitionClass) ? value.newnessTransitionClass : 'SAFE_EVALUATION_ERROR',
   };
 }
 const PAGE_COMPOSER_STATES = new Set(['ATTACHED_VISIBLE', 'ATTACHED_HIDDEN', 'DETACHED', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);

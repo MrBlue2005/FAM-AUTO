@@ -68,7 +68,8 @@ function assertSummary(records, expected) {
 
 test('post-submit summary records strict success without changing both-predicate semantics', async () => {
   const sink = diagnostic();
-  assert.equal(await verifyLivePostPublished(page(locator({ visible: true })), locator({ hidden: true, visible: false }), 120000, { diagnostic: sink, clickReturned: true, canonicalTargetStillValid: true }), true);
+  const baseline = { baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, baselineResultClass: 'BASELINE_ZERO_EXACT_POSTS', composerExcludedFromBaseline: true, commentsExcludedFromBaseline: true };
+  assert.equal(await verifyLivePostPublished(page(locator({ visible: true })), locator({ hidden: true, visible: false }), 120000, { diagnostic: sink, clickReturned: true, canonicalTargetStillValid: true, preClickBaseline: baseline }), true);
   assertSummary(sink.records, {
     clickReturned: true, canonicalTargetStillValid: true, composerState: 'ATTACHED_HIDDEN',
     acknowledgementClassification: 'MATCH_FOUND', composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'PASSED',
@@ -77,6 +78,7 @@ test('post-submit summary records strict success without changing both-predicate
   assert.ok(sink.records.some((record) => record.stage === 'ACK_SEMANTIC_SUMMARY'));
   assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_SUMMARY'));
   assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_SUMMARY'));
+  assert.deepEqual(sink.records.find((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_SUMMARY').value.targetReloadVerification, baseline);
 });
 
 test('post-submit summary distinguishes acknowledgement timeout from composer-hidden success', async () => {
@@ -609,11 +611,15 @@ test('target reload verification metadata is merged into the existing critical s
       navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true,
       candidateCount: 1, visibleAttachedCandidateCount: 1, exactBodyCandidateCount: 1, structurallyTrustedExactCandidateCount: 1, duplicateExactCandidateCount: 0,
       resultClass: 'VERIFIED_EXACT_TARGET_POST', ambiguityReason: 'NONE', verificationElapsedMs: 1234,
+      baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0,
+      baselineResultClass: 'BASELINE_ZERO_EXACT_POSTS', composerExcludedFromBaseline: true, commentsExcludedFromBaseline: true,
+      trustedNewnessEstablished: true, postReloadExactTrustedPostCount: 1, newnessTransitionClass: 'ZERO_TO_ONE',
       rawUrl: 'https://facebook.example/private', rawText: 'private immutable post', selector: '[role=article]',
     } });
     const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'target_reload_safe.json'), 'utf8'));
     const value = persisted.records.find((item) => item.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY').postPublicationStructural.targetReloadVerification;
     assert.equal(value.resultClass, 'VERIFIED_EXACT_TARGET_POST'); assert.equal(value.navigationCount, 1);
+    assert.equal(value.baselineResultClass, 'BASELINE_ZERO_EXACT_POSTS'); assert.equal(value.trustedNewnessEstablished, true); assert.equal(value.newnessTransitionClass, 'ZERO_TO_ONE');
     assert.doesNotMatch(JSON.stringify(persisted), /facebook\.example|private immutable|role=article/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

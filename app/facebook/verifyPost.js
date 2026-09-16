@@ -116,7 +116,12 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
-    const postPublicationStructuralSummary = { ...acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid)), targetReloadVerification: targetReload };
+    const postPublicationStructuralSummary = {
+      ...acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid)),
+      // Preserve pre-click baseline evidence even when the independent
+      // acknowledgement path succeeds before a reload is needed.
+      targetReloadVerification: { ...(options.preClickBaseline || {}), ...(targetReload || {}) },
+    };
     try { diagnostic?.postPublicationStructuralSummary?.(postPublicationStructuralSummary); } catch { /* observability only */ }
     // This is an after-the-fact, privacy-reduced explanation of article text
     // parity. It is never consulted by either existing success predicate.
