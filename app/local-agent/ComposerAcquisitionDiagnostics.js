@@ -690,6 +690,10 @@ function sanitizePostCandidateBodySubtreeSummary(value = {}) {
     ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
     bestSupportedBodyIsolationClass: BODY_SUMMARY_CLASSES.has(value.bestSupportedBodyIsolationClass) ? value.bestSupportedBodyIsolationClass : 'SAFE_EVALUATION_ERROR',
     bestObservedBlockPattern: BODY_BLOCK_PATTERNS.has(value.bestObservedBlockPattern) ? value.bestObservedBlockPattern : 'SAFE_EVALUATION_ERROR', detailTruncated: value.detailTruncated === true,
+    primaryCandidateDetailRetained: value.primaryCandidateDetailRetained === true,
+    secondaryCandidateDetailDropped: value.secondaryCandidateDetailDropped === true,
+    parentChainDetailRetained: value.parentChainDetailRetained === true,
+    sequenceDetailRetained: value.sequenceDetailRetained === true,
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }
@@ -740,6 +744,105 @@ function requiredCriticalDetailKey(stage) {
   return null;
 }
 
+function correlationOrder(value) {
+  const match = /^POST_CANDIDATE_(\d+)$/.exec(String(value || ''));
+  return match ? Number(match[1]) : MAX_COUNTER;
+}
+
+function bodyBlockDetailRank(block) {
+  if (block?.exactImmutableMatch === true) return 0;
+  if (block?.containsImmutableText === true) return 1;
+  if (block?.coverage === 'WHOLE_BODY_PLUS_EXTRA') return 2;
+  if (block?.coverage === 'PARTIAL_BODY_SIGNAL') return 3;
+  if (block?.eligibility === 'REJECT_NESTED_ARTICLE') return 4;
+  if (block?.eligibility === 'REJECT_HIDDEN') return 5;
+  return 6;
+}
+
+function bodyCandidateDetailRank(candidate) {
+  const blocks = Array.isArray(candidate?.subtrees) ? candidate.subtrees : [];
+  const contains = blocks.some((block) => block?.containsImmutableText === true);
+  // Candidates have already passed through the privacy sanitizer, which
+  // flattens their visible/attached fields onto the candidate record.
+  const visibleAttached = candidate?.visible === true && candidate?.attached === true;
+  const whole = blocks.some((block) => block?.coverage === 'WHOLE_BODY_PLUS_EXTRA');
+  const partial = blocks.some((block) => block?.coverage === 'PARTIAL_BODY_SIGNAL');
+  return [contains ? 0 : 1, visibleAttached ? 0 : 1, whole ? 0 : partial ? 1 : 2, correlationOrder(candidate?.candidateCorrelationId)];
+}
+
+function compareRank(left, right) {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] || 0) !== (right[index] || 0)) return (left[index] || 0) - (right[index] || 0);
+  }
+  return 0;
+}
+
+function compactBodyBlockDetail(block) {
+  return {
+    blockIndex: block.blockIndex,
+    parentBlockIndex: block.parentBlockIndex,
+    eligibility: block.eligibility,
+    coverage: block.coverage,
+    exactImmutableMatch: block.exactImmutableMatch === true,
+    containsImmutableText: block.containsImmutableText === true,
+  };
+}
+
+function compactBodySequenceDetail(sequence) {
+  return {
+    sequenceStartBlockIndex: sequence.sequenceStartBlockIndex,
+    sequenceBlockCount: sequence.sequenceBlockCount,
+    sequenceExactImmutableMatch: sequence.sequenceExactImmutableMatch === true,
+    sequenceContainsImmutableText: sequence.sequenceContainsImmutableText === true,
+    rejectionReason: sequence.rejectionReason,
+  };
+}
+
+// Retain one deterministic diagnostic sample for the body-subtree summary
+// before dropping secondary candidates. These fields are already sanitized;
+// this must never influence extraction or any success decision.
+function compactPrimaryBodyCandidate(summary, maxBlocks = 16, maxSequences = 8) {
+  const candidates = Array.isArray(summary?.candidates) ? summary.candidates : [];
+  const primary = [...candidates].sort((left, right) => compareRank(bodyCandidateDetailRank(left), bodyCandidateDetailRank(right)))[0];
+  if (!primary) return { candidates: [], primaryCandidateDetailRetained: false, secondaryCandidateDetailDropped: false, parentChainDetailRetained: false, sequenceDetailRetained: false };
+  const allBlocks = Array.isArray(primary.subtrees) ? primary.subtrees : [];
+  const byIndex = new Map(allBlocks.map((block) => [block.blockIndex, block]));
+  const retained = []; const retainedIds = new Set();
+  const include = (block) => { if (block && retained.length < maxBlocks && !retainedIds.has(block.blockIndex)) { retained.push(block); retainedIds.add(block.blockIndex); } };
+  const orderedBlocks = [...allBlocks].sort((left, right) => bodyBlockDetailRank(left) - bodyBlockDetailRank(right) || (left.blockIndex || 0) - (right.blockIndex || 0));
+  // Admit each body-bearing block together with its bounded ancestor context
+  // before lower-priority detail. This prevents a busy body signal set from
+  // consuming all 16 slots before its parent chain can be represented.
+  for (const block of orderedBlocks) {
+    if (block.containsImmutableText !== true && block.exactImmutableMatch !== true) continue;
+    include(block);
+    let parent = byIndex.get(block.parentBlockIndex);
+    for (let depth = 0; parent && depth < 4 && retained.length < maxBlocks; depth += 1) { include(parent); parent = byIndex.get(parent.parentBlockIndex); }
+  }
+  orderedBlocks.forEach(include);
+  const sequences = (Array.isArray(primary.contiguousSequences) ? primary.contiguousSequences : []).sort((left, right) => {
+    const leftRank = left.sequenceExactImmutableMatch ? 0 : left.sequenceContainsImmutableText ? 1 : 2;
+    const rightRank = right.sequenceExactImmutableMatch ? 0 : right.sequenceContainsImmutableText ? 1 : 2;
+    return leftRank - rightRank || (left.sequenceStartBlockIndex || 0) - (right.sequenceStartBlockIndex || 0);
+  }).slice(0, maxSequences);
+  return {
+    // Only the body-bearing selection fields survive compaction. This keeps
+    // the fixed reservation viable for all 16 bounded blocks rather than
+    // dropping relevant structural evidence to retain redundant snapshots.
+    candidates: [{
+      candidateCorrelationId: primary.candidateCorrelationId,
+      visible: primary.visible === true,
+      attached: primary.attached === true,
+      subtrees: retained.sort((left, right) => (left.blockIndex || 0) - (right.blockIndex || 0)).map(compactBodyBlockDetail),
+      contiguousSequences: sequences.map(compactBodySequenceDetail),
+    }],
+    primaryCandidateDetailRetained: retained.length > 0,
+    secondaryCandidateDetailDropped: candidates.length > 1,
+    parentChainDetailRetained: retained.some((block) => retainedIds.has(block.parentBlockIndex)),
+    sequenceDetailRetained: sequences.length > 0,
+  };
+}
+
 // Candidate arrays are optional observability detail. Aggregate counters,
 // classifications, and booleans remain intact when a required terminal record
 // needs to be compacted. This clone is local-only and contains already-redacted
@@ -748,6 +851,20 @@ function compactRequiredCriticalRecord(record, maxBytes) {
   if (Buffer.byteLength(JSON.stringify(record), 'utf8') <= maxBytes) return record;
   const compacted = JSON.parse(JSON.stringify(record));
   const key = requiredCriticalDetailKey(compacted.stage);
+  if (compacted.stage === POST_CANDIDATE_BODY_SUBTREE_STAGE && compacted.postCandidateBodySubtree) {
+    const summary = compacted.postCandidateBodySubtree;
+    Object.assign(summary, compactPrimaryBodyCandidate(summary));
+    summary.detailTruncated = true;
+    // The bounded primary sample normally fits well below the required
+    // terminal ceiling. If a future safe field expands it, reduce only the
+    // optional detail in a deterministic order, never its aggregates.
+    for (const limits of [[12, 6], [8, 4], [4, 2]]) {
+      if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
+      Object.assign(summary, compactPrimaryBodyCandidate(record.postCandidateBodySubtree, limits[0], limits[1]));
+      summary.detailTruncated = true;
+    }
+    return compacted;
+  }
   if (key && compacted[key] && Array.isArray(compacted[key].candidates)) {
     compacted[key].candidates = [];
     compacted[key].detailTruncated = true;

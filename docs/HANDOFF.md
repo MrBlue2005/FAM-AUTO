@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7DV primary body-block detail retention
+
+The fixed 32 KiB diagnostic budget and four-required-critical-summary reservation remain unchanged. When the body-subtree critical summary needs compaction, it now retains one deterministically ranked primary candidate: immutable-body signal first, then visible/attached status, whole-body-plus-extra over partial signal, then the lowest task-local correlation ID. Its detail is bounded to 16 blocks (including available parent context) and eight relevant contiguous sequences; secondary candidate details may be dropped. `detailTruncated` and four safe retention booleans make that outcome explicit. This remains local, privacy-safe, non-blocking observability only; it does not alter extraction, verification, markers, click behavior, cleanup, or retries.
+
 ## G5.7DN trusted post-body extraction within the selected candidate
 
 The bounded refreshed-target verifier now derives privacy-safe body proof only within an already-qualified visible, attached post/article candidate. It accepts direct exact body equality, exact equality after structural exclusion of header/timestamp/control/interactive UI, or an exact contiguous visible body-block sequence. It never accepts substring-only text or searches globally; comments/replies, nested articles, hidden/detached structures, and duplicate exact candidates remain fail-closed. The pre-click baseline and required `0 -> 1` trusted-newness transition still govern post-publication success, with no retry after `ATTEMPT_STARTED`.

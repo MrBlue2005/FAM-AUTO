@@ -1,5 +1,7 @@
 # Changelog
 
+- Under the unchanged 32 KiB task-local diagnostic cap, critical body-subtree compaction now retains one deterministic primary candidate's bounded immutable-body blocks, ancestor context, and contiguous sequences before dropping secondary candidates. Aggregate counters and the four critical-summary reservation remain intact; this is diagnostics-only.
+
 - Added bounded, privacy-safe body-block eligibility diagnostics for the already-selected refreshed-target post candidate. The existing critical body-subtree terminal summary now records structural roles, rejection reasons, parent/child correlations, coverage and contiguous-sequence classifications without retaining post text, hashes, DOM identifiers, or changing verifier behavior.
 
 ## G5.7DN - trusted post-body extraction within selected candidate

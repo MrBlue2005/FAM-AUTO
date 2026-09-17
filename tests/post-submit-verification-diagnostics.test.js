@@ -608,7 +608,59 @@ test('real 32KiB starvation shape reserves capacity for the fourth required crit
     const persisted = assertAllRequiredCriticalSummaries(path.join(directory, `${taskId}.json`));
     const body = persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree;
     assert.equal(body.detailTruncated, true);
-    assert.deepEqual(body.candidates, []);
+    assert.equal(body.primaryCandidateDetailRetained, true);
+    assert.equal(body.candidates.length, 1);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+function observedBodyPressureSummary() {
+  const blocks = Array.from({ length: 24 }, (_, offset) => {
+    const index = offset + 1; const nested = index <= 19; const hidden = index > 19;
+    const whole = index <= 10; const partial = index > 10 && index <= 20;
+    return {
+      blockIndex: index, subtreeIndex: index, parentBlockIndex: index === 1 ? null : 1, childBlockIndices: index === 1 ? Array.from({ length: 12 }, (_, child) => child + 2) : [],
+      depthRelativeToCandidate: index === 1 ? 1 : 2, tagFamily: 'DIV', visible: !hidden, attached: true,
+      hasDirectTextNode: index > 1, hasDescendantText: index === 1, hasInteractiveDescendant: false, hasArticleDescendant: nested,
+      interactive: false, interactiveAncestor: false, nestedArticle: nested, commentReplyAncestor: false, headerLikeAncestor: false, timestampLikeAncestor: false, actionLikeAncestor: false,
+      childTextBlockCount: index === 1 ? 12 : 0, interactiveDescendantCount: 0,
+      blockRole: nested ? 'NESTED_ARTICLE' : hidden ? 'HIDDEN' : 'GENERIC_TEXT_WRAPPER', eligibility: nested ? 'REJECT_NESTED_ARTICLE' : 'REJECT_HIDDEN', coverage: whole ? 'WHOLE_BODY_PLUS_EXTRA' : partial ? 'PARTIAL_BODY_SIGNAL' : 'NO_BODY_SIGNAL',
+      readSucceeded: true, normalizedLength: whole ? 200 : partial ? 80 : 20, lineCount: whole ? 2 : 1, newlineCount: whole ? 1 : 0,
+      exactImmutableMatch: false, containsImmutableText: whole || partial, immutableTextPrefixMatch: whole, immutableTextSuffixMatch: false, lengthRelation: whole ? 'LONGER' : partial ? 'SHORTER' : 'SHORTER',
+    };
+  });
+  const sequences = Array.from({ length: 80 }, (_, offset) => ({ sequenceStartBlockIndex: (offset % 16) + 1, sequenceBlockCount: 2, allVisible: true, allAttached: true, sequenceExactImmutableMatch: false, sequenceContainsImmutableText: true, rejectionReason: 'INCLUDES_NESTED_ARTICLE' }));
+  const candidate = { candidateCorrelationId: 'POST_CANDIDATE_2', candidate: { candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true }, bodyIsolationClass: 'BODY_PRESENT_BUT_NOT_ISOLATABLE', subtrees: blocks, contiguousSequences: sequences };
+  const secondary = { candidateCorrelationId: 'POST_CANDIDATE_9', candidate: { candidateFamily: 'ARTICLE_ROLE', visible: false, attached: true }, bodyIsolationClass: 'NO_BODY_SIGNAL', subtrees: blocks.map((block) => ({ ...block, containsImmutableText: false, coverage: 'NO_BODY_SIGNAL' })), contiguousSequences: [] };
+  return {
+    candidateCountInspected: 2, bodySubstringCandidateCount: 1, minimalExactBodySubtreeCandidateCount: 0, exactContiguousBlockSequenceCandidateCount: 0, bodyWithHeaderOutsideCount: 0, bodyWithActionsOutsideCount: 0, bodyWithHeaderAndActionsOutsideCount: 0, bodyPresentButNotIsolatableCount: 1, ambiguousCount: 0, newAfterClickExactBodyCandidateCount: 0, visibleAttachedExactBodyCandidateCount: 0,
+    bodyBlockCount: 24, eligibleBodyBlockCount: 0, headerRejectedCount: 0, timestampRejectedCount: 0, actionRejectedCount: 0, commentReplyRejectedCount: 0, nestedArticleRejectedCount: 19, interactiveRejectedCount: 0, hiddenRejectedCount: 5, detachedRejectedCount: 0, ambiguousRejectedCount: 0,
+    exactBodyBlockCount: 0, wholeBodyPlusExtraBlockCount: 10, partialBodySignalBlockCount: 10, exactContiguousSequenceCount: 0, wholeBodyPlusExtraSequenceCount: 80,
+    bestSupportedBodyIsolationClass: 'BODY_PRESENT_BUT_NOT_ISOLATABLE', bestObservedBlockPattern: 'NO_BODY_SIGNAL', candidates: [secondary, candidate],
+  };
+}
+
+test('32KiB body-summary compaction preserves one primary body-bearing candidate, parents, and sequences', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-primary-body-detail-'));
+  try {
+    const taskId = 'live_execution_primary_body_detail';
+    const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-17T00:00:00.000Z' }).forTask(taskId);
+    const writers = requiredSummaryWriters(sink);
+    writers.POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY(); writers.POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY(); writers.POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY();
+    sink.postCandidateBodySubtreeSummary(observedBodyPressureSummary());
+    const persisted = assertAllRequiredCriticalSummaries(path.join(directory, `${taskId}.json`));
+    const body = persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree;
+    assert.equal(body.detailTruncated, true); assert.equal(body.primaryCandidateDetailRetained, true); assert.equal(body.secondaryCandidateDetailDropped, true);
+    assert.equal(body.parentChainDetailRetained, true); assert.equal(body.sequenceDetailRetained, true); assert.equal(body.candidates.length, 1);
+    const primary = body.candidates[0]; assert.equal(primary.candidateCorrelationId, 'POST_CANDIDATE_2'); assert.ok(primary.subtrees.length <= 16); assert.ok(primary.contiguousSequences.length <= 8);
+    assert.ok(primary.subtrees.some((block) => block.containsImmutableText && block.eligibility === 'REJECT_NESTED_ARTICLE'));
+    // The 16-slot detail budget prioritizes immutable-bearing blocks. Hidden
+    // evidence remains authoritative in the protected aggregate even when a
+    // higher-priority signal set fills the bounded candidate sample.
+    assert.equal(primary.subtrees.length, 16);
+    assert.ok(primary.subtrees.some((block) => block.parentBlockIndex === null));
+    assert.ok(primary.contiguousSequences.some((sequence) => sequence.sequenceContainsImmutableText));
+    assert.equal(body.nestedArticleRejectedCount, 19); assert.equal(body.hiddenRejectedCount, 5); assert.equal(body.wholeBodyPlusExtraBlockCount, 10); assert.equal(body.partialBodySignalBlockCount, 10);
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook text|secret-cookie|selector|className|domPath/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
