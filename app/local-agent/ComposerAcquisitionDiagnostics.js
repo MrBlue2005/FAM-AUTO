@@ -175,6 +175,7 @@ const BODY_BLOCK_ELIGIBILITY = new Set(['ELIGIBLE_BODY_TEXT', 'REJECT_HEADER', '
 const BODY_COVERAGE = new Set(['NO_BODY_SIGNAL', 'PARTIAL_BODY_SIGNAL', 'WHOLE_BODY_PLUS_EXTRA', 'EXACT_BODY']);
 const BODY_SEQUENCE_REJECTIONS = new Set(['NONE', 'INCLUDES_HEADER', 'INCLUDES_TIMESTAMP', 'INCLUDES_ACTION', 'INCLUDES_COMMENT_REPLY', 'INCLUDES_NESTED_ARTICLE', 'INCLUDES_INTERACTIVE', 'HIDDEN_OR_DETACHED', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const BODY_BLOCK_PATTERNS = new Set(['EXACT_LEAF_EXISTS', 'EXACT_WRAPPER_EXISTS', 'BODY_SPLIT_ACROSS_SIBLINGS', 'BODY_PLUS_HEADER_CONTAMINATION', 'BODY_PLUS_ACTION_CONTAMINATION', 'BODY_PLUS_HEADER_AND_ACTION_CONTAMINATION', 'BODY_INSIDE_INTERACTIVE_WRAPPER', 'BODY_INSIDE_GENERIC_WRAPPER', 'BODY_SIGNAL_AMBIGUOUS', 'NO_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
+const BODY_ARTICLE_RELATIONS = new Set(['SELECTED_POST_ROOT', 'DESCENDANT_OF_SELECTED_POST', 'INDEPENDENT_NESTED_ARTICLE', 'COMMENT_REPLY_ARTICLE', 'UNKNOWN']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -639,6 +640,9 @@ function sanitizePostCandidateBodySubtree(value = {}) {
     headerLikeAncestor: value.headerLikeAncestor === true, timestampLikeAncestor: value.timestampLikeAncestor === true, actionLikeAncestor: value.actionLikeAncestor === true,
     childTextBlockCount: Math.min(24, boundedInteger(value.childTextBlockCount) || 0), interactiveDescendantCount: Math.min(24, boundedInteger(value.interactiveDescendantCount) || 0),
     blockRole: BODY_BLOCK_ROLES.has(value.blockRole) ? value.blockRole : 'UNKNOWN', eligibility: BODY_BLOCK_ELIGIBILITY.has(value.eligibility) ? value.eligibility : 'SAFE_EVALUATION_ERROR', coverage: BODY_COVERAGE.has(value.coverage) ? value.coverage : 'NO_BODY_SIGNAL',
+    nestedArticleDirect: value.nestedArticleDirect === true, nestedArticleInherited: value.nestedArticleInherited === true,
+    hiddenDirect: value.hiddenDirect === true, hiddenInherited: value.hiddenInherited === true,
+    articleRelation: BODY_ARTICLE_RELATIONS.has(value.articleRelation) ? value.articleRelation : 'UNKNOWN',
     ...sanitizePostCandidateTextView(value),
   };
 }
@@ -649,6 +653,9 @@ function sanitizePostCandidateBodySequence(value = {}) {
     allVisible: value.allVisible === true, allAttached: value.allAttached === true,
     sequenceExactImmutableMatch: value.sequenceExactImmutableMatch === true, sequenceContainsImmutableText: value.sequenceContainsImmutableText === true,
     rejectionReason: BODY_SEQUENCE_REJECTIONS.has(value.rejectionReason) ? value.rejectionReason : 'SAFE_EVALUATION_ERROR',
+    containsNestedArticleBlock: value.containsNestedArticleBlock === true, containsHiddenBlock: value.containsHiddenBlock === true,
+    firstRejectedBlockIndex: value.firstRejectedBlockIndex === null ? null : Math.min(24, boundedInteger(value.firstRejectedBlockIndex) || 0),
+    firstRejectionReason: BODY_SEQUENCE_REJECTIONS.has(value.firstRejectionReason) ? value.firstRejectionReason : 'NONE',
   };
 }
 
@@ -781,10 +788,36 @@ function compactBodyBlockDetail(block) {
   return {
     blockIndex: block.blockIndex,
     parentBlockIndex: block.parentBlockIndex,
+    childBlockIndices: block.childBlockIndices,
+    blockRole: block.blockRole,
     eligibility: block.eligibility,
     coverage: block.coverage,
+    depthRelativeToCandidate: block.depthRelativeToCandidate,
+    tagFamily: block.tagFamily,
+    visible: block.visible === true,
+    attached: block.attached === true,
+    nestedArticle: block.nestedArticle === true,
+    nestedArticleDirect: block.nestedArticleDirect === true,
+    nestedArticleInherited: block.nestedArticleInherited === true,
+    hiddenDirect: block.hiddenDirect === true,
+    hiddenInherited: block.hiddenInherited === true,
+    articleRelation: block.articleRelation,
+    interactive: block.interactive === true,
+    interactiveAncestor: block.interactiveAncestor === true,
+    commentReplyAncestor: block.commentReplyAncestor === true,
+    headerLikeAncestor: block.headerLikeAncestor === true,
+    timestampLikeAncestor: block.timestampLikeAncestor === true,
+    actionLikeAncestor: block.actionLikeAncestor === true,
+    childTextBlockCount: block.childTextBlockCount,
+    interactiveDescendantCount: block.interactiveDescendantCount,
+    normalizedLength: block.normalizedLength,
+    lineCount: block.lineCount,
+    newlineCount: block.newlineCount,
     exactImmutableMatch: block.exactImmutableMatch === true,
     containsImmutableText: block.containsImmutableText === true,
+    immutableTextPrefixMatch: block.immutableTextPrefixMatch === true,
+    immutableTextSuffixMatch: block.immutableTextSuffixMatch === true,
+    lengthRelation: block.lengthRelation,
   };
 }
 
@@ -795,6 +828,10 @@ function compactBodySequenceDetail(sequence) {
     sequenceExactImmutableMatch: sequence.sequenceExactImmutableMatch === true,
     sequenceContainsImmutableText: sequence.sequenceContainsImmutableText === true,
     rejectionReason: sequence.rejectionReason,
+    containsNestedArticleBlock: sequence.containsNestedArticleBlock === true,
+    containsHiddenBlock: sequence.containsHiddenBlock === true,
+    firstRejectedBlockIndex: sequence.firstRejectedBlockIndex,
+    firstRejectionReason: sequence.firstRejectionReason,
   };
 }
 
@@ -858,7 +895,10 @@ function compactRequiredCriticalRecord(record, maxBytes) {
     // The bounded primary sample normally fits well below the required
     // terminal ceiling. If a future safe field expands it, reduce only the
     // optional detail in a deterministic order, never its aggregates.
-    for (const limits of [[12, 6], [8, 4], [4, 2]]) {
+    // Sequence samples yield before any primary structural discriminator.
+    // Only then may the bounded block sample shrink to preserve the fixed
+    // four-summary reservation.
+    for (const limits of [[16, 4], [12, 2], [8, 2], [4, 2], [4, 0]]) {
       if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
       Object.assign(summary, compactPrimaryBodyCandidate(record.postCandidateBodySubtree, limits[0], limits[1]));
       summary.detailTruncated = true;

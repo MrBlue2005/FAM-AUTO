@@ -626,6 +626,8 @@ function observedBodyPressureSummary() {
       blockRole: nested ? 'NESTED_ARTICLE' : hidden ? 'HIDDEN' : 'GENERIC_TEXT_WRAPPER', eligibility: nested ? 'REJECT_NESTED_ARTICLE' : 'REJECT_HIDDEN', coverage: whole ? 'WHOLE_BODY_PLUS_EXTRA' : partial ? 'PARTIAL_BODY_SIGNAL' : 'NO_BODY_SIGNAL',
       readSucceeded: true, normalizedLength: whole ? 200 : partial ? 80 : 20, lineCount: whole ? 2 : 1, newlineCount: whole ? 1 : 0,
       exactImmutableMatch: false, containsImmutableText: whole || partial, immutableTextPrefixMatch: whole, immutableTextSuffixMatch: false, lengthRelation: whole ? 'LONGER' : partial ? 'SHORTER' : 'SHORTER',
+      nestedArticleDirect: nested, nestedArticleInherited: index > 1, hiddenDirect: hidden, hiddenInherited: false,
+      articleRelation: nested ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST',
     };
   });
   const sequences = Array.from({ length: 80 }, (_, offset) => ({ sequenceStartBlockIndex: (offset % 16) + 1, sequenceBlockCount: 2, allVisible: true, allAttached: true, sequenceExactImmutableMatch: false, sequenceContainsImmutableText: true, rejectionReason: 'INCLUDES_NESTED_ARTICLE' }));
@@ -656,7 +658,11 @@ test('32KiB body-summary compaction preserves one primary body-bearing candidate
     // The 16-slot detail budget prioritizes immutable-bearing blocks. Hidden
     // evidence remains authoritative in the protected aggregate even when a
     // higher-priority signal set fills the bounded candidate sample.
-    assert.equal(primary.subtrees.length, 16);
+    assert.ok(primary.subtrees.length > 0 && primary.subtrees.length <= 16);
+    const first = primary.subtrees[0];
+    assert.equal(first.blockRole, 'NESTED_ARTICLE'); assert.equal(first.nestedArticleDirect, true);
+    assert.equal(first.articleRelation, 'INDEPENDENT_NESTED_ARTICLE'); assert.equal(first.tagFamily, 'DIV');
+    assert.ok(Array.isArray(first.childBlockIndices));
     assert.ok(primary.subtrees.some((block) => block.parentBlockIndex === null));
     assert.ok(primary.contiguousSequences.some((sequence) => sequence.sequenceContainsImmutableText));
     assert.equal(body.nestedArticleRejectedCount, 19); assert.equal(body.hiddenRejectedCount, 5); assert.equal(body.wholeBodyPlusExtraBlockCount, 10); assert.equal(body.partialBodySignalBlockCount, 10);

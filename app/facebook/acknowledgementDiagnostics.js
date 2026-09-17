@@ -205,6 +205,19 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       };
     });
     for (const block of subtrees) block.childBlockIndices = subtrees.filter((item) => item.parentBlockIndex === block.blockIndex).map((item) => item.blockIndex).slice(0, 12);
+    for (const block of subtrees) {
+      let parent = subtrees.find((item) => item.blockIndex === block.parentBlockIndex);
+      block.nestedArticleDirect = block.nestedArticle === true;
+      block.hiddenDirect = block.visible === false || block.attached === false;
+      block.nestedArticleInherited = false; block.hiddenInherited = false;
+      for (let depth = 0; parent && depth < 24; depth += 1) {
+        block.nestedArticleInherited ||= parent.nestedArticle === true;
+        block.hiddenInherited ||= parent.visible === false || parent.attached === false;
+        parent = subtrees.find((item) => item.blockIndex === parent.parentBlockIndex);
+      }
+      block.articleRelation = block.commentReplyAncestor ? 'COMMENT_REPLY_ARTICLE'
+        : block.nestedArticle ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
+    }
     // Only a text block captured from the already-qualified article and not
     // structurally classified as UI can prove the immutable body. The raw
     // Facebook text never escapes this function.
@@ -242,6 +255,10 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
           allVisible: sequence.every((item) => item.visible), allAttached: sequence.every((item) => item.attached),
           sequenceExactImmutableMatch: parity.exactImmutableMatch, sequenceContainsImmutableText: parity.containsImmutableText,
           rejectionReason: BODY_SEQUENCE_REJECTIONS.has(rejectionReason) ? rejectionReason : 'SAFE_EVALUATION_ERROR',
+          containsNestedArticleBlock: sequence.some((item) => item.nestedArticle),
+          containsHiddenBlock: sequence.some((item) => !item.visible || !item.attached),
+          firstRejectedBlockIndex: sequence.find((item) => item.eligibility !== 'ELIGIBLE_BODY_TEXT')?.blockIndex ?? null,
+          firstRejectionReason: BODY_SEQUENCE_REJECTIONS.has(rejectionReason) ? rejectionReason : 'SAFE_EVALUATION_ERROR',
         });
       }
     }

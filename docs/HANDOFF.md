@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7DY primary structural discriminator retention
+
+When the required body-subtree summary compacts, the retained primary candidate now keeps safe structural discriminator fields for its bounded body-bearing blocks and parent context. These distinguish direct versus inherited nested/hidden state and classify selected-post descendants, independent nested articles, and comment/reply articles without retaining text, DOM identity, selectors, or classes. Sequence context records only bounded safe rejection structure. It remains observability only; extraction and verifier semantics are unchanged.
+
 ## G5.7DV primary body-block detail retention
 
 The fixed 32 KiB diagnostic budget and four-required-critical-summary reservation remain unchanged. When the body-subtree critical summary needs compaction, it now retains one deterministically ranked primary candidate: immutable-body signal first, then visible/attached status, whole-body-plus-extra over partial signal, then the lowest task-local correlation ID. Its detail is bounded to 16 blocks (including available parent context) and eight relevant contiguous sequences; secondary candidate details may be dropped. `detailTruncated` and four safe retention booleans make that outcome explicit. This remains local, privacy-safe, non-blocking observability only; it does not alter extraction, verification, markers, click behavior, cleanup, or retries.
