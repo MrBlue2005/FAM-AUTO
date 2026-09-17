@@ -917,9 +917,9 @@ test('real adapter establishes the zero exact-post baseline after lease and befo
   assert.equal(fake.clicks(), 1);
 });
 
-test('a nonzero or unavailable pre-click baseline fails before marker and never authorizes a second click', async () => {
+test('every non-clean pre-click baseline fails before marker and never authorizes a second click', async () => {
   const task = liveFixture({ payload: { ...liveFixture().payload, target: { target_id: 'target_live', url: 'https://www.facebook.com/groups/exact' } } });
-  for (const baselineResultClass of ['BASELINE_ONE_EXACT_POST', 'BASELINE_SAFE_EVALUATION_ERROR']) {
+  for (const baselineResultClass of ['BASELINE_ONE_EXACT_POST', 'BASELINE_SAFE_EVALUATION_ERROR', 'BASELINE_NO_CANDIDATES_OBSERVED', 'BASELINE_INCOMPLETE_DISCOVERY', 'BASELINE_UNTRUSTED_BODY_SIGNAL']) {
     const fake = fakeFacebookPublisher({ capturePreClickBaseline: async () => ({ baselineAttempted: true, baselineCanonicalTargetValid: baselineResultClass !== 'BASELINE_SAFE_EVALUATION_ERROR', baselineCandidateCount: 1, baselineExactTrustedPostCount: 1, baselineResultClass }) });
     const calls = [];
     const execute = createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true, publisher: fake.adapter });

@@ -1,5 +1,7 @@
 # Changelog
 
+- Pre-click live-publication baselines now fail closed unless a clean zero is positively proven by complete, uncapped discovery with at least one visible eligible post surface and no unresolved immutable-body signal. Empty, capped, incomplete, evaluation-error, nested-ambiguous, and untrusted-body-signal scans cannot reach `ATTEMPT_STARTED`; body extraction, post-click verification, retry, and acknowledgement semantics are unchanged.
+
 - Canonical logical post-root relation handling now prevents a selected feed-item wrapper and its same-post article descendants from being misclassified as independent nested articles. Genuine embedded posts/cards and comment/reply boundaries remain rejected; exact-body proof, zero-baseline/newness, click, retry, and outcome semantics are unchanged.
 
 - Compacted primary body-subtree detail now retains bounded structural discriminators: direct/inherited nested and hidden state, article relation, safe ancestor flags, parent/child indices, and sequence rejection context. This remains diagnostic-only under the unchanged 32 KiB/four-summary reservation.

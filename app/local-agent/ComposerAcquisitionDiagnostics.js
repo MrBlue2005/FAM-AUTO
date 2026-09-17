@@ -512,7 +512,7 @@ const ARTICLE_FAMILIES = new Set(['ARTICLE_ROLE', 'FEED_ITEM_ROLE', 'POST_CONTAI
 const STRUCTURAL_EVIDENCE_CLASSES = new Set(['NONE', 'COMPOSER_ONLY', 'NEW_ARTICLE_STRUCTURE_ONLY', 'IMMUTABLE_TEXT_POST_CANDIDATE', 'MULTIPLE_STRUCTURAL_SIGNALS', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const TARGET_RELOAD_RESULT_CLASSES = new Set(['VERIFIED_EXACT_TARGET_POST', 'NOT_FOUND', 'AMBIGUOUS', 'TARGET_MISMATCH', 'NAVIGATION_FAILED', 'STRUCTURE_UNTRUSTED', 'DUPLICATE_UNRESOLVED', 'SAFE_EVALUATION_ERROR']);
 const TARGET_RELOAD_AMBIGUITY_REASONS = new Set(['NONE', 'MULTIPLE_EXACT_CANDIDATES', 'NO_TRUSTED_NEWNESS', 'NESTED_ARTICLE', 'SAFE_EVALUATION_ERROR']);
-const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_ONE_EXACT_POST', 'BASELINE_MULTIPLE_EXACT_POSTS', 'BASELINE_TARGET_MISMATCH', 'BASELINE_UNAVAILABLE', 'BASELINE_SAFE_EVALUATION_ERROR']);
+const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_ONE_EXACT_POST', 'BASELINE_MULTIPLE_EXACT_POSTS', 'BASELINE_NO_CANDIDATES_OBSERVED', 'BASELINE_INCOMPLETE_DISCOVERY', 'BASELINE_UNTRUSTED_BODY_SIGNAL', 'BASELINE_TARGET_MISMATCH', 'BASELINE_UNAVAILABLE', 'BASELINE_SAFE_EVALUATION_ERROR']);
 const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO_TO_MULTIPLE', 'NONZERO_BASELINE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
 const BODY_EXTRACTION_RESULTS = new Set(['EXACT_BODY_DIRECT', 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION', 'EXACT_BODY_CONTIGUOUS_BLOCKS', 'BODY_SUBSTRING_ONLY', 'BODY_AMBIGUOUS', 'BODY_NOT_FOUND', 'SAFE_EVALUATION_ERROR']);
 
@@ -526,7 +526,12 @@ function sanitizeTargetReloadVerification(value = {}) {
     bodyExtractionAttempted: value.bodyExtractionAttempted === true, bodyExtractionResult: BODY_EXTRACTION_RESULTS.has(value.bodyExtractionResult) ? value.bodyExtractionResult : 'SAFE_EVALUATION_ERROR', bodyExactAfterUiExclusionCount: Math.min(16, count('bodyExactAfterUiExclusionCount')), bodyExactContiguousBlockCount: Math.min(16, count('bodyExactContiguousBlockCount')),
     resultClass: TARGET_RELOAD_RESULT_CLASSES.has(value.resultClass) ? value.resultClass : 'SAFE_EVALUATION_ERROR', ambiguityReason: TARGET_RELOAD_AMBIGUITY_REASONS.has(value.ambiguityReason) ? value.ambiguityReason : 'SAFE_EVALUATION_ERROR', verificationElapsedMs: boundedDuration(value.verificationElapsedMs),
     baselineAttempted: value.baselineAttempted === true, baselineCanonicalTargetValid: value.baselineCanonicalTargetValid === true,
-    baselineCandidateCount: Math.min(16, count('baselineCandidateCount')), baselineExactTrustedPostCount: Math.min(16, count('baselineExactTrustedPostCount')),
+    baselineCandidateCount: Math.min(16, count('baselineCandidateCount')), baselineExactTrustedPostCount: Math.min(16, count('baselineExactTrustedPostCount')), baselineTrustedExactPostCount: Math.min(16, count('baselineTrustedExactPostCount')),
+    baselineDiscoveryComplete: value.baselineDiscoveryComplete === true, baselineCandidateCapReached: value.baselineCandidateCapReached === true,
+    baselineVisibleAttachedCandidateCount: Math.min(16, count('baselineVisibleAttachedCandidateCount')),
+    baselineImmutableBodySignalCandidateCount: Math.min(16, count('baselineImmutableBodySignalCandidateCount')),
+    baselineUntrustedBodySignalCount: Math.min(16, count('baselineUntrustedBodySignalCount')),
+    baselineCandidateEvaluationErrorCount: Math.min(16, count('baselineCandidateEvaluationErrorCount')),
     baselineResultClass: BASELINE_RESULT_CLASSES.has(value.baselineResultClass) ? value.baselineResultClass : 'BASELINE_SAFE_EVALUATION_ERROR',
     composerExcludedFromBaseline: value.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: value.commentsExcludedFromBaseline === true,
     trustedNewnessEstablished: value.trustedNewnessEstablished === true,

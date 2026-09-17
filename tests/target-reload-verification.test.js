@@ -7,6 +7,7 @@ const { BODY_EXTRACTION_RESULT, diagnoseArticleBodySubtrees } = require('../app/
 const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
 
 const TEXT = 'Exact immutable smoke body\nSecond line';
+function discovery(candidates, options = {}) { return { candidates, discovery: { discoveryComplete: options.discoveryComplete !== false, candidateCapReached: options.candidateCapReached === true } }; }
 function candidate(overrides = {}) {
   return {
     candidateFamily: 'ARTICLE_ROLE', visible: true, attached: true,
@@ -23,34 +24,56 @@ test('target reload classifier accepts only one structurally exact, trusted-new 
   assert.equal(result.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
 });
 
-test('pre-click baseline excludes the retained composer, comments, hidden/detached, and substring-only surfaces', () => {
+test('pre-click baseline excludes the retained composer, comments, hidden/detached, and substring-only surfaces without authorizing incomplete discovery', () => {
   const composer = candidate({ composerDescendant: true });
   const comment = candidate({ commentOrReply: true });
   const hidden = candidate({ visible: false });
   const detached = candidate({ attached: false });
   const substring = candidate({ bodySubtrees: [{ value: `prefix ${TEXT}`, visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', hasDirectTextNode: true, hasDescendantText: false, hasInteractiveDescendant: false, hasArticleDescendant: false, readSucceeded: true }] });
-  const result = classifyPreClickBaseline([composer, comment, hidden, detached, substring], TEXT);
-  assert.equal(result.baselineResultClass, BASELINE_RESULT.ZERO);
+  const result = classifyPreClickBaseline(discovery([composer, comment, hidden, detached, substring]), TEXT);
+  assert.equal(result.baselineResultClass, BASELINE_RESULT.UNTRUSTED_BODY_SIGNAL);
   assert.equal(result.baselineExactTrustedPostCount, 0);
   assert.equal(result.composerExcludedFromBaseline, true);
   assert.equal(result.commentsExcludedFromBaseline, true);
 });
 
 test('pre-click baseline counts exact trusted body structures but fails closed for nested ambiguity', () => {
-  assert.equal(classifyPreClickBaseline([candidate()], TEXT).baselineResultClass, BASELINE_RESULT.ONE);
-  assert.equal(classifyPreClickBaseline([candidate(), candidate()], TEXT).baselineResultClass, BASELINE_RESULT.MULTIPLE);
-  assert.equal(classifyPreClickBaseline([candidate({ hasNestedArticleTextSurface: true })], TEXT).baselineResultClass, BASELINE_RESULT.UNAVAILABLE);
+  assert.equal(classifyPreClickBaseline(discovery([candidate()]), TEXT).baselineResultClass, BASELINE_RESULT.ONE);
+  assert.equal(classifyPreClickBaseline(discovery([candidate(), candidate()]), TEXT).baselineResultClass, BASELINE_RESULT.MULTIPLE);
+  assert.equal(classifyPreClickBaseline(discovery([candidate({ hasNestedArticleTextSurface: true })]), TEXT).baselineResultClass, BASELINE_RESULT.UNAVAILABLE);
   const contiguous = candidate({ bodySubtrees: [
     { value: 'Exact immutable smoke body', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
     { value: 'Second line', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
   ] });
-  assert.equal(classifyPreClickBaseline([contiguous], TEXT).baselineResultClass, BASELINE_RESULT.ONE);
+  assert.equal(classifyPreClickBaseline(discovery([contiguous]), TEXT).baselineResultClass, BASELINE_RESULT.ONE);
+});
+
+test('pre-click baseline authorizes only a complete observed feed with no body signal and fails closed for unresolved discovery', () => {
+  const clean = candidate({ textViews: { currentReader: { value: 'other' }, textContent: { value: 'other' }, innerText: { value: 'other' }, visualText: { value: 'other' }, descendantTextBlocks: { value: 'other' } }, descendantTexts: [{ value: 'other', visible: true, attached: true }], bodySubtrees: [{ value: 'other', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', hasDirectTextNode: true, hasDescendantText: false, hasInteractiveDescendant: false, hasArticleDescendant: false, readSucceeded: true }] });
+  assert.equal(classifyPreClickBaseline(discovery([clean]), TEXT).baselineResultClass, BASELINE_RESULT.ZERO);
+  assert.equal(classifyPreClickBaseline(discovery([candidate({ composerDescendant: true }), clean]), TEXT).baselineResultClass, BASELINE_RESULT.ZERO);
+  assert.equal(classifyPreClickBaseline(discovery([]), TEXT).baselineResultClass, BASELINE_RESULT.NO_CANDIDATES);
+  const unresolved = candidate({ bodySubtrees: [{ value: TEXT, visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', hasDirectTextNode: true, hasDescendantText: false, hasInteractiveDescendant: true, hasArticleDescendant: false, readSucceeded: true }] });
+  assert.equal(classifyPreClickBaseline(discovery([unresolved]), TEXT).baselineResultClass, BASELINE_RESULT.UNTRUSTED_BODY_SIGNAL);
+  assert.equal(classifyPreClickBaseline(discovery(Array.from({ length: 16 }, () => clean), { candidateCapReached: true }), TEXT).baselineResultClass, BASELINE_RESULT.INCOMPLETE_DISCOVERY);
+  assert.equal(classifyPreClickBaseline([...Array.from({ length: 16 }, () => clean), candidate()], TEXT).baselineResultClass, BASELINE_RESULT.INCOMPLETE_DISCOVERY);
+  assert.equal(classifyPreClickBaseline(discovery([clean], { discoveryComplete: false }), TEXT).baselineResultClass, BASELINE_RESULT.INCOMPLETE_DISCOVERY);
+  assert.equal(classifyPreClickBaseline(discovery([candidate({ commentOrReply: true })]), TEXT).baselineResultClass, BASELINE_RESULT.NO_CANDIDATES);
+});
+
+test('pre-click baseline treats capture failure and an initially empty delayed feed as non-zero-authorizing states', async () => {
+  const page = { url: () => 'https://www.facebook.com/groups/exact' };
+  const verify = (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); };
+  const delayed = await capturePreClickBaseline(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => discovery([]) });
+  assert.equal(delayed.baselineResultClass, BASELINE_RESULT.NO_CANDIDATES);
+  const broken = candidate(); Object.defineProperty(broken, 'bodySubtrees', { get() { throw new Error('safe fixture failure'); } });
+  assert.equal(classifyPreClickBaseline(discovery([broken]), TEXT).baselineResultClass, BASELINE_RESULT.SAFE_EVALUATION_ERROR);
 });
 
 test('same-target baseline requires a 0 to 1 transition before target reload can establish trusted newness', async () => {
   const page = { url: () => 'https://www.facebook.com/groups/exact', goto: async () => {} };
   const verify = (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); };
-  const zero = classifyPreClickBaseline([], TEXT);
+  const zero = classifyPreClickBaseline(discovery([candidate({ textViews: { currentReader: { value: 'other' }, textContent: { value: 'other' }, innerText: { value: 'other' }, visualText: { value: 'other' }, descendantTextBlocks: { value: 'other' } }, descendantTexts: [], bodySubtrees: [] })]), TEXT);
   const one = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [candidate()], trustedNewness: zero.baselineResultClass === BASELINE_RESULT.ZERO, preClickBaseline: zero });
   assert.equal(one.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
   assert.equal(one.trustedNewnessEstablished, true);
@@ -63,7 +86,7 @@ test('same-target baseline requires a 0 to 1 transition before target reload can
   const multiple = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [candidate(), candidate()], trustedNewness: true, preClickBaseline: zero });
   assert.equal(multiple.resultClass, RESULT.AMBIGUOUS);
   assert.equal(multiple.newnessTransitionClass, 'ZERO_TO_MULTIPLE');
-  const preexisting = classifyPreClickBaseline([candidate()], TEXT);
+  const preexisting = classifyPreClickBaseline(discovery([candidate()]), TEXT);
   const unresolved = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [candidate()], trustedNewness: false, preClickBaseline: preexisting });
   assert.equal(unresolved.resultClass, RESULT.DUPLICATE_UNRESOLVED);
   assert.equal(unresolved.newnessTransitionClass, 'NONZERO_BASELINE');
@@ -136,7 +159,7 @@ test('trusted body extraction accepts only structurally isolated article body bl
 test('structural UI exclusion establishes only a trusted 0-to-1 target reload transition', async () => {
   const page = { url: () => 'https://www.facebook.com/groups/exact', goto: async () => {} };
   const verify = (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); };
-  const zero = classifyPreClickBaseline([], TEXT);
+  const zero = classifyPreClickBaseline(discovery([candidate({ textViews: { currentReader: { value: 'other' }, textContent: { value: 'other' }, innerText: { value: 'other' }, visualText: { value: 'other' }, descendantTextBlocks: { value: 'other' } }, descendantTexts: [], bodySubtrees: [] })]), TEXT);
   const isolated = candidate({ hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true });
   const verified = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [isolated], trustedNewness: true, preClickBaseline: zero });
   assert.equal(verified.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
@@ -151,7 +174,7 @@ test('target reload performs one canonical navigation and rejects before/after t
   let navigations = 0;
   const page = { url: () => 'https://www.facebook.com/groups/exact', goto: async () => { navigations += 1; } };
   const verify = (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); };
-  const baseline = classifyPreClickBaseline([], TEXT);
+  const baseline = classifyPreClickBaseline(discovery([candidate({ textViews: { currentReader: { value: 'other' }, textContent: { value: 'other' }, innerText: { value: 'other' }, visualText: { value: 'other' }, descendantTextBlocks: { value: 'other' } }, descendantTexts: [], bodySubtrees: [] })]), TEXT);
   const result = await verifyRefreshedTargetPost(page, { targetCanonical: 'https://www.facebook.com/groups/exact', verifyTarget: verify, immutableText: TEXT, captureCandidates: async () => [candidate()], trustedNewness: true, preClickBaseline: baseline });
   assert.equal(result.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST); assert.equal(navigations, 1);
   assert.equal((await verifyRefreshedTargetPost({ ...page, url: () => 'https://www.facebook.com/groups/wrong' }, { targetCanonical: 'https://www.facebook.com/groups/exact', verifyTarget: verify, immutableText: TEXT })).resultClass, RESULT.TARGET_MISMATCH);

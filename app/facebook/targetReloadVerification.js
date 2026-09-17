@@ -20,6 +20,9 @@ const BASELINE_RESULT = Object.freeze({
   ZERO: 'BASELINE_ZERO_EXACT_POSTS',
   ONE: 'BASELINE_ONE_EXACT_POST',
   MULTIPLE: 'BASELINE_MULTIPLE_EXACT_POSTS',
+  NO_CANDIDATES: 'BASELINE_NO_CANDIDATES_OBSERVED',
+  INCOMPLETE_DISCOVERY: 'BASELINE_INCOMPLETE_DISCOVERY',
+  UNTRUSTED_BODY_SIGNAL: 'BASELINE_UNTRUSTED_BODY_SIGNAL',
   TARGET_MISMATCH: 'BASELINE_TARGET_MISMATCH',
   UNAVAILABLE: 'BASELINE_UNAVAILABLE',
   SAFE_EVALUATION_ERROR: 'BASELINE_SAFE_EVALUATION_ERROR',
@@ -32,7 +35,7 @@ function summary(result = {}) {
   const transition = baselineResultClass === BASELINE_RESULT.ZERO
     ? postCount === 1 ? 'ZERO_TO_ONE' : postCount === 0 ? 'ZERO_TO_ZERO' : 'ZERO_TO_MULTIPLE'
     : [BASELINE_RESULT.ONE, BASELINE_RESULT.MULTIPLE].includes(baselineResultClass) ? 'NONZERO_BASELINE'
-      : baselineResultClass === BASELINE_RESULT.UNAVAILABLE || baselineResultClass === BASELINE_RESULT.TARGET_MISMATCH ? 'UNAVAILABLE' : 'SAFE_EVALUATION_ERROR';
+      : baselineResultClass === BASELINE_RESULT.UNAVAILABLE || baselineResultClass === BASELINE_RESULT.TARGET_MISMATCH || baselineResultClass === BASELINE_RESULT.NO_CANDIDATES || baselineResultClass === BASELINE_RESULT.INCOMPLETE_DISCOVERY || baselineResultClass === BASELINE_RESULT.UNTRUSTED_BODY_SIGNAL ? 'UNAVAILABLE' : 'SAFE_EVALUATION_ERROR';
   const trustedNewnessEstablished = baselineResultClass === BASELINE_RESULT.ZERO && baselineCount === 0 && postCount === 1 && result.resultClass === RESULT.VERIFIED_EXACT_TARGET_POST;
   return {
     navigationAttempted: result.navigationAttempted === true,
@@ -53,7 +56,12 @@ function summary(result = {}) {
     ambiguityReason: ['NONE', 'MULTIPLE_EXACT_CANDIDATES', 'NO_TRUSTED_NEWNESS', 'NESTED_ARTICLE', 'SAFE_EVALUATION_ERROR'].includes(result.ambiguityReason) ? result.ambiguityReason : 'SAFE_EVALUATION_ERROR',
     verificationElapsedMs: Math.max(0, Math.min(120000, Number(result.verificationElapsedMs) || 0)),
     baselineAttempted: result.baselineAttempted === true, baselineCanonicalTargetValid: result.baselineCanonicalTargetValid === true,
-    baselineCandidateCount: Math.max(0, Math.min(16, Number(result.baselineCandidateCount) || 0)), baselineExactTrustedPostCount: baselineCount,
+    baselineCandidateCount: Math.max(0, Math.min(16, Number(result.baselineCandidateCount) || 0)), baselineExactTrustedPostCount: baselineCount, baselineTrustedExactPostCount: baselineCount,
+    baselineDiscoveryComplete: result.baselineDiscoveryComplete === true, baselineCandidateCapReached: result.baselineCandidateCapReached === true,
+    baselineVisibleAttachedCandidateCount: Math.max(0, Math.min(16, Number(result.baselineVisibleAttachedCandidateCount) || 0)),
+    baselineImmutableBodySignalCandidateCount: Math.max(0, Math.min(16, Number(result.baselineImmutableBodySignalCandidateCount) || 0)),
+    baselineUntrustedBodySignalCount: Math.max(0, Math.min(16, Number(result.baselineUntrustedBodySignalCount) || 0)),
+    baselineCandidateEvaluationErrorCount: Math.max(0, Math.min(16, Number(result.baselineCandidateEvaluationErrorCount) || 0)),
     baselineResultClass, composerExcludedFromBaseline: result.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: result.commentsExcludedFromBaseline === true,
     trustedNewnessEstablished, postReloadExactTrustedPostCount: postCount, newnessTransitionClass: transition,
   };
@@ -80,8 +88,20 @@ function classifyRefreshedTargetCandidates(candidates, immutableText, options = 
   }
 }
 
+function normalizeCandidateDiscovery(input) {
+  if (Array.isArray(input)) {
+    return { candidates: input.slice(0, 16), discoveryComplete: input.length < 16, candidateCapReached: input.length >= 16 };
+  }
+  const candidates = Array.isArray(input?.candidates) ? input.candidates.slice(0, 16) : [];
+  return {
+    candidates,
+    discoveryComplete: input?.discovery?.discoveryComplete === true,
+    candidateCapReached: input?.discovery?.candidateCapReached === true || candidates.length >= 16,
+  };
+}
+
 function eligibleCandidates(candidates) {
-  return (Array.isArray(candidates) ? candidates : []).slice(0, 16).filter((candidate) => candidate?.composerDescendant !== true && candidate?.commentOrReply !== true && candidate?.dialogOrDraft !== true);
+  return normalizeCandidateDiscovery(candidates).candidates.filter((candidate) => candidate?.composerDescendant !== true && candidate?.commentOrReply !== true && candidate?.dialogOrDraft !== true);
 }
 
 function baselinePermitsNewness(baseline) {
@@ -96,19 +116,29 @@ function baselinePermitsNewness(baseline) {
 // newness proof required after a real click.
 function classifyPreClickBaseline(candidates, immutableText) {
   try {
-    const rows = eligibleCandidates(candidates);
+    const discovery = normalizeCandidateDiscovery(candidates);
+    const rows = eligibleCandidates(discovery.candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `BASELINE_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
     const exact = visibleAttached.filter(({ body }) => body.minimalExactBodySubtreeFound || body.exactContiguousBlockSequenceFound);
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
     const nestedExact = exact.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true);
+    const bodySignals = visibleAttached.filter(({ body }) => body.candidate?.views?.some((view) => view.containsImmutableText));
+    const untrustedBodySignals = bodySignals.filter(({ body }) => !body.minimalExactBodySubtreeFound && !body.exactContiguousBlockSequenceFound);
+    const evaluationErrors = reduced.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR);
     const base = {
       baselineAttempted: true, baselineCanonicalTargetValid: true,
-      baselineCandidateCount: rows.length, baselineExactTrustedPostCount: trusted.length,
-      composerExcludedFromBaseline: Array.isArray(candidates) && candidates.some((candidate) => candidate?.composerDescendant === true),
-      commentsExcludedFromBaseline: Array.isArray(candidates) && candidates.some((candidate) => candidate?.commentOrReply === true),
+      baselineCandidateCount: rows.length, baselineExactTrustedPostCount: trusted.length, baselineTrustedExactPostCount: trusted.length,
+      baselineDiscoveryComplete: discovery.discoveryComplete, baselineCandidateCapReached: discovery.candidateCapReached,
+      baselineVisibleAttachedCandidateCount: visibleAttached.length, baselineImmutableBodySignalCandidateCount: bodySignals.length,
+      baselineUntrustedBodySignalCount: untrustedBodySignals.length, baselineCandidateEvaluationErrorCount: evaluationErrors.length,
+      composerExcludedFromBaseline: discovery.candidates.some((candidate) => candidate?.composerDescendant === true),
+      commentsExcludedFromBaseline: discovery.candidates.some((candidate) => candidate?.commentOrReply === true),
     };
-    if (nestedExact) return { ...base, baselineResultClass: BASELINE_RESULT.UNAVAILABLE };
+    if (!discovery.discoveryComplete || discovery.candidateCapReached) return { ...base, baselineResultClass: BASELINE_RESULT.INCOMPLETE_DISCOVERY };
+    if (rows.length === 0 || visibleAttached.length === 0) return { ...base, baselineResultClass: BASELINE_RESULT.NO_CANDIDATES };
+    if (evaluationErrors.length || nestedExact) return { ...base, baselineResultClass: BASELINE_RESULT.UNAVAILABLE };
+    if (untrustedBodySignals.length) return { ...base, baselineResultClass: BASELINE_RESULT.UNTRUSTED_BODY_SIGNAL };
     if (trusted.length === 0) return { ...base, baselineResultClass: BASELINE_RESULT.ZERO };
     if (trusted.length === 1) return { ...base, baselineResultClass: BASELINE_RESULT.ONE };
     return { ...base, baselineResultClass: BASELINE_RESULT.MULTIPLE };
@@ -127,7 +157,10 @@ async function captureTargetCandidates(page, options = {}) {
     // tolerated only when they are comments/replies (which are separately
     // excluded); any other nested article remains an independent boundary.
     const hasIndependentNestedArticle = (node, root) => Array.from(node?.querySelectorAll?.(articleSelector) || []).some((candidate) => candidate !== root && !isCommentOrReply(candidate));
-    return Array.from(document.querySelectorAll('[role="article"], article')).slice(0, 16).map((node) => {
+    const nodes = Array.from(document.querySelectorAll('[role="article"], article'));
+    return {
+      discovery: { discoveryComplete: nodes.length < 16, candidateCapReached: nodes.length >= 16 },
+      candidates: nodes.slice(0, 16).map((node) => {
       const canonicalRoot = node;
       return {
       candidateFamily: String(node.getAttribute('role') || '').toLowerCase() === 'article' ? 'ARTICLE_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE',
@@ -159,7 +192,8 @@ async function captureTargetCandidates(page, options = {}) {
         return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
       }).filter((child) => child.visible && child.attached).slice(0, 24),
     };
-    });
+      }),
+    };
   }, options.composerHandle || null);
 }
 
