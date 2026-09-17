@@ -176,6 +176,10 @@ const BODY_COVERAGE = new Set(['NO_BODY_SIGNAL', 'PARTIAL_BODY_SIGNAL', 'WHOLE_B
 const BODY_SEQUENCE_REJECTIONS = new Set(['NONE', 'INCLUDES_HEADER', 'INCLUDES_TIMESTAMP', 'INCLUDES_ACTION', 'INCLUDES_COMMENT_REPLY', 'INCLUDES_NESTED_ARTICLE', 'INCLUDES_INTERACTIVE', 'HIDDEN_OR_DETACHED', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const BODY_BLOCK_PATTERNS = new Set(['EXACT_LEAF_EXISTS', 'EXACT_WRAPPER_EXISTS', 'BODY_SPLIT_ACROSS_SIBLINGS', 'BODY_PLUS_HEADER_CONTAMINATION', 'BODY_PLUS_ACTION_CONTAMINATION', 'BODY_PLUS_HEADER_AND_ACTION_CONTAMINATION', 'BODY_INSIDE_INTERACTIVE_WRAPPER', 'BODY_INSIDE_GENERIC_WRAPPER', 'BODY_SIGNAL_AMBIGUOUS', 'NO_BODY_SIGNAL', 'SAFE_EVALUATION_ERROR']);
 const BODY_ARTICLE_RELATIONS = new Set(['SELECTED_POST_ROOT', 'DESCENDANT_OF_SELECTED_POST', 'INDEPENDENT_NESTED_ARTICLE', 'COMMENT_REPLY_ARTICLE', 'UNKNOWN']);
+const INTERACTIVE_BOUNDARY_CLASSES = new Set(['NO_INTERACTIVE_DESCENDANTS', 'BODY_REGION_SEPARATE_FROM_CONTROLS', 'BODY_REGION_MIXED_WITH_CONTROLS', 'BODY_TEXT_INSIDE_INTERACTIVE_NODE', 'BODY_TEXT_UNDER_INTERACTIVE_ANCESTOR', 'BODY_REGION_AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const BODY_CONTROL_RELATIONS = new Set(['NO_CONTROLS', 'SIBLING_REGIONS', 'BODY_ANCESTOR_OF_CONTROLS', 'CONTROLS_ANCESTOR_OF_BODY', 'OVERLAPPING_STRUCTURE', 'UNKNOWN']);
+const CONTROL_DEPTH_BUCKETS = new Set(['NONE', 'SAME_LEVEL', 'ONE_LEVEL_BELOW', 'TWO_PLUS_LEVELS_BELOW']);
+const BOUNDARY_EVIDENCE = new Set(['EXACT_BODY_REGION_SEPARATE', 'WHOLE_BODY_PLUS_EXTRA_REGION_SEPARATE', 'BODY_SIGNAL_ONLY_IN_BROAD_WRAPPER', 'BODY_SIGNAL_INSIDE_INTERACTIVE_STRUCTURE', 'AMBIGUOUS', 'NONE']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -684,6 +688,7 @@ function sanitizePostCandidateBodySubtreeCandidate(value = {}) {
     extraTextBeforeBody: value.extraTextBeforeBody === true, extraTextAfterBody: value.extraTextAfterBody === true,
     headerOutsideBody: value.headerOutsideBody === true, actionsOutsideBody: value.actionsOutsideBody === true,
     timestampOutsideBody: value.timestampOutsideBody === true,
+    interactiveBoundary: sanitizeInteractiveBoundary(value.interactiveBoundary),
     firstObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.firstObservedRelativeBucket) ? value.firstObservedRelativeBucket : 'UNDER_1S',
     lastObservedRelativeBucket: ACK_RELATIVE_BUCKETS.has(value.lastObservedRelativeBucket) ? value.lastObservedRelativeBucket : 'UNDER_1S',
     observationCount: boundedInteger(value.observationCount) || 0,
@@ -696,8 +701,34 @@ function sanitizePostCandidateBodySubtreeCandidate(value = {}) {
   };
 }
 
+function sanitizeInteractiveBoundaryRegion(value = {}) {
+  return {
+    regionIndex: Math.min(24, boundedInteger(value.regionIndex) || 0), parentRegionIndex: value.parentRegionIndex === null ? null : Math.min(24, boundedInteger(value.parentRegionIndex) || 0),
+    depthRelativeToWrapper: Math.min(24, boundedInteger(value.depthRelativeToWrapper) || 0), tagFamily: BODY_SUBTREE_TAGS.has(value.tagFamily) ? value.tagFamily : 'OTHER',
+    visible: value.visible === true, attached: value.attached === true, interactive: value.interactive === true, interactiveAncestor: value.interactiveAncestor === true, hasInteractiveDescendant: value.hasInteractiveDescendant === true,
+    commentReplyAncestor: value.commentReplyAncestor === true, nestedIndependentArticle: value.nestedIndependentArticle === true,
+    headerLikeAncestor: value.headerLikeAncestor === true, timestampLikeAncestor: value.timestampLikeAncestor === true, actionLikeAncestor: value.actionLikeAncestor === true,
+    normalizedLength: Math.min(10000, boundedInteger(value.normalizedLength) || 0), lineCount: Math.min(1000, boundedInteger(value.lineCount) || 0), newlineCount: Math.min(1000, boundedInteger(value.newlineCount) || 0),
+    containsImmutableText: value.containsImmutableText === true, exactImmutableMatch: value.exactImmutableMatch === true, prefixMatch: value.prefixMatch === true, suffixMatch: value.suffixMatch === true,
+    lengthRelation: POST_CANDIDATE_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EMPTY',
+  };
+}
+
+function sanitizeInteractiveBoundary(value = {}) {
+  const counts = ['interactiveWrapperCount', 'nonInteractiveBodyRegionCount', 'nonInteractiveExactBodyRegionCount', 'nonInteractiveWholeBodyPlusExtraRegionCount', 'controlRegionCount', 'directInteractiveChildCount', 'nestedInteractiveDescendantCount'];
+  return {
+    interactiveBoundaryDiagnosticAttempted: value.interactiveBoundaryDiagnosticAttempted === true,
+    interactiveBoundaryClass: INTERACTIVE_BOUNDARY_CLASSES.has(value.interactiveBoundaryClass) ? value.interactiveBoundaryClass : 'SAFE_EVALUATION_ERROR',
+    ...Object.fromEntries(counts.map((key) => [key, Math.min(24, boundedInteger(value[key]) || 0)])),
+    bodyAndControlsSiblingRelation: BODY_CONTROL_RELATIONS.has(value.bodyAndControlsSiblingRelation) ? value.bodyAndControlsSiblingRelation : 'UNKNOWN',
+    nearestControlDepthBucket: CONTROL_DEPTH_BUCKETS.has(value.nearestControlDepthBucket) ? value.nearestControlDepthBucket : 'NONE',
+    bestBoundaryEvidence: BOUNDARY_EVIDENCE.has(value.bestBoundaryEvidence) ? value.bestBoundaryEvidence : 'AMBIGUOUS',
+    regions: Array.isArray(value.regions) ? value.regions.slice(0, 8).map(sanitizeInteractiveBoundaryRegion) : [],
+  };
+}
+
 function sanitizePostCandidateBodySubtreeSummary(value = {}) {
-  const counts = ['candidateCountInspected', 'bodySubstringCandidateCount', 'minimalExactBodySubtreeCandidateCount', 'exactContiguousBlockSequenceCandidateCount', 'bodyWithHeaderOutsideCount', 'bodyWithActionsOutsideCount', 'bodyWithHeaderAndActionsOutsideCount', 'bodyPresentButNotIsolatableCount', 'ambiguousCount', 'newAfterClickExactBodyCandidateCount', 'visibleAttachedExactBodyCandidateCount', 'bodyBlockCount', 'eligibleBodyBlockCount', 'headerRejectedCount', 'timestampRejectedCount', 'actionRejectedCount', 'commentReplyRejectedCount', 'nestedArticleRejectedCount', 'interactiveRejectedCount', 'hiddenRejectedCount', 'detachedRejectedCount', 'ambiguousRejectedCount', 'exactBodyBlockCount', 'wholeBodyPlusExtraBlockCount', 'partialBodySignalBlockCount', 'exactContiguousSequenceCount', 'wholeBodyPlusExtraSequenceCount'];
+  const counts = ['candidateCountInspected', 'bodySubstringCandidateCount', 'minimalExactBodySubtreeCandidateCount', 'exactContiguousBlockSequenceCandidateCount', 'bodyWithHeaderOutsideCount', 'bodyWithActionsOutsideCount', 'bodyWithHeaderAndActionsOutsideCount', 'bodyPresentButNotIsolatableCount', 'ambiguousCount', 'newAfterClickExactBodyCandidateCount', 'visibleAttachedExactBodyCandidateCount', 'bodyBlockCount', 'eligibleBodyBlockCount', 'headerRejectedCount', 'timestampRejectedCount', 'actionRejectedCount', 'commentReplyRejectedCount', 'nestedArticleRejectedCount', 'interactiveRejectedCount', 'hiddenRejectedCount', 'detachedRejectedCount', 'ambiguousRejectedCount', 'exactBodyBlockCount', 'wholeBodyPlusExtraBlockCount', 'partialBodySignalBlockCount', 'exactContiguousSequenceCount', 'wholeBodyPlusExtraSequenceCount', 'interactiveWrapperCount', 'nonInteractiveBodyRegionCount', 'nonInteractiveExactBodyRegionCount', 'nonInteractiveWholeBodyPlusExtraRegionCount', 'controlRegionCount', 'directInteractiveChildCount', 'nestedInteractiveDescendantCount'];
   return {
     ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),
     bestSupportedBodyIsolationClass: BODY_SUMMARY_CLASSES.has(value.bestSupportedBodyIsolationClass) ? value.bestSupportedBodyIsolationClass : 'SAFE_EVALUATION_ERROR',
@@ -706,6 +737,12 @@ function sanitizePostCandidateBodySubtreeSummary(value = {}) {
     secondaryCandidateDetailDropped: value.secondaryCandidateDetailDropped === true,
     parentChainDetailRetained: value.parentChainDetailRetained === true,
     sequenceDetailRetained: value.sequenceDetailRetained === true,
+    interactiveBoundaryDiagnosticAttempted: value.interactiveBoundaryDiagnosticAttempted === true,
+    interactiveBoundaryClass: INTERACTIVE_BOUNDARY_CLASSES.has(value.interactiveBoundaryClass) ? value.interactiveBoundaryClass : 'SAFE_EVALUATION_ERROR',
+    bodyAndControlsSiblingRelation: BODY_CONTROL_RELATIONS.has(value.bodyAndControlsSiblingRelation) ? value.bodyAndControlsSiblingRelation : 'UNKNOWN',
+    nearestControlDepthBucket: CONTROL_DEPTH_BUCKETS.has(value.nearestControlDepthBucket) ? value.nearestControlDepthBucket : 'NONE',
+    bestBoundaryEvidence: BOUNDARY_EVIDENCE.has(value.bestBoundaryEvidence) ? value.bestBoundaryEvidence : 'AMBIGUOUS',
+    interactiveBoundaryRegions: Array.isArray(value.interactiveBoundaryRegions) ? value.interactiveBoundaryRegions.slice(0, 8).map(sanitizeInteractiveBoundaryRegion) : [],
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }

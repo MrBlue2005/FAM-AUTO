@@ -1,5 +1,7 @@
 # Changelog
 
+- Post-candidate body-subtree diagnostics now classify whether immutable text inside a same-post wrapper with descendant controls has a separately captured non-interactive body region. The bounded, privacy-safe interactive-boundary evidence is retained inside the existing protected terminal summary only; extraction, baseline admission, verification, click, and retry behavior are unchanged.
+
 - Pre-click live-publication baselines now fail closed unless a clean zero is positively proven by complete, uncapped discovery with at least one visible eligible post surface and no unresolved immutable-body signal. Empty, capped, incomplete, evaluation-error, nested-ambiguous, and untrusted-body-signal scans cannot reach `ATTEMPT_STARTED`; body extraction, post-click verification, retry, and acknowledgement semantics are unchanged.
 
 - Canonical logical post-root relation handling now prevents a selected feed-item wrapper and its same-post article descendants from being misclassified as independent nested articles. Genuine embedded posts/cards and comment/reply boundaries remain rejected; exact-body proof, zero-baseline/newness, click, retry, and outcome semantics are unchanged.

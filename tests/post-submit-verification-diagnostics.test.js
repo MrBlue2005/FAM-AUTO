@@ -383,6 +383,37 @@ test('body-block eligibility diagnostics classify bounded structural shapes with
   assert.equal(summary.ambiguousRejectedCount, 1);
 });
 
+test('interactive-boundary diagnostics distinguish isolated body regions from unsafe interactive structures without changing extraction', () => {
+  const inspect = (subtrees, overrides = {}) => diagnoseArticleBodySubtrees(bodyArticle(subtrees, overrides), 'immutable body').interactiveBoundary;
+  assert.equal(inspect([bodySubtree('immutable body')]).interactiveBoundaryClass, 'NO_INTERACTIVE_DESCENDANTS');
+  const separate = inspect([
+    bodySubtree('immutable body', { hasInteractiveDescendant: true, interactiveDescendantCount: 1 }),
+    bodySubtree('immutable body', { parentBlockIndex: 1 }),
+    bodySubtree('action', { parentBlockIndex: 1, interactive: true }),
+  ]);
+  assert.equal(separate.interactiveBoundaryClass, 'BODY_REGION_SEPARATE_FROM_CONTROLS');
+  assert.equal(separate.nonInteractiveExactBodyRegionCount, 1);
+  assert.equal(separate.controlRegionCount, 1);
+  assert.equal(separate.bodyAndControlsSiblingRelation, 'SIBLING_REGIONS');
+  assert.equal(inspect([bodySubtree('immutable body', { interactive: true })]).interactiveBoundaryClass, 'BODY_TEXT_INSIDE_INTERACTIVE_NODE');
+  assert.equal(inspect([bodySubtree('immutable body', { interactiveAncestor: true })]).interactiveBoundaryClass, 'BODY_TEXT_UNDER_INTERACTIVE_ANCESTOR');
+  assert.equal(inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true, interactiveDescendantCount: 2 })]).interactiveBoundaryClass, 'BODY_REGION_MIXED_WITH_CONTROLS');
+  assert.equal(inspect([bodySubtree('immutable body', { commentReplyAncestor: true, hasInteractiveDescendant: true })]).interactiveWrapperCount, 0);
+  assert.equal(inspect([bodySubtree('immutable body', { articleRelation: 'INDEPENDENT_NESTED_ARTICLE', hasInteractiveDescendant: true })]).interactiveWrapperCount, 0);
+  assert.equal(inspect([bodySubtree('immutable body', { visible: false, hasInteractiveDescendant: true })]).interactiveWrapperCount, 0);
+  assert.equal(inspect([
+    bodySubtree('immutable body', { hasInteractiveDescendant: true }),
+    bodySubtree('immutable body', { parentBlockIndex: 1 }),
+    bodySubtree('immutable body', { parentBlockIndex: 1 }),
+  ]).interactiveBoundaryClass, 'BODY_REGION_AMBIGUOUS');
+  const summary = summarizeArticleBodySubtrees([diagnoseArticleBodySubtrees(bodyArticle([
+    bodySubtree('immutable body', { hasInteractiveDescendant: true, interactiveDescendantCount: 1 }),
+    bodySubtree('immutable body', { parentBlockIndex: 1 }), bodySubtree('action', { parentBlockIndex: 1, interactive: true }),
+  ]), 'immutable body')]);
+  assert.equal(summary.interactiveBoundaryClass, 'BODY_REGION_SEPARATE_FROM_CONTROLS');
+  assert.equal(summary.interactiveBoundaryRegions.some((region) => region.value !== undefined), false);
+});
+
 test('canonical logical post-root relations accept same-post wrappers and reject independent, comment, and hidden boundaries', () => {
   const samePost = (relation, overrides = {}) => bodySubtree('immutable body', { articleRelation: relation, ...overrides });
   const inspect = (subtrees) => diagnoseArticleBodySubtrees(bodyArticle(subtrees), 'immutable body').subtrees;
@@ -453,7 +484,7 @@ test('post-candidate body-subtree persistence excludes raw content, hashes, DOM 
     const taskId = 'live_execution_post_candidate_body';
     const sink = createComposerAcquisitionDiagnosticSink({ directory, now: () => '2026-09-16T00:00:00.000Z' }).forTask(taskId);
     const body = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('private Facebook post', { selector: '#private', className: 'private', domPath: '/html/body', facebookId: 'fb-123', rawLabel: 'private label', cookie: 'secret-cookie' })]), 'private Facebook post');
-    sink.postCandidateBodySubtreeSummary({ ...summarizeArticleBodySubtrees([body]), rawText: 'private Facebook post', hash: 'secret-hash', selector: '#private', domPath: '/html/body', facebookId: 'fb-123' });
+    sink.postCandidateBodySubtreeSummary({ ...summarizeArticleBodySubtrees([body]), interactiveBoundaryRegions: [{ regionIndex: 1, rawText: 'private Facebook post', selector: '#private', domPath: '/html/body', cookie: 'secret-cookie' }], rawText: 'private Facebook post', hash: 'secret-hash', selector: '#private', domPath: '/html/body', facebookId: 'fb-123' });
     const persisted = JSON.parse(fs.readFileSync(path.join(directory, `${taskId}.json`), 'utf8'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
     assert.doesNotMatch(JSON.stringify(persisted), /private Facebook post|secret-hash|#private|\/html\/body|fb-123|private label|secret-cookie/i);
@@ -536,13 +567,17 @@ test('near-32KiB pressure evicts lower-priority diagnostics and retains all crit
     sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
     sink.postPublicationStructuralSummary(criticalStructuralSummary());
     sink.postCandidateTextParitySummary(summarizeArticleTextParity([diagnoseArticleTextParity(parityArticle(), 'immutable body')]));
-    sink.postCandidateBodySubtreeSummary(summarizeArticleBodySubtrees([diagnoseArticleBodySubtrees(bodyArticle([bodySubtree('immutable body')]), 'immutable body')]));
+    sink.postCandidateBodySubtreeSummary(summarizeArticleBodySubtrees([diagnoseArticleBodySubtrees(bodyArticle([
+      bodySubtree('immutable body', { hasInteractiveDescendant: true, interactiveDescendantCount: 1 }),
+      bodySubtree('immutable body', { parentBlockIndex: 1 }), bodySubtree('action', { parentBlockIndex: 1, interactive: true }),
+    ]), 'immutable body')]));
     const file = path.join(directory, `${taskId}.json`); const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.ok(fs.statSync(file).size <= 32 * 1024);
     assert.ok(persisted.records.some((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
+    assert.equal(persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree.interactiveBoundaryClass, 'BODY_REGION_SEPARATE_FROM_CONTROLS');
     assert.ok(persisted.records.filter((record) => record.stage === 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY').length < 8);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

@@ -21,6 +21,10 @@ const BODY_BLOCK_ROLES = new Set(['BODY_CANDIDATE', 'HEADER_OR_AUTHOR', 'TIMESTA
 const BODY_BLOCK_ELIGIBILITY = new Set(['ELIGIBLE_BODY_TEXT', 'REJECT_HEADER', 'REJECT_TIMESTAMP', 'REJECT_ACTION_CONTROL', 'REJECT_COMMENT_REPLY', 'REJECT_NESTED_ARTICLE', 'REJECT_INTERACTIVE', 'REJECT_HIDDEN', 'REJECT_DETACHED', 'REJECT_EMPTY', 'REJECT_AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const BODY_COVERAGE = new Set(['NO_BODY_SIGNAL', 'PARTIAL_BODY_SIGNAL', 'WHOLE_BODY_PLUS_EXTRA', 'EXACT_BODY']);
 const BODY_SEQUENCE_REJECTIONS = new Set(['NONE', 'INCLUDES_HEADER', 'INCLUDES_TIMESTAMP', 'INCLUDES_ACTION', 'INCLUDES_COMMENT_REPLY', 'INCLUDES_NESTED_ARTICLE', 'INCLUDES_INTERACTIVE', 'HIDDEN_OR_DETACHED', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const INTERACTIVE_BOUNDARY_CLASSES = new Set(['NO_INTERACTIVE_DESCENDANTS', 'BODY_REGION_SEPARATE_FROM_CONTROLS', 'BODY_REGION_MIXED_WITH_CONTROLS', 'BODY_TEXT_INSIDE_INTERACTIVE_NODE', 'BODY_TEXT_UNDER_INTERACTIVE_ANCESTOR', 'BODY_REGION_AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const BODY_CONTROL_RELATIONS = new Set(['NO_CONTROLS', 'SIBLING_REGIONS', 'BODY_ANCESTOR_OF_CONTROLS', 'CONTROLS_ANCESTOR_OF_BODY', 'OVERLAPPING_STRUCTURE', 'UNKNOWN']);
+const CONTROL_DEPTH_BUCKETS = new Set(['NONE', 'SAME_LEVEL', 'ONE_LEVEL_BELOW', 'TWO_PLUS_LEVELS_BELOW']);
+const BOUNDARY_EVIDENCE = new Set(['EXACT_BODY_REGION_SEPARATE', 'WHOLE_BODY_PLUS_EXTRA_REGION_SEPARATE', 'BODY_SIGNAL_ONLY_IN_BROAD_WRAPPER', 'BODY_SIGNAL_INSIDE_INTERACTIVE_STRUCTURE', 'AMBIGUOUS', 'NONE']);
 
 function normaliseEphemeralText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -104,6 +108,85 @@ function classifyBodyBlock(raw, parity) {
                         : raw?.ambiguous ? 'REJECT_AMBIGUOUS' : 'ELIGIBLE_BODY_TEXT';
     return { blockRole: BODY_BLOCK_ROLES.has(role) ? role : 'UNKNOWN', eligibility: BODY_BLOCK_ELIGIBILITY.has(eligibility) ? eligibility : 'SAFE_EVALUATION_ERROR' };
   } catch { return { blockRole: 'UNKNOWN', eligibility: 'SAFE_EVALUATION_ERROR' }; }
+}
+
+function boundaryRegion(block) {
+  return {
+    regionIndex: block.blockIndex, parentRegionIndex: block.parentBlockIndex,
+    depthRelativeToWrapper: block.depthRelativeToCandidate, tagFamily: block.tagFamily,
+    visible: block.visible, attached: block.attached, interactive: block.interactive,
+    interactiveAncestor: block.interactiveAncestor, hasInteractiveDescendant: block.hasInteractiveDescendant,
+    commentReplyAncestor: block.commentReplyAncestor, nestedIndependentArticle: block.nestedArticle,
+    headerLikeAncestor: block.headerLikeAncestor, timestampLikeAncestor: block.timestampLikeAncestor,
+    actionLikeAncestor: block.actionLikeAncestor, normalizedLength: block.normalizedLength,
+    lineCount: block.lineCount, newlineCount: block.newlineCount,
+    containsImmutableText: block.containsImmutableText, exactImmutableMatch: block.exactImmutableMatch,
+    prefixMatch: block.immutableTextPrefixMatch, suffixMatch: block.immutableTextSuffixMatch,
+    lengthRelation: block.lengthRelation,
+  };
+}
+
+function isDescendantOf(block, ancestor, byIndex) {
+  let parent = byIndex.get(block.parentBlockIndex);
+  for (let depth = 0; parent && depth < 24; depth += 1) {
+    if (parent.blockIndex === ancestor.blockIndex) return true;
+    parent = byIndex.get(parent.parentBlockIndex);
+  }
+  return false;
+}
+
+// Diagnostic-only: it cannot affect extraction or success. It answers whether
+// a body-bearing interactive wrapper has a separately captured safe text region.
+function diagnoseInteractiveBoundary(subtrees = []) {
+  try {
+    const byIndex = new Map(subtrees.map((block) => [block.blockIndex, block]));
+    const signal = subtrees.filter((block) => block.visible && block.attached && block.containsImmutableText && !block.commentReplyAncestor && !block.nestedArticle);
+    const insideInteractive = signal.filter((block) => block.interactive);
+    const underInteractive = signal.filter((block) => !block.interactive && block.interactiveAncestor);
+    const wrappers = signal.filter((block) => !block.interactive && !block.interactiveAncestor && block.hasInteractiveDescendant);
+    const empty = {
+      interactiveBoundaryDiagnosticAttempted: true, interactiveBoundaryClass: 'NO_INTERACTIVE_DESCENDANTS', interactiveWrapperCount: 0,
+      nonInteractiveBodyRegionCount: 0, nonInteractiveExactBodyRegionCount: 0, nonInteractiveWholeBodyPlusExtraRegionCount: 0,
+      controlRegionCount: 0, directInteractiveChildCount: 0, nestedInteractiveDescendantCount: 0,
+      bodyAndControlsSiblingRelation: 'NO_CONTROLS', nearestControlDepthBucket: 'NONE', bestBoundaryEvidence: 'NONE', regions: [],
+    };
+    if (insideInteractive.length) return { ...empty, interactiveBoundaryClass: 'BODY_TEXT_INSIDE_INTERACTIVE_NODE', bestBoundaryEvidence: 'BODY_SIGNAL_INSIDE_INTERACTIVE_STRUCTURE', regions: insideInteractive.slice(0, 8).map(boundaryRegion) };
+    if (underInteractive.length) return { ...empty, interactiveBoundaryClass: 'BODY_TEXT_UNDER_INTERACTIVE_ANCESTOR', bestBoundaryEvidence: 'BODY_SIGNAL_INSIDE_INTERACTIVE_STRUCTURE', regions: underInteractive.slice(0, 8).map(boundaryRegion) };
+    if (!wrappers.length) return empty;
+    const wrapper = wrappers[0];
+    const descendants = subtrees.filter((block) => isDescendantOf(block, wrapper, byIndex));
+    const safe = descendants.filter((block) => block.visible && block.attached && !block.interactive && !block.interactiveAncestor && !block.hasInteractiveDescendant && !block.commentReplyAncestor && !block.nestedArticle && !block.headerLikeAncestor && !block.timestampLikeAncestor && !block.actionLikeAncestor);
+    const body = safe.filter((block) => block.containsImmutableText);
+    const exact = body.filter((block) => block.exactImmutableMatch);
+    const whole = body.filter((block) => !block.exactImmutableMatch && block.containsImmutableText);
+    const explicitControls = descendants.filter((block) => block.interactive || block.interactiveAncestor || block.actionLikeAncestor);
+    const controlRegionCount = Math.max(explicitControls.length, wrapper.interactiveDescendantCount || 0);
+    const directInteractiveChildCount = explicitControls.filter((block) => block.parentBlockIndex === wrapper.blockIndex).length;
+    const nestedInteractiveDescendantCount = Math.max(0, controlRegionCount - directInteractiveChildCount);
+    const nearestControlDepth = explicitControls.length ? Math.min(...explicitControls.map((block) => Math.max(0, block.depthRelativeToCandidate - wrapper.depthRelativeToCandidate))) : null;
+    const nearestControlDepthBucket = nearestControlDepth === null ? controlRegionCount ? 'TWO_PLUS_LEVELS_BELOW' : 'NONE' : nearestControlDepth === 0 ? 'SAME_LEVEL' : nearestControlDepth === 1 ? 'ONE_LEVEL_BELOW' : 'TWO_PLUS_LEVELS_BELOW';
+    const relevant = exact.length ? exact : whole;
+    const controlsInsideBody = relevant.some((region) => explicitControls.some((control) => isDescendantOf(control, region, byIndex)));
+    const bodyInsideControls = relevant.some((region) => explicitControls.some((control) => isDescendantOf(region, control, byIndex)));
+    const relation = !controlRegionCount ? 'NO_CONTROLS' : controlsInsideBody ? 'BODY_ANCESTOR_OF_CONTROLS' : bodyInsideControls ? 'CONTROLS_ANCESTOR_OF_BODY' : relevant.length ? 'SIBLING_REGIONS' : 'UNKNOWN';
+    const ambiguous = exact.length > 1 || (exact.length && whole.length) || wrappers.length > 1;
+    const separate = relevant.length === 1 && !bodyInsideControls;
+    const interactiveBoundaryClass = ambiguous ? 'BODY_REGION_AMBIGUOUS' : separate ? 'BODY_REGION_SEPARATE_FROM_CONTROLS' : 'BODY_REGION_MIXED_WITH_CONTROLS';
+    const bestBoundaryEvidence = ambiguous ? 'AMBIGUOUS' : exact.length === 1 ? 'EXACT_BODY_REGION_SEPARATE' : whole.length === 1 ? 'WHOLE_BODY_PLUS_EXTRA_REGION_SEPARATE' : 'BODY_SIGNAL_ONLY_IN_BROAD_WRAPPER';
+    return {
+      interactiveBoundaryDiagnosticAttempted: true,
+      interactiveBoundaryClass: INTERACTIVE_BOUNDARY_CLASSES.has(interactiveBoundaryClass) ? interactiveBoundaryClass : 'SAFE_EVALUATION_ERROR',
+      interactiveWrapperCount: wrappers.length, nonInteractiveBodyRegionCount: body.length,
+      nonInteractiveExactBodyRegionCount: exact.length, nonInteractiveWholeBodyPlusExtraRegionCount: whole.length,
+      controlRegionCount, directInteractiveChildCount, nestedInteractiveDescendantCount,
+      bodyAndControlsSiblingRelation: BODY_CONTROL_RELATIONS.has(relation) ? relation : 'UNKNOWN',
+      nearestControlDepthBucket: CONTROL_DEPTH_BUCKETS.has(nearestControlDepthBucket) ? nearestControlDepthBucket : 'NONE',
+      bestBoundaryEvidence: BOUNDARY_EVIDENCE.has(bestBoundaryEvidence) ? bestBoundaryEvidence : 'AMBIGUOUS',
+      regions: [wrapper, ...relevant, ...explicitControls].filter((block, index, all) => all.findIndex((item) => item.blockIndex === block.blockIndex) === index).slice(0, 8).map(boundaryRegion),
+    };
+  } catch {
+    return { interactiveBoundaryDiagnosticAttempted: true, interactiveBoundaryClass: 'SAFE_EVALUATION_ERROR', interactiveWrapperCount: 0, nonInteractiveBodyRegionCount: 0, nonInteractiveExactBodyRegionCount: 0, nonInteractiveWholeBodyPlusExtraRegionCount: 0, controlRegionCount: 0, directInteractiveChildCount: 0, nestedInteractiveDescendantCount: 0, bodyAndControlsSiblingRelation: 'UNKNOWN', nearestControlDepthBucket: 'NONE', bestBoundaryEvidence: 'AMBIGUOUS', regions: [] };
+  }
 }
 
 function classifyCandidateTextShape(candidate, views) {
@@ -240,6 +323,7 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       // propagation explains nested ancestry only; it must not turn a
       // same-post wrapper into an independent article.
     }
+    const interactiveBoundary = diagnoseInteractiveBoundary(subtrees);
     // Only a text block captured from the already-qualified article and not
     // structurally classified as UI can prove the immutable body. The raw
     // Facebook text never escapes this function.
@@ -311,9 +395,10 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       bodyExactAfterUiExclusionCount: bounded(exact.filter(() => hasStructuralUi).length), bodyExactContiguousBlockCount: bounded(sequenceCount),
       extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
       headerOutsideBody: isolate && header, actionsOutsideBody: isolate && actions, timestampOutsideBody: isolate && candidate.hasTimestampTextSurface,
+      interactiveBoundary,
     };
   } catch {
-    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0 };
+    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, interactiveBoundary: diagnoseInteractiveBoundary([]) };
   }
 }
 
@@ -329,6 +414,8 @@ function summarizeArticleBodySubtrees(candidates = []) {
   const blocks = inspected.flatMap((candidate) => candidate.subtrees || []);
   const sequences = inspected.flatMap((candidate) => candidate.contiguousSequences || []);
   const rejected = (eligibility) => blocks.filter((block) => block.eligibility === eligibility).length;
+  const boundaries = inspected.map((candidate) => candidate.interactiveBoundary || diagnoseInteractiveBoundary([]));
+  const primaryBoundary = boundaries.find((boundary) => boundary.interactiveWrapperCount > 0) || boundaries[0] || diagnoseInteractiveBoundary([]);
   const bestObservedBlockPattern = blocks.some((block) => block.coverage === 'EXACT_BODY' && block.hasDirectTextNode) ? 'EXACT_LEAF_EXISTS'
     : blocks.some((block) => block.coverage === 'EXACT_BODY') ? 'EXACT_WRAPPER_EXISTS'
       : sequences.some((sequence) => sequence.sequenceExactImmutableMatch && sequence.sequenceBlockCount > 1) ? 'BODY_SPLIT_ACROSS_SIBLINGS'
@@ -354,6 +441,19 @@ function summarizeArticleBodySubtrees(candidates = []) {
     headerRejectedCount: rejected('REJECT_HEADER'), timestampRejectedCount: rejected('REJECT_TIMESTAMP'), actionRejectedCount: rejected('REJECT_ACTION_CONTROL'), commentReplyRejectedCount: rejected('REJECT_COMMENT_REPLY'), nestedArticleRejectedCount: rejected('REJECT_NESTED_ARTICLE'), interactiveRejectedCount: rejected('REJECT_INTERACTIVE'), hiddenRejectedCount: rejected('REJECT_HIDDEN'), detachedRejectedCount: rejected('REJECT_DETACHED'), ambiguousRejectedCount: rejected('REJECT_AMBIGUOUS'),
     exactBodyBlockCount: blocks.filter((block) => block.coverage === 'EXACT_BODY').length, wholeBodyPlusExtraBlockCount: blocks.filter((block) => block.coverage === 'WHOLE_BODY_PLUS_EXTRA').length, partialBodySignalBlockCount: blocks.filter((block) => block.coverage === 'PARTIAL_BODY_SIGNAL').length,
     exactContiguousSequenceCount: sequences.filter((sequence) => sequence.sequenceExactImmutableMatch).length, wholeBodyPlusExtraSequenceCount: sequences.filter((sequence) => sequence.sequenceContainsImmutableText && !sequence.sequenceExactImmutableMatch).length,
+    interactiveBoundaryDiagnosticAttempted: boundaries.some((boundary) => boundary.interactiveBoundaryDiagnosticAttempted),
+    interactiveBoundaryClass: primaryBoundary.interactiveBoundaryClass,
+    interactiveWrapperCount: boundaries.reduce((total, boundary) => total + boundary.interactiveWrapperCount, 0),
+    nonInteractiveBodyRegionCount: boundaries.reduce((total, boundary) => total + boundary.nonInteractiveBodyRegionCount, 0),
+    nonInteractiveExactBodyRegionCount: boundaries.reduce((total, boundary) => total + boundary.nonInteractiveExactBodyRegionCount, 0),
+    nonInteractiveWholeBodyPlusExtraRegionCount: boundaries.reduce((total, boundary) => total + boundary.nonInteractiveWholeBodyPlusExtraRegionCount, 0),
+    controlRegionCount: boundaries.reduce((total, boundary) => total + boundary.controlRegionCount, 0),
+    directInteractiveChildCount: boundaries.reduce((total, boundary) => total + boundary.directInteractiveChildCount, 0),
+    nestedInteractiveDescendantCount: boundaries.reduce((total, boundary) => total + boundary.nestedInteractiveDescendantCount, 0),
+    bodyAndControlsSiblingRelation: primaryBoundary.bodyAndControlsSiblingRelation,
+    nearestControlDepthBucket: primaryBoundary.nearestControlDepthBucket,
+    bestBoundaryEvidence: primaryBoundary.bestBoundaryEvidence,
+    interactiveBoundaryRegions: primaryBoundary.regions,
     bestObservedBlockPattern, detailTruncated: false, candidates,
   };
 }
@@ -816,6 +916,7 @@ module.exports = {
   normalizeImmutablePostText,
   diagnoseArticleTextParity,
   diagnoseArticleBodySubtrees,
+  diagnoseInteractiveBoundary,
   summarizeArticleBodySubtrees,
   summarizeArticleTextParity,
   BODY_EXTRACTION_RESULT,
