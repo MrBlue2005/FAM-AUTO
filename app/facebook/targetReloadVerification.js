@@ -121,13 +121,21 @@ async function captureTargetCandidates(page, options = {}) {
   return page.evaluate((composerNode) => {
     const visible = (node) => { try { const style = getComputedStyle(node); const rect = node.getBoundingClientRect(); return node.isConnected && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; } catch { return false; } };
     const depth = (node, root) => { let current = node; let value = 0; while (current?.parentElement && current !== root && value < 24) { current = current.parentElement; value += 1; } return value; };
-    return Array.from(document.querySelectorAll('[role="article"], article')).slice(0, 16).map((node) => ({
+    const articleSelector = 'article,[role="article"]';
+    const isCommentOrReply = (node) => node?.closest?.('[role="comment"], [data-commentid], [data-testid*="comment"], [data-testid*="reply"]') !== null;
+    // Reload candidates are themselves article roots. Nested articles can be
+    // tolerated only when they are comments/replies (which are separately
+    // excluded); any other nested article remains an independent boundary.
+    const hasIndependentNestedArticle = (node, root) => Array.from(node?.querySelectorAll?.(articleSelector) || []).some((candidate) => candidate !== root && !isCommentOrReply(candidate));
+    return Array.from(document.querySelectorAll('[role="article"], article')).slice(0, 16).map((node) => {
+      const canonicalRoot = node;
+      return {
       candidateFamily: String(node.getAttribute('role') || '').toLowerCase() === 'article' ? 'ARTICLE_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE',
       visible: visible(node), attached: node.isConnected === true,
       // A reply/comment article nested inside another article is not an
       // independently trusted target-post surface. Treat either nesting
       // direction as ambiguity rather than selecting it.
-      hasNestedArticleTextSurface: node.querySelector('article,[role="article"]') !== null || node.parentElement?.closest('article,[role="article"]') !== null,
+      hasNestedArticleTextSurface: hasIndependentNestedArticle(node, canonicalRoot) || (node.parentElement?.closest(articleSelector) !== null && !isCommentOrReply(node)),
       composerDescendant: composerNode instanceof Element && (node === composerNode || composerNode.contains(node) || node.contains(composerNode)),
       commentOrReply: node.closest('[role="comment"], [data-commentid], [data-testid*="comment"], [data-testid*="reply"]') !== null,
       dialogOrDraft: node.closest('[role="dialog"]') !== null,
@@ -140,14 +148,18 @@ async function captureTargetCandidates(page, options = {}) {
       // timestamp, controls, interactive descendants, nested articles, and
       // hidden/detached surfaces are excluded without classes, IDs, or text.
       bodySubtrees: Array.from(node.querySelectorAll('div,span,p,section')).slice(0, 64).map((child) => {
-        const ownArticle = child.closest('article,[role="article"]');
+        const ownArticle = child.closest(articleSelector);
+        const commentReplyAncestor = isCommentOrReply(child);
+        const independentNestedArticle = !commentReplyAncestor && ownArticle !== null && ownArticle !== canonicalRoot;
         const excluded = child.closest('header,time,button,[role="button"],a,[role="heading"],[role="toolbar"],[role="menu"],[role="navigation"],[role="status"],[role="alert"]') !== null
-          || ownArticle !== node || child.querySelector('article,[role="article"]') !== null;
+          || independentNestedArticle || hasIndependentNestedArticle(child, canonicalRoot);
         const visibleChild = visible(child); const attachedChild = child.isConnected === true;
         const childTextNodes = Array.from(child.children).filter((item) => item instanceof Element && visible(item) && item.isConnected && !item.closest('header,time,button,[role="button"],a,[role="heading"],[role="toolbar"],[role="menu"],[role="navigation"],[role="status"],[role="alert"]')).some((item) => String(item.innerText || item.textContent || '').trim());
-        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: child.querySelector('article,[role="article"]') !== null, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
+        const articleRelation = commentReplyAncestor ? 'COMMENT_REPLY_ARTICLE' : child === canonicalRoot ? 'SELECTED_POST_ROOT' : independentNestedArticle ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
+        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
       }).filter((child) => child.visible && child.attached).slice(0, 24),
-    }));
+    };
+    });
   }, options.composerHandle || null);
 }
 

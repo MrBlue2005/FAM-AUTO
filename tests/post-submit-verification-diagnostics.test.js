@@ -383,6 +383,51 @@ test('body-block eligibility diagnostics classify bounded structural shapes with
   assert.equal(summary.ambiguousRejectedCount, 1);
 });
 
+test('canonical logical post-root relations accept same-post wrappers and reject independent, comment, and hidden boundaries', () => {
+  const samePost = (relation, overrides = {}) => bodySubtree('immutable body', { articleRelation: relation, ...overrides });
+  const inspect = (subtrees) => diagnoseArticleBodySubtrees(bodyArticle(subtrees), 'immutable body').subtrees;
+
+  // A: selected root; B/C: a feed wrapper and wrapper chain resolving to the
+  // same canonical post root. Their legacy nested flag must not override the
+  // explicit same-post relation.
+  assert.equal(inspect([samePost('SELECTED_POST_ROOT')])[0].articleRelation, 'SELECTED_POST_ROOT');
+  const feedWrapper = inspect([samePost('DESCENDANT_OF_SELECTED_POST', { nestedArticle: true })]);
+  assert.equal(feedWrapper[0].articleRelation, 'DESCENDANT_OF_SELECTED_POST');
+  assert.equal(feedWrapper[0].eligibility, 'ELIGIBLE_BODY_TEXT');
+  const wrapperChain = inspect([
+    samePost('DESCENDANT_OF_SELECTED_POST', { nestedArticle: true }),
+    samePost('DESCENDANT_OF_SELECTED_POST', { nestedArticle: true, parentBlockIndex: 1 }),
+    samePost('DESCENDANT_OF_SELECTED_POST', { nestedArticle: true, parentBlockIndex: 2 }),
+  ]);
+  assert.deepEqual(wrapperChain.map((block) => block.articleRelation), ['DESCENDANT_OF_SELECTED_POST', 'DESCENDANT_OF_SELECTED_POST', 'DESCENDANT_OF_SELECTED_POST']);
+  assert.deepEqual(wrapperChain.map((block) => block.nestedArticleDirect), [false, false, false]);
+
+  // D/E: independent embedded content and comments still reject. F is two
+  // separate candidates (duplicate handling is covered by reload tests).
+  const embedded = inspect([samePost('INDEPENDENT_NESTED_ARTICLE')])[0];
+  assert.equal(embedded.eligibility, 'REJECT_NESTED_ARTICLE');
+  const comment = inspect([samePost('COMMENT_REPLY_ARTICLE', { commentReplyAncestor: true })])[0];
+  assert.equal(comment.eligibility, 'REJECT_COMMENT_REPLY');
+  assert.equal(inspect([samePost('DESCENDANT_OF_SELECTED_POST')])[0].articleRelation, 'DESCENDANT_OF_SELECTED_POST');
+
+  // G: visibility remains independently fail-closed.
+  const hidden = inspect([samePost('DESCENDANT_OF_SELECTED_POST', { visible: false, hidden: true })])[0];
+  assert.equal(hidden.eligibility, 'REJECT_HIDDEN');
+});
+
+test('real feed-wrapper-shaped same-post body chain can isolate exact text without admitting an embedded article', () => {
+  const immutable = 'immutable body\nsecond line';
+  const samePost = diagnoseArticleBodySubtrees(bodyArticle([
+    bodySubtree(`header ${immutable} actions`, { hasDescendantText: true, hasInteractiveDescendant: true, articleRelation: 'DESCENDANT_OF_SELECTED_POST' }),
+    bodySubtree('immutable body', { articleRelation: 'DESCENDANT_OF_SELECTED_POST', parentBlockIndex: 1 }),
+    bodySubtree('second line', { articleRelation: 'DESCENDANT_OF_SELECTED_POST', parentBlockIndex: 1 }),
+  ], { hasAuthorHeaderTextSurface: true, hasActionControlTextSurface: true, textViews: { currentReader: { value: `header ${immutable} actions` }, textContent: { value: `header ${immutable} actions` }, innerText: { value: `header ${immutable} actions` }, visualText: { value: `header ${immutable} actions` }, descendantTextBlocks: { value: `header\n${immutable}\nactions` } } }), immutable);
+  assert.equal(samePost.exactContiguousBlockSequenceFound, true);
+  assert.notEqual(samePost.bodyExtractionResult, 'BODY_AMBIGUOUS');
+  const embedded = diagnoseArticleBodySubtrees(bodyArticle([bodySubtree(immutable, { articleRelation: 'INDEPENDENT_NESTED_ARTICLE' })], { hasNestedArticleTextSurface: true, textViews: { currentReader: { value: immutable }, textContent: { value: immutable }, innerText: { value: immutable }, visualText: { value: immutable }, descendantTextBlocks: { value: immutable } }, descendantTexts: [{ value: immutable, visible: true, attached: true }] }), immutable);
+  assert.equal(embedded.bodyExtractionResult, 'BODY_AMBIGUOUS');
+});
+
 test('post-candidate body-subtree correlation follows the same candidate across temporal observations', async () => {
   let snapshot = 0; let clock = 0;
   const existing = bodyArticle([bodySubtree('immutable body')], { key: 'existing' });

@@ -1,5 +1,7 @@
 # Changelog
 
+- Canonical logical post-root relation handling now prevents a selected feed-item wrapper and its same-post article descendants from being misclassified as independent nested articles. Genuine embedded posts/cards and comment/reply boundaries remain rejected; exact-body proof, zero-baseline/newness, click, retry, and outcome semantics are unchanged.
+
 - Compacted primary body-subtree detail now retains bounded structural discriminators: direct/inherited nested and hidden state, article relation, safe ancestor flags, parent/child indices, and sequence rejection context. This remains diagnostic-only under the unchanged 32 KiB/four-summary reservation.
 
 - Under the unchanged 32 KiB task-local diagnostic cap, critical body-subtree compaction now retains one deterministic primary candidate's bounded immutable-body blocks, ancestor context, and contiguous sequences before dropping secondary candidates. Aggregate counters and the four critical-summary reservation remain intact; this is diagnostics-only.

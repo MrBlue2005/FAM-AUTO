@@ -58,14 +58,33 @@ function bodyCoverage(parity) {
   return parity.normalizedLength ? 'PARTIAL_BODY_SIGNAL' : 'NO_BODY_SIGNAL';
 }
 
+const ARTICLE_RELATIONS = new Set(['SELECTED_POST_ROOT', 'DESCENDANT_OF_SELECTED_POST', 'INDEPENDENT_NESTED_ARTICLE', 'COMMENT_REPLY_ARTICLE', 'UNKNOWN']);
+
+// Capture supplies these structural facts from the selected candidate's
+// canonical logical post root. Older synthetic callers still use
+// `nestedArticle`, so retain that fail-closed fallback for compatibility.
+function resolveArticleRelation(raw = {}) {
+  if (raw?.commentReplyAncestor === true) return 'COMMENT_REPLY_ARTICLE';
+  if (ARTICLE_RELATIONS.has(raw?.articleRelation)) return raw.articleRelation;
+  if (raw?.isCanonicalPostRoot === true) return 'SELECTED_POST_ROOT';
+  if (raw?.belongsToCanonicalPostRoot === true) return 'DESCENDANT_OF_SELECTED_POST';
+  if (raw?.independentNestedArticle === true || raw?.nestedArticle === true) return 'INDEPENDENT_NESTED_ARTICLE';
+  return 'DESCENDANT_OF_SELECTED_POST';
+}
+
+function independentNestedArticle(raw = {}) {
+  return resolveArticleRelation(raw) === 'INDEPENDENT_NESTED_ARTICLE';
+}
+
 // This classification is intentionally diagnostic-only.  The verifier below
 // continues to use its pre-existing bodyBlocks selection and sequence rules.
 function classifyBodyBlock(raw, parity) {
   try {
+    const independentNested = independentNestedArticle(raw);
     const role = raw?.detached ? 'DETACHED'
       : raw?.hidden ? 'HIDDEN'
         : raw?.commentReplyAncestor ? 'COMMENT_OR_REPLY'
-          : raw?.nestedArticle || raw?.hasArticleDescendant ? 'NESTED_ARTICLE'
+          : independentNested || raw?.hasArticleDescendant ? 'NESTED_ARTICLE'
             : raw?.headerLikeAncestor ? 'HEADER_OR_AUTHOR'
               : raw?.timestampLikeAncestor ? 'TIMESTAMP'
                 : raw?.actionLikeAncestor ? 'ACTION_OR_CONTROL'
@@ -76,7 +95,7 @@ function classifyBodyBlock(raw, parity) {
       : raw?.detached ? 'REJECT_DETACHED'
         : raw?.hidden ? 'REJECT_HIDDEN'
           : raw?.commentReplyAncestor ? 'REJECT_COMMENT_REPLY'
-            : raw?.nestedArticle || raw?.hasArticleDescendant ? 'REJECT_NESTED_ARTICLE'
+            : independentNested || raw?.hasArticleDescendant ? 'REJECT_NESTED_ARTICLE'
               : raw?.headerLikeAncestor ? 'REJECT_HEADER'
                 : raw?.timestampLikeAncestor ? 'REJECT_TIMESTAMP'
                   : raw?.actionLikeAncestor ? 'REJECT_ACTION_CONTROL'
@@ -184,6 +203,7 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
     const subtrees = rawSubtrees.map((subtree, index) => {
       const parity = textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false);
       const classified = classifyBodyBlock(subtree, parity);
+      const articleRelation = resolveArticleRelation(subtree);
       return {
         candidateCorrelationId: raw.candidateCorrelationId,
         subtreeIndex: index + 1, blockIndex: index + 1,
@@ -193,13 +213,14 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         hasDirectTextNode: subtree?.hasDirectTextNode === true, hasDescendantText: subtree?.hasDescendantText === true,
         hasInteractiveDescendant: subtree?.hasInteractiveDescendant === true, hasArticleDescendant: subtree?.hasArticleDescendant === true,
         interactive: subtree?.interactive === true, interactiveAncestor: subtree?.interactiveAncestor === true,
-        nestedArticle: subtree?.nestedArticle === true, commentReplyAncestor: subtree?.commentReplyAncestor === true,
+        nestedArticle: articleRelation === 'INDEPENDENT_NESTED_ARTICLE', commentReplyAncestor: subtree?.commentReplyAncestor === true,
         headerLikeAncestor: subtree?.headerLikeAncestor === true, timestampLikeAncestor: subtree?.timestampLikeAncestor === true,
         actionLikeAncestor: subtree?.actionLikeAncestor === true,
         childTextBlockCount: bounded(subtree?.childTextBlockCount, 24), interactiveDescendantCount: bounded(subtree?.interactiveDescendantCount, 24),
         parentBlockIndex: Number.isInteger(subtree?.parentBlockIndex) && subtree.parentBlockIndex > 0 ? bounded(subtree.parentBlockIndex, 24) : null,
         blockRole: classified.blockRole, eligibility: classified.eligibility, coverage: bodyCoverage(parity),
         structuralUiExcluded: subtree?.structuralUiExcluded === true,
+        articleRelation,
         value: subtree?.value,
         ...parity,
       };
@@ -215,8 +236,9 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         block.hiddenInherited ||= parent.visible === false || parent.attached === false;
         parent = subtrees.find((item) => item.blockIndex === parent.parentBlockIndex);
       }
-      block.articleRelation = block.commentReplyAncestor ? 'COMMENT_REPLY_ARTICLE'
-        : block.nestedArticle ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
+      // The relation is captured from the canonical logical post root. Parent
+      // propagation explains nested ancestry only; it must not turn a
+      // same-post wrapper into an independent article.
     }
     // Only a text block captured from the already-qualified article and not
     // structurally classified as UI can prove the immutable body. The raw
@@ -506,8 +528,34 @@ async function inspectAcknowledgementShapes(page, options = {}) {
           return lines.join('\n');
         } catch { return ''; }
       };
+      const articleSelector = 'article,[role="article"]';
+      const isCommentOrReply = (node) => Boolean(node?.closest?.('[role="comment"],[data-commentid],[data-testid*="comment"],[data-testid*="reply"]'));
+      // A feed child is sometimes only a transport wrapper around the logical
+      // post article. Normalize only when it has one unambiguous, non-comment
+      // top-level article descendant; otherwise retain the original boundary.
+      const canonicalPostRoot = (node) => {
+        if (node?.matches?.(articleSelector)) return node;
+        const roots = Array.from(node?.querySelectorAll?.(articleSelector) || []).filter((candidate) => {
+          if (isCommentOrReply(candidate)) return false;
+          const parentArticle = candidate.parentElement?.closest?.(articleSelector);
+          return !parentArticle || !node.contains(parentArticle);
+        }).slice(0, 2);
+        return roots.length === 1 ? roots[0] : node;
+      };
+      const hasIndependentNestedArticle = (node, root) => Array.from(node?.querySelectorAll?.(articleSelector) || []).some((candidate) => candidate !== root && !isCommentOrReply(candidate));
+      const relationFor = (node, root) => {
+        if (isCommentOrReply(node)) return 'COMMENT_REPLY_ARTICLE';
+        if (node === root) return 'SELECTED_POST_ROOT';
+        const nearest = node?.closest?.(articleSelector);
+        // A wrapper on the selected-candidate → canonical-root path and a
+        // descendant whose nearest article is that root are both same-post.
+        if (nearest === root || node?.contains?.(root)) return 'DESCENDANT_OF_SELECTED_POST';
+        if (nearest && nearest !== root) return 'INDEPENDENT_NESTED_ARTICLE';
+        return hasIndependentNestedArticle(node, root) ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
+      };
       const articleNodes = Array.from(document.querySelectorAll('[role="article"], [role="feed"] > *, article')).slice(0, 16);
       const articles = articleNodes.map((node, index) => {
+        const canonicalRoot = canonicalPostRoot(node);
         const roleValue = String(node.getAttribute('role') || '').toLowerCase();
         const textContent = String(node.textContent || ''); const innerText = String(node.innerText || '');
         const currentReader = String(node.innerText || node.textContent || '');
@@ -519,7 +567,8 @@ async function inspectAcknowledgementShapes(page, options = {}) {
           const parent = child.parentElement;
           const parentOffset = subtreeNodes.indexOf(parent);
           const ancestor = (selector) => child.closest(selector);
-          const nestedArticle = child.querySelector('article,[role="article"]') !== null || child.closest('article,[role="article"]') !== node;
+          const articleRelation = relationFor(child, canonicalRoot);
+          const nestedArticle = articleRelation === 'INDEPENDENT_NESTED_ARTICLE';
           const interactive = child.matches('button,[role="button"],a,input,textarea,[contenteditable="true"]');
           const interactiveAncestor = Boolean(ancestor('button,[role="button"],a,input,textarea,[contenteditable="true"]'));
           const headerLikeAncestor = Boolean(ancestor('header,[role="heading"]'));
@@ -534,8 +583,8 @@ async function inspectAcknowledgementShapes(page, options = {}) {
           hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()),
           hasDescendantText: Array.from(child.children).some((item) => String(item.innerText || item.textContent || '').trim()),
           hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null,
-          hasArticleDescendant: child.querySelector('article,[role="article"]') !== null,
-          interactive, interactiveAncestor, nestedArticle, commentReplyAncestor, headerLikeAncestor, timestampLikeAncestor, actionLikeAncestor,
+          hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot),
+          interactive, interactiveAncestor, nestedArticle, independentNestedArticle: nestedArticle, articleRelation, commentReplyAncestor, headerLikeAncestor, timestampLikeAncestor, actionLikeAncestor,
           childTextBlockCount: Math.min(24, textChildren.length), interactiveDescendantCount: Math.min(24, child.querySelectorAll('button,[role="button"],a,input,textarea,[contenteditable="true"]').length),
           parentBlockIndex: parentOffset >= 0 ? parentOffset + 1 : null,
           readSucceeded: true,
@@ -546,7 +595,8 @@ async function inspectAcknowledgementShapes(page, options = {}) {
           containsTextSurface: Boolean(currentReader.trim()), containsMediaSurface: node.querySelector('img,video') !== null,
           containsTimestampLikeSurface: node.querySelector('time') !== null, containsActionBarLikeSurface: node.querySelector('[role="button"], button') !== null,
           hasAuthorHeaderTextSurface: node.querySelector('header,[role="heading"]') !== null,
-          hasNestedArticleTextSurface: node.querySelector('article,[role="article"]') !== null,
+          hasNestedArticleTextSurface: hasIndependentNestedArticle(node, canonicalRoot),
+          isCanonicalPostRoot: node === canonicalRoot,
           textViews: {
             currentReader: { value: currentReader, readSucceeded: true }, textContent: { value: textContent, readSucceeded: true },
             innerText: { value: innerText, readSucceeded: true }, visualText: { value: visualText(node), readSucceeded: true },

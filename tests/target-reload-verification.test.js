@@ -97,6 +97,20 @@ test('target reload accepts isolated header/action and contiguous body structure
   assert.equal(classifyRefreshedTargetCandidates([split], TEXT, { trustedNewness: true }).resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
 });
 
+test('target reload accepts same-canonical-root body wrappers but rejects independent nested articles', () => {
+  const sameRoot = candidate({ bodySubtrees: [{
+    value: TEXT, visible: true, attached: true, depthRelativeToCandidate: 2, tagFamily: 'DIV', hasDirectTextNode: true,
+    hasDescendantText: false, hasInteractiveDescendant: false, hasArticleDescendant: false,
+    articleRelation: 'DESCENDANT_OF_SELECTED_POST', nestedArticle: true, independentNestedArticle: false, readSucceeded: true,
+  }] });
+  assert.equal(classifyRefreshedTargetCandidates([sameRoot], TEXT, { trustedNewness: true }).resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
+  const embedded = candidate({
+    hasNestedArticleTextSurface: true,
+    bodySubtrees: [{ value: TEXT, visible: true, attached: true, depthRelativeToCandidate: 2, tagFamily: 'DIV', articleRelation: 'INDEPENDENT_NESTED_ARTICLE', nestedArticle: true, independentNestedArticle: true, readSucceeded: true }],
+  });
+  assert.equal(classifyRefreshedTargetCandidates([embedded], TEXT, { trustedNewness: true }).resultClass, RESULT.STRUCTURE_UNTRUSTED);
+});
+
 test('trusted body extraction accepts only structurally isolated article body blocks', () => {
   const bodyOnly = diagnoseArticleBodySubtrees(candidate(), TEXT);
   assert.equal(bodyOnly.bodyExtractionResult, BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT);

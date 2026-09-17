@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7EE canonical logical post-root relation
+
+The diagnostic observer and target-reload capture now normalize an already-selected feed-item wrapper to one bounded, unambiguous non-comment logical post article root. Descendants on that selected-wrapper-to-root path, or under that root, are same-post content; only a distinct non-comment article boundary is nested/independent. Comment/reply and embedded-card boundaries remain rejected. Exact-body equality, substring rejection, zero baseline before `ATTEMPT_STARTED`, trusted `0 -> 1` newness, one-click/one-reload limits, cleanup, `OUTCOME_UNKNOWN`, and no-retry semantics are unchanged.
+
 ## G5.7DY primary structural discriminator retention
 
 When the required body-subtree summary compacts, the retained primary candidate now keeps safe structural discriminator fields for its bounded body-bearing blocks and parent context. These distinguish direct versus inherited nested/hidden state and classify selected-post descendants, independent nested articles, and comment/reply articles without retaining text, DOM identity, selectors, or classes. Sequence context records only bounded safe rejection structure. It remains observability only; extraction and verifier semantics are unchanged.
