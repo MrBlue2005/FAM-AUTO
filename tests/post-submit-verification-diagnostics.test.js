@@ -808,12 +808,16 @@ test('target reload verification metadata is merged into the existing critical s
       baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0,
       baselineResultClass: 'BASELINE_ZERO_EXACT_POSTS', composerExcludedFromBaseline: true, commentsExcludedFromBaseline: true,
       trustedNewnessEstablished: true, postReloadExactTrustedPostCount: 1, newnessTransitionClass: 'ZERO_TO_ONE',
+      bodyDescentAdmissionSource: 'DESCENDANT_SIGNAL', candidateRootBodySignal: false, candidateDescendantBodySignal: true,
+      baselinebodyDescentAdmissionSource: 'NONE', baselinecandidateRootBodySignal: false, baselinecandidateDescendantBodySignal: false,
       rawUrl: 'https://facebook.example/private', rawText: 'private immutable post', selector: '[role=article]',
     } });
     const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'target_reload_safe.json'), 'utf8'));
     const value = persisted.records.find((item) => item.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY').postPublicationStructural.targetReloadVerification;
     assert.equal(value.resultClass, 'VERIFIED_EXACT_TARGET_POST'); assert.equal(value.navigationCount, 1);
     assert.equal(value.baselineResultClass, 'BASELINE_ZERO_EXACT_POSTS'); assert.equal(value.trustedNewnessEstablished, true); assert.equal(value.newnessTransitionClass, 'ZERO_TO_ONE');
+    assert.equal(value.bodyDescentAdmissionSource, 'DESCENDANT_SIGNAL'); assert.equal(value.candidateRootBodySignal, false); assert.equal(value.candidateDescendantBodySignal, true);
+    assert.equal(value.baselinebodyDescentAdmissionSource, 'NONE'); assert.equal(value.baselinecandidateRootBodySignal, false); assert.equal(value.baselinecandidateDescendantBodySignal, false);
     assert.doesNotMatch(JSON.stringify(persisted), /facebook\.example|private immutable|role=article/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

@@ -525,10 +525,14 @@ const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_
 const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO_TO_MULTIPLE', 'NONZERO_BASELINE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
 const BODY_EXTRACTION_RESULTS = new Set(['EXACT_BODY_DIRECT', 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION', 'EXACT_BODY_CONTIGUOUS_BLOCKS', 'BODY_SUBSTRING_ONLY', 'BODY_AMBIGUOUS', 'BODY_NOT_FOUND', 'SAFE_EVALUATION_ERROR']);
 const BODY_DESCENT_RESULTS = new Set(['EXACT_SAFE_BODY_REGION', 'BODY_SIGNAL_LOST', 'BODY_SIGNAL_SPLIT_AMBIGUOUS', 'BODY_CONTROL_INSEPARABLE', 'COMMENT_REPLY_BOUNDARY', 'INDEPENDENT_ARTICLE_BOUNDARY', 'HIDDEN_OR_DETACHED_BOUNDARY', 'INTERACTIVE_ANCESTOR_BOUNDARY', 'DEPTH_LIMIT_REACHED', 'NODE_LIMIT_REACHED', 'SAFE_EVALUATION_ERROR']);
+const BODY_DESCENT_ADMISSION_SOURCES = new Set(['NONE', 'ROOT_SIGNAL', 'DESCENDANT_SIGNAL', 'ROOT_AND_DESCENDANT_SIGNAL']);
 
 function sanitizeBodyDescent(value = {}, prefix = '') {
   const key = (name) => `${prefix}${name}`;
   return {
+    [key('bodyDescentAdmissionSource')]: BODY_DESCENT_ADMISSION_SOURCES.has(value[key('bodyDescentAdmissionSource')]) ? value[key('bodyDescentAdmissionSource')] : 'NONE',
+    [key('candidateRootBodySignal')]: value[key('candidateRootBodySignal')] === true,
+    [key('candidateDescendantBodySignal')]: value[key('candidateDescendantBodySignal')] === true,
     [key('bodyDescentAttempted')]: value[key('bodyDescentAttempted')] === true,
     [key('bodyDescentResult')]: BODY_DESCENT_RESULTS.has(value[key('bodyDescentResult')]) ? value[key('bodyDescentResult')] : 'SAFE_EVALUATION_ERROR',
     [key('bodyDescentDepth')]: Math.min(24, boundedInteger(value[key('bodyDescentDepth')]) || 0),

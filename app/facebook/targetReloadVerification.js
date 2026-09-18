@@ -3,7 +3,7 @@
 // Post-click verification deliberately has a much narrower authority than the
 // publisher. It can visit only the already-canonical task target and it never
 // holds, discovers, or clicks a publication control.
-const { diagnoseArticleBodySubtrees, BODY_EXTRACTION_RESULT, BODY_DESCENT_RESULT } = require('./acknowledgementDiagnostics');
+const { diagnoseArticleBodySubtrees, BODY_EXTRACTION_RESULT, BODY_DESCENT_RESULT, BODY_DESCENT_ADMISSION_SOURCES } = require('./acknowledgementDiagnostics');
 
 const RESULT = Object.freeze({
   VERIFIED_EXACT_TARGET_POST: 'VERIFIED_EXACT_TARGET_POST',
@@ -29,6 +29,9 @@ const BASELINE_RESULT = Object.freeze({
 });
 const bodyDescent = (body) => body?.bodyDescentResult === BODY_DESCENT_RESULT.EXACT_SAFE_BODY_REGION;
 const descentFields = (value = {}, prefix = '') => ({
+  [`${prefix}bodyDescentAdmissionSource`]: Object.values(BODY_DESCENT_ADMISSION_SOURCES).includes(value.bodyDescentAdmissionSource) ? value.bodyDescentAdmissionSource : BODY_DESCENT_ADMISSION_SOURCES.NONE,
+  [`${prefix}candidateRootBodySignal`]: value.candidateRootBodySignal === true,
+  [`${prefix}candidateDescendantBodySignal`]: value.candidateDescendantBodySignal === true,
   [`${prefix}bodyDescentAttempted`]: value.bodyDescentAttempted === true,
   [`${prefix}bodyDescentResult`]: Object.values(BODY_DESCENT_RESULT).includes(value.bodyDescentResult) ? value.bodyDescentResult : BODY_DESCENT_RESULT.SAFE_EVALUATION_ERROR,
   [`${prefix}bodyDescentDepth`]: Math.max(0, Math.min(24, Number(value.bodyDescentDepth) || 0)),
@@ -135,7 +138,7 @@ function classifyPreClickBaseline(candidates, immutableText) {
     const exact = visibleAttached.filter(({ body }) => bodyDescent(body));
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
     const nestedExact = exact.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true);
-    const bodySignals = visibleAttached.filter(({ body }) => body.candidate?.views?.some((view) => view.containsImmutableText));
+    const bodySignals = visibleAttached.filter(({ body }) => body.candidateRootBodySignal === true || body.candidateDescendantBodySignal === true);
     const untrustedBodySignals = bodySignals.filter(({ body }) => !bodyDescent(body));
     const evaluationErrors = reduced.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR);
     const base = {

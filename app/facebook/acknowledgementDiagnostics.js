@@ -32,6 +32,9 @@ const EXACT_REGION_ABSENCE_REASONS = new Set(['EXACT_REGION_PRESENT', 'NO_EXACT_
 const CONTROL_BRANCH_RELATIONS = new Set(['SAME_BRANCH_AS_BODY', 'SEPARATE_CHILD_BRANCH', 'MULTIPLE_CONTROL_BRANCHES', 'CONTROL_ANCESTOR_OF_BODY', 'BODY_ANCESTOR_OF_CONTROLS', 'UNKNOWN']);
 const BOUNDARY_TRANSITIONS = new Set(['NONE', 'BODY_SIGNAL_BECOMES_EXACT', 'BODY_SIGNAL_BECOMES_NONINTERACTIVE', 'INTERACTIVE_DESCENDANTS_BEGIN', 'CONTROL_STRUCTURE_BEGINS', 'BODY_SIGNAL_LOST', 'AMBIGUITY_BEGINS', 'SAFE_EVALUATION_ERROR']);
 const BODY_BRANCH_CLASSES = new Set(['BODY_ONLY_BRANCH', 'CONTROL_ONLY_BRANCH', 'BODY_AND_CONTROL_BRANCH', 'STRUCTURAL_UI_BRANCH', 'COMMENT_REPLY_BRANCH', 'NESTED_ARTICLE_BRANCH', 'UNKNOWN_BRANCH']);
+const BODY_DESCENT_ADMISSION_SOURCES = Object.freeze({
+  NONE: 'NONE', ROOT: 'ROOT_SIGNAL', DESCENDANT: 'DESCENDANT_SIGNAL', BOTH: 'ROOT_AND_DESCENDANT_SIGNAL',
+});
 
 function normaliseEphemeralText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -67,6 +70,15 @@ function bodyCoverage(parity) {
   if (parity.exactImmutableMatch) return 'EXACT_BODY';
   if (parity.containsImmutableText) return 'WHOLE_BODY_PLUS_EXTRA';
   return parity.normalizedLength ? 'PARTIAL_BODY_SIGNAL' : 'NO_BODY_SIGNAL';
+}
+
+function bodyDescentAdmission(candidate = {}, boundedDescendantViews = []) {
+  const candidateRootBodySignal = Array.isArray(candidate.views) && candidate.views.some((view) => view?.containsImmutableText === true);
+  const candidateDescendantBodySignal = Array.isArray(boundedDescendantViews) && boundedDescendantViews.some((view) => view?.containsImmutableText === true);
+  const bodyDescentAdmissionSource = candidateRootBodySignal
+    ? candidateDescendantBodySignal ? BODY_DESCENT_ADMISSION_SOURCES.BOTH : BODY_DESCENT_ADMISSION_SOURCES.ROOT
+    : candidateDescendantBodySignal ? BODY_DESCENT_ADMISSION_SOURCES.DESCENDANT : BODY_DESCENT_ADMISSION_SOURCES.NONE;
+  return { candidateRootBodySignal, candidateDescendantBodySignal, bodyDescentAdmissionSource };
 }
 
 const ARTICLE_RELATIONS = new Set(['SELECTED_POST_ROOT', 'DESCENDANT_OF_SELECTED_POST', 'INDEPENDENT_NESTED_ARTICLE', 'COMMENT_REPLY_ARTICLE', 'UNKNOWN']);
@@ -361,15 +373,17 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
   try {
     const immutable = normalizeImmutablePostText(immutableText);
     const candidate = diagnoseArticleTextParity(raw, immutable);
-    const plausible = candidate.visible && candidate.attached && candidate.views.some((view) => view.containsImmutableText);
-    if (!plausible) return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate, subtrees: [], bodyIsolationClass: candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS' : 'NO_BODY_SIGNAL' };
     const rawSubtrees = Array.isArray(raw.bodySubtrees) ? raw.bodySubtrees.slice(0, 24) : [];
+    const boundedDescendantViews = rawSubtrees.map((subtree) => textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false));
+    const admission = bodyDescentAdmission(candidate, boundedDescendantViews);
+    const plausible = candidate.visible && candidate.attached && admission.bodyDescentAdmissionSource !== BODY_DESCENT_ADMISSION_SOURCES.NONE;
+    if (!plausible) return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate, subtrees: [], bodyIsolationClass: candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS' : 'NO_BODY_SIGNAL', ...admission };
     const capturedToReducedIndex = new Map(rawSubtrees.map((subtree, index) => [
       Number.isInteger(subtree?.sourceBlockIndex) ? subtree.sourceBlockIndex : index + 1,
       index + 1,
     ]));
     const subtrees = rawSubtrees.map((subtree, index) => {
-      const parity = textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false);
+      const parity = boundedDescendantViews[index];
       const classified = classifyBodyBlock(subtree, parity);
       const articleRelation = resolveArticleRelation(subtree);
       return {
@@ -457,7 +471,7 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         });
       }
     }
-    const hasBody = candidate.views.some((view) => view.containsImmutableText);
+    const hasBody = admission.candidateRootBodySignal || admission.candidateDescendantBodySignal;
     const header = candidate.hasAuthorHeaderTextSurface; const actions = candidate.hasActionControlTextSurface;
     const isolate = exact.length || sequenceCount;
     const hasStructuralUi = candidate.hasAuthorHeaderTextSurface || candidate.hasActionControlTextSurface || candidate.hasTimestampTextSurface || subtrees.some((subtree) => subtree.structuralUiExcluded);
@@ -480,14 +494,14 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       minimalMatchHasInteractiveDescendant: exact.some((item) => item.hasInteractiveDescendant), minimalMatchHasArticleDescendant: exact.some((item) => item.hasArticleDescendant),
       exactContiguousBlockSequenceFound: sequenceCount > 0, exactContiguousBlockSequenceCount: bounded(sequenceCount), blockCountInBestMatch: bounded(bestBlockCount, 24),
       bestSequenceVisible: sequenceVisible, bestSequenceAttached: sequenceAttached,
-      bodyIsolationClass, bodyExtractionAttempted: true, bodyExtractionResult, ...bodyDescent,
+      bodyIsolationClass, bodyExtractionAttempted: true, bodyExtractionResult, ...admission, ...bodyDescent,
       bodyExactAfterUiExclusionCount: bounded(exact.filter(() => hasStructuralUi).length), bodyExactContiguousBlockCount: bounded(sequenceCount),
       extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
       headerOutsideBody: isolate && header, actionsOutsideBody: isolate && actions, timestampOutsideBody: isolate && candidate.hasTimestampTextSurface,
       interactiveBoundary,
     };
   } catch {
-    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, ...resolveUniqueBodyBranch(null, immutableText), bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, interactiveBoundary: diagnoseInteractiveBoundary([]) };
+    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, candidateRootBodySignal: false, candidateDescendantBodySignal: false, bodyDescentAdmissionSource: BODY_DESCENT_ADMISSION_SOURCES.NONE, ...resolveUniqueBodyBranch(null, immutableText), bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, interactiveBoundary: diagnoseInteractiveBoundary([]) };
   }
 }
 
@@ -554,6 +568,8 @@ function summarizeArticleBodySubtrees(candidates = []) {
     nearestBoundaryRegionIndex: primaryBoundary.nearestBoundaryRegionIndex,
     primaryWrapperChain: primaryBoundary.primaryWrapperChain,
     childBranches: primaryBoundary.childBranches,
+    bodyDescentAdmissionSource: Object.values(BODY_DESCENT_ADMISSION_SOURCES).includes(primaryDescent.bodyDescentAdmissionSource) ? primaryDescent.bodyDescentAdmissionSource : BODY_DESCENT_ADMISSION_SOURCES.NONE,
+    candidateRootBodySignal: primaryDescent.candidateRootBodySignal === true, candidateDescendantBodySignal: primaryDescent.candidateDescendantBodySignal === true,
     bodyDescentAttempted: primaryDescent.bodyDescentAttempted === true,
     bodyDescentResult: Object.values(BODY_DESCENT_RESULT).includes(primaryDescent.bodyDescentResult) ? primaryDescent.bodyDescentResult : BODY_DESCENT_RESULT.SAFE_EVALUATION_ERROR,
     bodyDescentDepth: bounded(primaryDescent.bodyDescentDepth, 24), bodyDescentNodesInspected: bounded(primaryDescent.bodyDescentNodesInspected, 128),
@@ -1025,6 +1041,8 @@ module.exports = {
   summarizeArticleTextParity,
   BODY_EXTRACTION_RESULT,
   BODY_DESCENT_RESULT,
+  BODY_DESCENT_ADMISSION_SOURCES,
+  bodyDescentAdmission,
   createAcknowledgementShapeObserver,
   inspectAcknowledgementShapes,
 };
