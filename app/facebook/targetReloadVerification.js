@@ -201,9 +201,10 @@ async function captureTargetCandidates(page, options = {}) {
       hasTimestampTextSurface: node.querySelector('time') !== null,
       textViews: { currentReader: { value: String(node.innerText || ''), readSucceeded: true }, textContent: { value: String(node.textContent || ''), readSucceeded: true }, innerText: { value: String(node.innerText || ''), readSucceeded: true }, visualText: { value: String(node.innerText || ''), readSucceeded: true }, descendantTextBlocks: { value: '', readSucceeded: true } },
       descendantTexts: Array.from(node.querySelectorAll('div,span,p')).slice(0, 24).map((child) => ({ value: String(child.innerText || child.textContent || ''), visible: visible(child), attached: child.isConnected === true })),
-      // Structural body blocks are bounded to this selected article. Header,
-      // timestamp, controls, interactive descendants, nested articles, and
-      // hidden/detached surfaces are excluded without classes, IDs, or text.
+      // Structural body blocks are bounded to this selected article. Retain
+      // hidden/detached snapshot metadata so the shared descent can reject a
+      // sole unsafe body branch or preserve duplicate-body ambiguity. Such
+      // nodes remain ineligible for exact proof inside that helper.
       bodySubtrees: bodyNodes.map((child, childIndex) => {
         const ownArticle = child.closest(articleSelector);
         const commentReplyAncestor = isCommentOrReply(child);
@@ -215,8 +216,8 @@ async function captureTargetCandidates(page, options = {}) {
         const articleRelation = commentReplyAncestor ? 'COMMENT_REPLY_ARTICLE' : child === canonicalRoot ? 'SELECTED_POST_ROOT' : independentNestedArticle ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
         const interactive = child.matches('button,[role="button"],a');
         const interactiveAncestor = child.parentElement?.closest('button,[role="button"],a') !== null;
-        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), sourceBlockIndex: childIndex + 1, parentSourceBlockIndex: capturedParentIndex(child), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, interactive, interactiveAncestor, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
-      }).filter((child) => child.visible && child.attached).slice(0, 24),
+        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, hidden: !visibleChild, detached: !attachedChild, depthRelativeToCandidate: depth(child, node), sourceBlockIndex: childIndex + 1, parentSourceBlockIndex: capturedParentIndex(child), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, interactive, interactiveAncestor, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
+      }).slice(0, 24),
     };
       }),
     };

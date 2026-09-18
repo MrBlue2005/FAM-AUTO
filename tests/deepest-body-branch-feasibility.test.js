@@ -47,3 +47,28 @@ test('G5.7EV bounds are independent and preserve the 20-wrapper safe path', () =
 test('G5.7EV never promotes substring, broad wrapper, or interactive text to exact proof', () => {
   for (const root of [signal([]), leaf({ structuralUiExcluded: true }), leaf({ interactive: true }), leaf({ interactiveAncestor: true })]) assert.notEqual(run(root).bodyDescentResult, TERMINAL.EXACT_SAFE_BODY_REGION);
 });
+
+test('G5.7FA hidden and detached body-branch matrix remains fail closed without polluting control-only paths', () => {
+  const hiddenBodyLeaf = leaf({ visible: false });
+  const hiddenBodyWrapper = signal([leaf()], { visible: false });
+  const hiddenControl = shape({ visible: false, interactive: true });
+  const detachedBodyDuplicate = leaf({ visible: false, attached: false });
+  const hiddenBodyDuplicate = leaf({ visible: false });
+  const detachedControl = shape({ visible: false, attached: false, interactive: true });
+
+  const fixtures = {
+    A: [repeated(5, hiddenBodyLeaf), TERMINAL.HIDDEN_OR_DETACHED_BOUNDARY],
+    B: [repeated(5, hiddenBodyWrapper), TERMINAL.HIDDEN_OR_DETACHED_BOUNDARY],
+    C: [repeated(5, signal([leaf(), hiddenControl])), TERMINAL.EXACT_SAFE_BODY_REGION],
+    D: [repeated(5, signal([leaf(), detachedBodyDuplicate])), TERMINAL.BODY_SIGNAL_SPLIT_AMBIGUOUS],
+    E: [repeated(5, signal([leaf(), hiddenBodyDuplicate])), TERMINAL.BODY_SIGNAL_SPLIT_AMBIGUOUS],
+    F: [repeated(5, signal([leaf(), detachedControl])), TERMINAL.EXACT_SAFE_BODY_REGION],
+    G: [repeated(5, signal([signal([leaf(), hiddenBodyDuplicate])])), TERMINAL.BODY_SIGNAL_SPLIT_AMBIGUOUS],
+  };
+
+  for (const [name, [root, expected]] of Object.entries(fixtures)) {
+    const outcome = run(root);
+    assert.equal(outcome.bodyDescentResult, expected, name);
+    assert.equal(outcome.bodyDescentBodySignalSplits, expected === TERMINAL.BODY_SIGNAL_SPLIT_AMBIGUOUS ? 1 : 0, `${name} split count`);
+  }
+});
