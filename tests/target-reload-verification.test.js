@@ -18,6 +18,24 @@ function candidate(overrides = {}) {
     ...overrides,
   };
 }
+function bodyNode(overrides = {}, children = []) {
+  return { value: '', visible: true, attached: true, articleRelation: 'DESCENDANT_OF_SELECTED_POST', hasDirectTextNode: false, hasDescendantText: true, hasInteractiveDescendant: false, hasArticleDescendant: false, readSucceeded: true, children, ...overrides };
+}
+function repeatedBodyWrappers(count, leaf) {
+  let current = leaf;
+  for (let index = 0; index < count; index += 1) current = bodyNode({ value: `wrapper ${TEXT}` }, [current]);
+  return current;
+}
+function flattenBodyTree(root) {
+  const rows = [];
+  const visit = (node, parentBlockIndex = null, depth = 1) => {
+    const blockIndex = rows.length + 1;
+    rows.push({ ...node, parentBlockIndex, depthRelativeToCandidate: depth, children: undefined });
+    for (const child of node.children || []) visit(child, blockIndex, depth + 1);
+  };
+  visit(root);
+  return rows;
+}
 
 test('target reload classifier accepts only one structurally exact, trusted-new post', () => {
   const result = classifyRefreshedTargetCandidates([candidate()], TEXT, { trustedNewness: true });
@@ -46,6 +64,24 @@ test('pre-click baseline counts exact trusted body structures but fails closed f
     { value: 'Second line', visible: true, attached: true, depthRelativeToCandidate: 1, tagFamily: 'DIV', readSucceeded: true },
   ] });
   assert.equal(classifyPreClickBaseline(discovery([contiguous]), TEXT).baselineResultClass, BASELINE_RESULT.ONE);
+});
+
+test('G5.7EV shares bounded unique-body descent between baseline and target reload', async () => {
+  const exactLeaf = bodyNode({ value: TEXT, hasDirectTextNode: true, hasDescendantText: false });
+  const wrapperCandidate = candidate({ bodySubtrees: flattenBodyTree(repeatedBodyWrappers(20, exactLeaf)) });
+  assert.equal(classifyPreClickBaseline(discovery([wrapperCandidate]), TEXT).baselineResultClass, BASELINE_RESULT.ONE);
+
+  const inseparable = candidate({ bodySubtrees: flattenBodyTree(repeatedBodyWrappers(2, bodyNode({ value: `wrapper ${TEXT}`, hasInteractiveDescendant: true }))) });
+  assert.equal(classifyPreClickBaseline(discovery([inseparable]), TEXT).baselineResultClass, BASELINE_RESULT.UNTRUSTED_BODY_SIGNAL);
+
+  const clean = candidate({ textViews: { currentReader: { value: 'other' }, textContent: { value: 'other' }, innerText: { value: 'other' }, visualText: { value: 'other' }, descendantTextBlocks: { value: 'other' } }, descendantTexts: [], bodySubtrees: [] });
+  const zero = classifyPreClickBaseline(discovery([clean]), TEXT);
+  assert.equal(zero.baselineResultClass, BASELINE_RESULT.ZERO);
+  const page = { url: () => 'https://www.facebook.com/groups/exact', goto: async () => {} };
+  const verified = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: (actual, expected) => { if (actual !== expected) throw new Error('wrong target'); }, immutableText: TEXT, captureCandidates: async () => [wrapperCandidate], trustedNewness: true, preClickBaseline: zero });
+  assert.equal(verified.resultClass, RESULT.VERIFIED_EXACT_TARGET_POST);
+  const duplicate = await verifyRefreshedTargetPost(page, { targetCanonical: page.url(), verifyTarget: () => {}, immutableText: TEXT, captureCandidates: async () => [wrapperCandidate, wrapperCandidate], trustedNewness: true, preClickBaseline: zero });
+  assert.equal(duplicate.resultClass, RESULT.AMBIGUOUS);
 });
 
 test('pre-click baseline authorizes only a complete observed feed with no body signal and fails closed for unresolved discovery', () => {

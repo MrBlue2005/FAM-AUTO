@@ -1,5 +1,7 @@
 # Changelog
 
+- Production exact-body proof for an already-qualified canonical post now uses one bounded unique-body-branch descent shared by the pre-click baseline and post-reload verifier. Repeated same-post wrappers are traversal scaffolding; separately captured control-only branches are ignored, while ambiguous, lost, interactive, nested, hidden, detached, or inseparable body paths fail closed. The fixed bounds are depth 24, immediate children 16, and inspected nodes 128. Clean-zero admission, trusted `0 -> 1` newness, one-click/no-retry, acknowledgement, and `OUTCOME_UNKNOWN` semantics are unchanged.
+
 - Ambiguous interactive-boundary diagnostics now retain a deterministic safe reason, exact-region absence classification, bounded primary wrapper-chain transitions, and immediate body/control branch evidence in the existing protected body-subtree summary. The fixed 32 KiB cap and four-summary reservation remain unchanged; this is diagnostics-only and does not alter extraction, baseline/newness, acknowledgement, click, retry, or outcome semantics.
 
 - Post-candidate body-subtree diagnostics now classify whether immutable text inside a same-post wrapper with descendant controls has a separately captured non-interactive body region. The bounded, privacy-safe interactive-boundary evidence is retained inside the existing protected terminal summary only; extraction, baseline admission, verification, click, and retry behavior are unchanged.

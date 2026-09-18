@@ -524,6 +524,20 @@ const TARGET_RELOAD_AMBIGUITY_REASONS = new Set(['NONE', 'MULTIPLE_EXACT_CANDIDA
 const BASELINE_RESULT_CLASSES = new Set(['BASELINE_ZERO_EXACT_POSTS', 'BASELINE_ONE_EXACT_POST', 'BASELINE_MULTIPLE_EXACT_POSTS', 'BASELINE_NO_CANDIDATES_OBSERVED', 'BASELINE_INCOMPLETE_DISCOVERY', 'BASELINE_UNTRUSTED_BODY_SIGNAL', 'BASELINE_TARGET_MISMATCH', 'BASELINE_UNAVAILABLE', 'BASELINE_SAFE_EVALUATION_ERROR']);
 const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO_TO_MULTIPLE', 'NONZERO_BASELINE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR']);
 const BODY_EXTRACTION_RESULTS = new Set(['EXACT_BODY_DIRECT', 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION', 'EXACT_BODY_CONTIGUOUS_BLOCKS', 'BODY_SUBSTRING_ONLY', 'BODY_AMBIGUOUS', 'BODY_NOT_FOUND', 'SAFE_EVALUATION_ERROR']);
+const BODY_DESCENT_RESULTS = new Set(['EXACT_SAFE_BODY_REGION', 'BODY_SIGNAL_LOST', 'BODY_SIGNAL_SPLIT_AMBIGUOUS', 'BODY_CONTROL_INSEPARABLE', 'COMMENT_REPLY_BOUNDARY', 'INDEPENDENT_ARTICLE_BOUNDARY', 'HIDDEN_OR_DETACHED_BOUNDARY', 'INTERACTIVE_ANCESTOR_BOUNDARY', 'DEPTH_LIMIT_REACHED', 'NODE_LIMIT_REACHED', 'SAFE_EVALUATION_ERROR']);
+
+function sanitizeBodyDescent(value = {}, prefix = '') {
+  const key = (name) => `${prefix}${name}`;
+  return {
+    [key('bodyDescentAttempted')]: value[key('bodyDescentAttempted')] === true,
+    [key('bodyDescentResult')]: BODY_DESCENT_RESULTS.has(value[key('bodyDescentResult')]) ? value[key('bodyDescentResult')] : 'SAFE_EVALUATION_ERROR',
+    [key('bodyDescentDepth')]: Math.min(24, boundedInteger(value[key('bodyDescentDepth')]) || 0),
+    [key('bodyDescentNodesInspected')]: Math.min(128, boundedInteger(value[key('bodyDescentNodesInspected')]) || 0),
+    [key('bodyDescentUniqueBranchSteps')]: Math.min(24, boundedInteger(value[key('bodyDescentUniqueBranchSteps')]) || 0),
+    [key('bodyDescentControlOnlyBranchesIgnored')]: Math.min(24, boundedInteger(value[key('bodyDescentControlOnlyBranchesIgnored')]) || 0),
+    [key('bodyDescentBodySignalSplits')]: Math.min(24, boundedInteger(value[key('bodyDescentBodySignalSplits')]) || 0),
+  };
+}
 
 function sanitizeTargetReloadVerification(value = {}) {
   const count = (key) => boundedInteger(value[key]) || 0;
@@ -543,6 +557,7 @@ function sanitizeTargetReloadVerification(value = {}) {
     baselineCandidateEvaluationErrorCount: Math.min(16, count('baselineCandidateEvaluationErrorCount')),
     baselineResultClass: BASELINE_RESULT_CLASSES.has(value.baselineResultClass) ? value.baselineResultClass : 'BASELINE_SAFE_EVALUATION_ERROR',
     composerExcludedFromBaseline: value.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: value.commentsExcludedFromBaseline === true,
+    ...sanitizeBodyDescent(value), ...sanitizeBodyDescent(value, 'baseline'),
     trustedNewnessEstablished: value.trustedNewnessEstablished === true,
     postReloadExactTrustedPostCount: Math.min(16, count('postReloadExactTrustedPostCount')),
     newnessTransitionClass: NEWNESS_TRANSITION_CLASSES.has(value.newnessTransitionClass) ? value.newnessTransitionClass : 'SAFE_EVALUATION_ERROR',
@@ -786,6 +801,7 @@ function sanitizePostCandidateBodySubtreeSummary(value = {}) {
     firstBodyBranchIndex: value.firstBodyBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstBodyBranchIndex) || 0), firstControlBranchIndex: value.firstControlBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstControlBranchIndex) || 0), nearestBoundaryRegionIndex: value.nearestBoundaryRegionIndex === null ? null : Math.min(24, boundedInteger(value.nearestBoundaryRegionIndex) || 0),
     primaryWrapperChain: Array.isArray(value.primaryWrapperChain) ? value.primaryWrapperChain.slice(0, 12).map(sanitizePrimaryWrapperChainRegion) : [],
     childBranches: Array.isArray(value.childBranches) ? value.childBranches.slice(0, 12).map(sanitizeInteractiveBoundaryBranch) : [],
+    ...sanitizeBodyDescent(value),
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }

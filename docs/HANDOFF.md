@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7EV unique body-branch descent production proof
+
+Pre-click baseline admission and post-reload trusted-post classification now share the same strict, bounded exact-body primitive for an already-selected canonical same-post candidate. It descends only through one immediate body-bearing child branch at a time (depth 24, 16 children per level, 128 inspected nodes). Repeated wrappers are scaffolding; separate control-only branches do not invalidate an otherwise safe non-interactive exact leaf. Split/lost body signals, inseparable body/control structure, comment/reply or independent-article crossings, hidden/detached regions, and interactive ancestry remain fail-closed. This adds safe aggregate descent fields to the existing protected body-subtree summary only; the 32 KiB/four-summary reservation is unchanged. `ffed2b5` clean-zero admission, trusted `0 -> 1` newness, acknowledgement, one-click, marker order, cleanup, no-retry, and `OUTCOME_UNKNOWN` behavior remain unchanged.
+
 ## G5.7ER ambiguous interactive-boundary refinement
 
 The existing protected body-subtree terminal summary now retains a deterministic, privacy-safe explanation for ambiguous body/control structure: one primary ambiguity reason, exact-region absence classification, bounded primary wrapper-chain transitions, immediate body/control branch relations, and nearest local boundary indices. Under the unchanged 32 KiB/four-critical-summary reservation, aggregate classification and primary-chain/decisive branch evidence yield before secondary wrapper detail. This is observation-only: body extraction, `REJECT_INTERACTIVE`, canonical roots, baseline/newness, acknowledgement, click, retry, cleanup, and `OUTCOME_UNKNOWN` behavior are unchanged.

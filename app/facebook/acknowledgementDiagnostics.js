@@ -1,7 +1,9 @@
 'use strict';
 
-// This module is deliberately observation-only.  It never supplies a success
-// predicate and must not retain Facebook text, accessible names, or DOM IDs.
+// This module reduces Facebook DOM text to bounded parity facts. The shared
+// unique-body descent is the strict proof primitive for already-qualified
+// post candidates; it never discovers candidates or supplies click authority.
+const { BODY_DESCENT_RESULT, resolveUniqueBodyBranch } = require('./uniqueBodyBranchDescent');
 const ACKNOWLEDGEMENT_PATTERN = /postarea (ta )?(a fost|este acum) publicat[ăa]|your post (was|is now) published/i;
 const MAX_ACKNOWLEDGEMENT_CANDIDATES = 16;
 const MAX_ACKNOWLEDGEMENT_SNAPSHOTS = 6;
@@ -362,6 +364,10 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
     const plausible = candidate.visible && candidate.attached && candidate.views.some((view) => view.containsImmutableText);
     if (!plausible) return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate, subtrees: [], bodyIsolationClass: candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS' : 'NO_BODY_SIGNAL' };
     const rawSubtrees = Array.isArray(raw.bodySubtrees) ? raw.bodySubtrees.slice(0, 24) : [];
+    const capturedToReducedIndex = new Map(rawSubtrees.map((subtree, index) => [
+      Number.isInteger(subtree?.sourceBlockIndex) ? subtree.sourceBlockIndex : index + 1,
+      index + 1,
+    ]));
     const subtrees = rawSubtrees.map((subtree, index) => {
       const parity = textViewParity('INNER_TEXT', subtree?.value, immutable, subtree?.readSucceeded !== false);
       const classified = classifyBodyBlock(subtree, parity);
@@ -379,7 +385,8 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
         headerLikeAncestor: subtree?.headerLikeAncestor === true, timestampLikeAncestor: subtree?.timestampLikeAncestor === true,
         actionLikeAncestor: subtree?.actionLikeAncestor === true,
         childTextBlockCount: bounded(subtree?.childTextBlockCount, 24), interactiveDescendantCount: bounded(subtree?.interactiveDescendantCount, 24),
-        parentBlockIndex: Number.isInteger(subtree?.parentBlockIndex) && subtree.parentBlockIndex > 0 ? bounded(subtree.parentBlockIndex, 24) : null,
+        parentBlockIndex: Number.isInteger(subtree?.parentSourceBlockIndex) ? (capturedToReducedIndex.get(subtree.parentSourceBlockIndex) || null)
+          : Number.isInteger(subtree?.parentBlockIndex) && subtree.parentBlockIndex > 0 ? bounded(subtree.parentBlockIndex, 24) : null,
         blockRole: classified.blockRole, eligibility: classified.eligibility, coverage: bodyCoverage(parity),
         structuralUiExcluded: subtree?.structuralUiExcluded === true,
         articleRelation,
@@ -403,6 +410,9 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       // same-post wrapper into an independent article.
     }
     const interactiveBoundary = diagnoseInteractiveBoundary(subtrees);
+    // Shared production admission primitive; surrounding aggregates remain
+    // diagnostic explanation and cannot independently prove a post body.
+    const bodyDescent = resolveUniqueBodyBranch(subtrees, immutable);
     // Only a text block captured from the already-qualified article and not
     // structurally classified as UI can prove the immutable body. The raw
     // Facebook text never escapes this function.
@@ -452,8 +462,8 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
     const isolate = exact.length || sequenceCount;
     const hasStructuralUi = candidate.hasAuthorHeaderTextSurface || candidate.hasActionControlTextSurface || candidate.hasTimestampTextSurface || subtrees.some((subtree) => subtree.structuralUiExcluded);
     const bodyExtractionResult = candidate.hasNestedArticleTextSurface ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS
-      : exact.length ? hasStructuralUi ? BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION : BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT
-        : sequenceCount ? BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS
+      : bodyDescent.bodyDescentResult === BODY_DESCENT_RESULT.EXACT_SAFE_BODY_REGION ? bodyDescent.proof === 'CONTIGUOUS_EXACT_BLOCKS' ? BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS
+        : hasStructuralUi ? BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION : BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT
           : hasBody ? BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY : BODY_EXTRACTION_RESULT.BODY_NOT_FOUND;
     const bodyIsolationClass = candidate.hasNestedArticleTextSurface ? 'AMBIGUOUS'
       : isolate && header && actions ? 'BODY_WITH_HEADER_AND_ACTIONS_OUTSIDE'
@@ -470,14 +480,14 @@ function diagnoseArticleBodySubtrees(raw = {}, immutableText) {
       minimalMatchHasInteractiveDescendant: exact.some((item) => item.hasInteractiveDescendant), minimalMatchHasArticleDescendant: exact.some((item) => item.hasArticleDescendant),
       exactContiguousBlockSequenceFound: sequenceCount > 0, exactContiguousBlockSequenceCount: bounded(sequenceCount), blockCountInBestMatch: bounded(bestBlockCount, 24),
       bestSequenceVisible: sequenceVisible, bestSequenceAttached: sequenceAttached,
-      bodyIsolationClass, bodyExtractionAttempted: true, bodyExtractionResult,
+      bodyIsolationClass, bodyExtractionAttempted: true, bodyExtractionResult, ...bodyDescent,
       bodyExactAfterUiExclusionCount: bounded(exact.filter(() => hasStructuralUi).length), bodyExactContiguousBlockCount: bounded(sequenceCount),
       extraTextBeforeBody: candidate.hasExtraTextBeforeImmutable, extraTextAfterBody: candidate.hasExtraTextAfterImmutable,
       headerOutsideBody: isolate && header, actionsOutsideBody: isolate && actions, timestampOutsideBody: isolate && candidate.hasTimestampTextSurface,
       interactiveBoundary,
     };
   } catch {
-    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, interactiveBoundary: diagnoseInteractiveBoundary([]) };
+    return { candidateCorrelationId: raw.candidateCorrelationId, inspected: false, candidate: diagnoseArticleTextParity(raw, immutableText), subtrees: [], bodyIsolationClass: 'SAFE_EVALUATION_ERROR', bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, ...resolveUniqueBodyBranch(null, immutableText), bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, interactiveBoundary: diagnoseInteractiveBoundary([]) };
   }
 }
 
@@ -495,6 +505,7 @@ function summarizeArticleBodySubtrees(candidates = []) {
   const rejected = (eligibility) => blocks.filter((block) => block.eligibility === eligibility).length;
   const boundaries = inspected.map((candidate) => candidate.interactiveBoundary || diagnoseInteractiveBoundary([]));
   const primaryBoundary = boundaries.find((boundary) => boundary.interactiveWrapperCount > 0) || boundaries[0] || diagnoseInteractiveBoundary([]);
+  const primaryDescent = inspected.find((candidate) => candidate.bodyDescentResult !== BODY_DESCENT_RESULT.BODY_SIGNAL_LOST) || inspected[0] || {};
   const bestObservedBlockPattern = blocks.some((block) => block.coverage === 'EXACT_BODY' && block.hasDirectTextNode) ? 'EXACT_LEAF_EXISTS'
     : blocks.some((block) => block.coverage === 'EXACT_BODY') ? 'EXACT_WRAPPER_EXISTS'
       : sequences.some((sequence) => sequence.sequenceExactImmutableMatch && sequence.sequenceBlockCount > 1) ? 'BODY_SPLIT_ACROSS_SIBLINGS'
@@ -543,6 +554,10 @@ function summarizeArticleBodySubtrees(candidates = []) {
     nearestBoundaryRegionIndex: primaryBoundary.nearestBoundaryRegionIndex,
     primaryWrapperChain: primaryBoundary.primaryWrapperChain,
     childBranches: primaryBoundary.childBranches,
+    bodyDescentAttempted: primaryDescent.bodyDescentAttempted === true,
+    bodyDescentResult: Object.values(BODY_DESCENT_RESULT).includes(primaryDescent.bodyDescentResult) ? primaryDescent.bodyDescentResult : BODY_DESCENT_RESULT.SAFE_EVALUATION_ERROR,
+    bodyDescentDepth: bounded(primaryDescent.bodyDescentDepth, 24), bodyDescentNodesInspected: bounded(primaryDescent.bodyDescentNodesInspected, 128),
+    bodyDescentUniqueBranchSteps: bounded(primaryDescent.bodyDescentUniqueBranchSteps, 24), bodyDescentControlOnlyBranchesIgnored: bounded(primaryDescent.bodyDescentControlOnlyBranchesIgnored, 24), bodyDescentBodySignalSplits: bounded(primaryDescent.bodyDescentBodySignalSplits, 24),
     bestObservedBlockPattern, detailTruncated: false, candidates,
   };
 }
@@ -1009,6 +1024,7 @@ module.exports = {
   summarizeArticleBodySubtrees,
   summarizeArticleTextParity,
   BODY_EXTRACTION_RESULT,
+  BODY_DESCENT_RESULT,
   createAcknowledgementShapeObserver,
   inspectAcknowledgementShapes,
 };

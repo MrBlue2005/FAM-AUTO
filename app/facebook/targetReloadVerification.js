@@ -3,7 +3,7 @@
 // Post-click verification deliberately has a much narrower authority than the
 // publisher. It can visit only the already-canonical task target and it never
 // holds, discovers, or clicks a publication control.
-const { diagnoseArticleBodySubtrees, BODY_EXTRACTION_RESULT } = require('./acknowledgementDiagnostics');
+const { diagnoseArticleBodySubtrees, BODY_EXTRACTION_RESULT, BODY_DESCENT_RESULT } = require('./acknowledgementDiagnostics');
 
 const RESULT = Object.freeze({
   VERIFIED_EXACT_TARGET_POST: 'VERIFIED_EXACT_TARGET_POST',
@@ -26,6 +26,16 @@ const BASELINE_RESULT = Object.freeze({
   TARGET_MISMATCH: 'BASELINE_TARGET_MISMATCH',
   UNAVAILABLE: 'BASELINE_UNAVAILABLE',
   SAFE_EVALUATION_ERROR: 'BASELINE_SAFE_EVALUATION_ERROR',
+});
+const bodyDescent = (body) => body?.bodyDescentResult === BODY_DESCENT_RESULT.EXACT_SAFE_BODY_REGION;
+const descentFields = (value = {}, prefix = '') => ({
+  [`${prefix}bodyDescentAttempted`]: value.bodyDescentAttempted === true,
+  [`${prefix}bodyDescentResult`]: Object.values(BODY_DESCENT_RESULT).includes(value.bodyDescentResult) ? value.bodyDescentResult : BODY_DESCENT_RESULT.SAFE_EVALUATION_ERROR,
+  [`${prefix}bodyDescentDepth`]: Math.max(0, Math.min(24, Number(value.bodyDescentDepth) || 0)),
+  [`${prefix}bodyDescentNodesInspected`]: Math.max(0, Math.min(128, Number(value.bodyDescentNodesInspected) || 0)),
+  [`${prefix}bodyDescentUniqueBranchSteps`]: Math.max(0, Math.min(24, Number(value.bodyDescentUniqueBranchSteps) || 0)),
+  [`${prefix}bodyDescentControlOnlyBranchesIgnored`]: Math.max(0, Math.min(24, Number(value.bodyDescentControlOnlyBranchesIgnored) || 0)),
+  [`${prefix}bodyDescentBodySignalSplits`]: Math.max(0, Math.min(24, Number(value.bodyDescentBodySignalSplits) || 0)),
 });
 
 function summary(result = {}) {
@@ -63,6 +73,7 @@ function summary(result = {}) {
     baselineUntrustedBodySignalCount: Math.max(0, Math.min(16, Number(result.baselineUntrustedBodySignalCount) || 0)),
     baselineCandidateEvaluationErrorCount: Math.max(0, Math.min(16, Number(result.baselineCandidateEvaluationErrorCount) || 0)),
     baselineResultClass, composerExcludedFromBaseline: result.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: result.commentsExcludedFromBaseline === true,
+    ...descentFields(result), ...descentFields(result, 'baseline'),
     trustedNewnessEstablished, postReloadExactTrustedPostCount: postCount, newnessTransitionClass: transition,
   };
 }
@@ -75,11 +86,12 @@ function classifyRefreshedTargetCandidates(candidates, immutableText, options = 
     const rows = eligibleCandidates(candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `RELOAD_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
-    const exact = visibleAttached.filter(({ body }) => [BODY_EXTRACTION_RESULT.EXACT_BODY_DIRECT, BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION, BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS].includes(body.bodyExtractionResult));
-    const nestedExact = visibleAttached.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface === true && (body.minimalExactBodySubtreeFound || body.exactContiguousBlockSequenceFound));
+    const exact = visibleAttached.filter(({ body }) => bodyDescent(body));
+    const nestedExact = visibleAttached.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface === true && bodyDescent(body));
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
-    const base = { candidateCount: rows.length, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length + nestedExact.length, bodyExtractionAttempted: true, bodyExtractionResult: trusted.length === 1 ? trusted[0].body.bodyExtractionResult : trusted.length > 1 || nestedExact.length ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS : visibleAttached.find(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY)?.body.bodyExtractionResult || BODY_EXTRACTION_RESULT.BODY_NOT_FOUND, bodyExactAfterUiExclusionCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION).length, bodyExactContiguousBlockCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS).length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0 };
-    if (!trusted.length) return { ...base, resultClass: nestedExact.length ? RESULT.STRUCTURE_UNTRUSTED : RESULT.NOT_FOUND, ambiguityReason: nestedExact.length ? 'NESTED_ARTICLE' : 'NONE' };
+    const primaryDescent = visibleAttached.find(({ body }) => body.bodyDescentAttempted) || {};
+    const base = { candidateCount: rows.length, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length + nestedExact.length, bodyExtractionAttempted: true, bodyExtractionResult: trusted.length === 1 ? trusted[0].body.bodyExtractionResult : trusted.length > 1 || nestedExact.length ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS : visibleAttached.find(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY)?.body.bodyExtractionResult || BODY_EXTRACTION_RESULT.BODY_NOT_FOUND, bodyExactAfterUiExclusionCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION).length, bodyExactContiguousBlockCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS).length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0, ...descentFields(primaryDescent.body || {}) };
+    if (!trusted.length) return { ...base, resultClass: nestedExact.length || visibleAttached.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true) ? RESULT.STRUCTURE_UNTRUSTED : RESULT.NOT_FOUND, ambiguityReason: nestedExact.length || visibleAttached.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true) ? 'NESTED_ARTICLE' : 'NONE' };
     if (trusted.length > 1) return { ...base, resultClass: RESULT.AMBIGUOUS, ambiguityReason: 'MULTIPLE_EXACT_CANDIDATES' };
     if (options.trustedNewness !== true) return { ...base, resultClass: RESULT.DUPLICATE_UNRESOLVED, ambiguityReason: 'NO_TRUSTED_NEWNESS' };
     return { ...base, resultClass: RESULT.VERIFIED_EXACT_TARGET_POST, ambiguityReason: 'NONE' };
@@ -120,11 +132,11 @@ function classifyPreClickBaseline(candidates, immutableText) {
     const rows = eligibleCandidates(discovery.candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `BASELINE_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
-    const exact = visibleAttached.filter(({ body }) => body.minimalExactBodySubtreeFound || body.exactContiguousBlockSequenceFound);
+    const exact = visibleAttached.filter(({ body }) => bodyDescent(body));
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
     const nestedExact = exact.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true);
     const bodySignals = visibleAttached.filter(({ body }) => body.candidate?.views?.some((view) => view.containsImmutableText));
-    const untrustedBodySignals = bodySignals.filter(({ body }) => !body.minimalExactBodySubtreeFound && !body.exactContiguousBlockSequenceFound);
+    const untrustedBodySignals = bodySignals.filter(({ body }) => !bodyDescent(body));
     const evaluationErrors = reduced.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR);
     const base = {
       baselineAttempted: true, baselineCanonicalTargetValid: true,
@@ -134,6 +146,7 @@ function classifyPreClickBaseline(candidates, immutableText) {
       baselineUntrustedBodySignalCount: untrustedBodySignals.length, baselineCandidateEvaluationErrorCount: evaluationErrors.length,
       composerExcludedFromBaseline: discovery.candidates.some((candidate) => candidate?.composerDescendant === true),
       commentsExcludedFromBaseline: discovery.candidates.some((candidate) => candidate?.commentOrReply === true),
+      ...descentFields((visibleAttached.find(({ body }) => body.bodyDescentAttempted) || {}).body || {}),
     };
     if (!discovery.discoveryComplete || discovery.candidateCapReached) return { ...base, baselineResultClass: BASELINE_RESULT.INCOMPLETE_DISCOVERY };
     if (rows.length === 0 || visibleAttached.length === 0) return { ...base, baselineResultClass: BASELINE_RESULT.NO_CANDIDATES };
@@ -162,6 +175,17 @@ async function captureTargetCandidates(page, options = {}) {
       discovery: { discoveryComplete: nodes.length < 16, candidateCapReached: nodes.length >= 16 },
       candidates: nodes.slice(0, 16).map((node) => {
       const canonicalRoot = node;
+      const bodyNodes = Array.from(node.querySelectorAll('div,span,p,section')).slice(0, 64);
+      const bodyIndexByNode = new Map(bodyNodes.map((child, index) => [child, index + 1]));
+      const capturedParentIndex = (child) => {
+        let parent = child.parentElement;
+        for (let depthValue = 0; parent && depthValue < 24; depthValue += 1) {
+          if (bodyIndexByNode.has(parent)) return bodyIndexByNode.get(parent);
+          if (parent === canonicalRoot) break;
+          parent = parent.parentElement;
+        }
+        return null;
+      };
       return {
       candidateFamily: String(node.getAttribute('role') || '').toLowerCase() === 'article' ? 'ARTICLE_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE',
       visible: visible(node), attached: node.isConnected === true,
@@ -180,7 +204,7 @@ async function captureTargetCandidates(page, options = {}) {
       // Structural body blocks are bounded to this selected article. Header,
       // timestamp, controls, interactive descendants, nested articles, and
       // hidden/detached surfaces are excluded without classes, IDs, or text.
-      bodySubtrees: Array.from(node.querySelectorAll('div,span,p,section')).slice(0, 64).map((child) => {
+      bodySubtrees: bodyNodes.map((child, childIndex) => {
         const ownArticle = child.closest(articleSelector);
         const commentReplyAncestor = isCommentOrReply(child);
         const independentNestedArticle = !commentReplyAncestor && ownArticle !== null && ownArticle !== canonicalRoot;
@@ -189,7 +213,9 @@ async function captureTargetCandidates(page, options = {}) {
         const visibleChild = visible(child); const attachedChild = child.isConnected === true;
         const childTextNodes = Array.from(child.children).filter((item) => item instanceof Element && visible(item) && item.isConnected && !item.closest('header,time,button,[role="button"],a,[role="heading"],[role="toolbar"],[role="menu"],[role="navigation"],[role="status"],[role="alert"]')).some((item) => String(item.innerText || item.textContent || '').trim());
         const articleRelation = commentReplyAncestor ? 'COMMENT_REPLY_ARTICLE' : child === canonicalRoot ? 'SELECTED_POST_ROOT' : independentNestedArticle ? 'INDEPENDENT_NESTED_ARTICLE' : 'DESCENDANT_OF_SELECTED_POST';
-        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
+        const interactive = child.matches('button,[role="button"],a');
+        const interactiveAncestor = child.parentElement?.closest('button,[role="button"],a') !== null;
+        return { value: String(child.innerText || child.textContent || ''), visible: visibleChild, attached: attachedChild, depthRelativeToCandidate: depth(child, node), sourceBlockIndex: childIndex + 1, parentSourceBlockIndex: capturedParentIndex(child), tagFamily: ['DIV','SPAN','P','SECTION'].includes(child.tagName) ? child.tagName : 'OTHER', hasDirectTextNode: Array.from(child.childNodes).some((item) => item.nodeType === Node.TEXT_NODE && String(item.nodeValue || '').trim()), hasDescendantText: child.children.length > 0, interactive, interactiveAncestor, hasInteractiveDescendant: child.querySelector('button,[role="button"],a') !== null, hasArticleDescendant: hasIndependentNestedArticle(child, canonicalRoot), nestedArticle: independentNestedArticle, independentNestedArticle, articleRelation, commentReplyAncestor, structuralUiExcluded: excluded || childTextNodes, readSucceeded: true };
       }).filter((child) => child.visible && child.attached).slice(0, 24),
     };
       }),
@@ -227,7 +253,7 @@ async function verifyRefreshedTargetPost(page, options = {}) {
   } catch { return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: false, navigationSucceeded: true, resultClass: RESULT.TARGET_MISMATCH, ambiguityReason: 'NONE' }); }
   try {
     const classified = classifyRefreshedTargetCandidates(await (options.captureCandidates || captureTargetCandidates)(page), options.immutableText, { trustedNewness: options.trustedNewness === true && baselinePermitsNewness(options.preClickBaseline) });
-    return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true, ...options.preClickBaseline, ...classified });
+    return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true, ...options.preClickBaseline, ...classified, ...descentFields(options.preClickBaseline || {}, 'baseline') });
   } catch { return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' }); }
 }
 
