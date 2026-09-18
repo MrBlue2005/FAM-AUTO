@@ -180,6 +180,11 @@ const INTERACTIVE_BOUNDARY_CLASSES = new Set(['NO_INTERACTIVE_DESCENDANTS', 'BOD
 const BODY_CONTROL_RELATIONS = new Set(['NO_CONTROLS', 'SIBLING_REGIONS', 'BODY_ANCESTOR_OF_CONTROLS', 'CONTROLS_ANCESTOR_OF_BODY', 'OVERLAPPING_STRUCTURE', 'UNKNOWN']);
 const CONTROL_DEPTH_BUCKETS = new Set(['NONE', 'SAME_LEVEL', 'ONE_LEVEL_BELOW', 'TWO_PLUS_LEVELS_BELOW']);
 const BOUNDARY_EVIDENCE = new Set(['EXACT_BODY_REGION_SEPARATE', 'WHOLE_BODY_PLUS_EXTRA_REGION_SEPARATE', 'BODY_SIGNAL_ONLY_IN_BROAD_WRAPPER', 'BODY_SIGNAL_INSIDE_INTERACTIVE_STRUCTURE', 'AMBIGUOUS', 'NONE']);
+const INTERACTIVE_BOUNDARY_AMBIGUITY_REASONS = new Set(['MULTIPLE_BODY_SIGNAL_REGIONS', 'MULTIPLE_EXACT_REGION_CANDIDATES', 'BODY_AND_CONTROLS_OVERLAP', 'NO_ISOLATABLE_BODY_REGION', 'CONTROL_BOUNDARY_UNRESOLVED', 'WRAPPER_CHAIN_DUPLICATION', 'REGION_BUDGET_EXHAUSTED', 'STRUCTURAL_RELATION_UNKNOWN', 'SAFE_EVALUATION_ERROR', 'OTHER']);
+const EXACT_REGION_ABSENCE_REASONS = new Set(['EXACT_REGION_PRESENT', 'NO_EXACT_DOM_BODY_REGION', 'EXACT_REGION_NOT_CAPTURED', 'EXACT_REGION_STRUCTURALLY_EXCLUDED', 'MULTIPLE_EXACT_REGION_CANDIDATES', 'REGION_BUDGET_EXHAUSTED', 'INSUFFICIENT_EVIDENCE', 'SAFE_EVALUATION_ERROR']);
+const CONTROL_BRANCH_RELATIONS = new Set(['SAME_BRANCH_AS_BODY', 'SEPARATE_CHILD_BRANCH', 'MULTIPLE_CONTROL_BRANCHES', 'CONTROL_ANCESTOR_OF_BODY', 'BODY_ANCESTOR_OF_CONTROLS', 'UNKNOWN']);
+const BOUNDARY_TRANSITIONS = new Set(['NONE', 'BODY_SIGNAL_BECOMES_EXACT', 'BODY_SIGNAL_BECOMES_NONINTERACTIVE', 'INTERACTIVE_DESCENDANTS_BEGIN', 'CONTROL_STRUCTURE_BEGINS', 'BODY_SIGNAL_LOST', 'AMBIGUITY_BEGINS', 'SAFE_EVALUATION_ERROR']);
+const BODY_BRANCH_CLASSES = new Set(['BODY_ONLY_BRANCH', 'CONTROL_ONLY_BRANCH', 'BODY_AND_CONTROL_BRANCH', 'STRUCTURAL_UI_BRANCH', 'COMMENT_REPLY_BRANCH', 'NESTED_ARTICLE_BRANCH', 'UNKNOWN_BRANCH']);
 
 function safeTaskId(value) {
   const taskId = String(value || '');
@@ -714,6 +719,30 @@ function sanitizeInteractiveBoundaryRegion(value = {}) {
   };
 }
 
+function sanitizePrimaryWrapperChainRegion(value = {}) {
+  return {
+    regionIndex: Math.min(24, boundedInteger(value.regionIndex) || 0), parentRegionIndex: value.parentRegionIndex === null ? null : Math.min(24, boundedInteger(value.parentRegionIndex) || 0),
+    depthRelativeToPrimaryWrapper: Math.min(24, boundedInteger(value.depthRelativeToPrimaryWrapper) || 0), tagFamily: BODY_SUBTREE_TAGS.has(value.tagFamily) ? value.tagFamily : 'OTHER',
+    containsImmutableText: value.containsImmutableText === true, exactImmutableMatch: value.exactImmutableMatch === true,
+    lengthRelation: POST_CANDIDATE_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EMPTY',
+    interactive: value.interactive === true, interactiveAncestor: value.interactiveAncestor === true, hasInteractiveDescendant: value.hasInteractiveDescendant === true,
+    directInteractiveChildCount: Math.min(24, boundedInteger(value.directInteractiveChildCount) || 0), nestedInteractiveDescendantCount: Math.min(24, boundedInteger(value.nestedInteractiveDescendantCount) || 0),
+    childBodySignalRegionCount: Math.min(24, boundedInteger(value.childBodySignalRegionCount) || 0), childExactBodyRegionCount: Math.min(24, boundedInteger(value.childExactBodyRegionCount) || 0),
+    boundaryTransition: BOUNDARY_TRANSITIONS.has(value.boundaryTransition) ? value.boundaryTransition : 'SAFE_EVALUATION_ERROR',
+  };
+}
+
+function sanitizeInteractiveBoundaryBranch(value = {}) {
+  return {
+    branchIndex: Math.min(24, boundedInteger(value.branchIndex) || 0), parentRegionIndex: Math.min(24, boundedInteger(value.parentRegionIndex) || 0), tagFamily: BODY_SUBTREE_TAGS.has(value.tagFamily) ? value.tagFamily : 'OTHER',
+    containsImmutableText: value.containsImmutableText === true, exactImmutableMatch: value.exactImmutableMatch === true,
+    interactive: value.interactive === true, interactiveAncestor: value.interactiveAncestor === true, hasInteractiveDescendant: value.hasInteractiveDescendant === true,
+    commentReply: value.commentReply === true, independentNestedArticle: value.independentNestedArticle === true, hidden: value.hidden === true,
+    normalizedLength: Math.min(10000, boundedInteger(value.normalizedLength) || 0), lineCount: Math.min(1000, boundedInteger(value.lineCount) || 0), newlineCount: Math.min(1000, boundedInteger(value.newlineCount) || 0),
+    lengthRelation: POST_CANDIDATE_LENGTH_RELATIONS.has(value.lengthRelation) ? value.lengthRelation : 'EMPTY', branchClass: BODY_BRANCH_CLASSES.has(value.branchClass) ? value.branchClass : 'UNKNOWN_BRANCH',
+  };
+}
+
 function sanitizeInteractiveBoundary(value = {}) {
   const counts = ['interactiveWrapperCount', 'nonInteractiveBodyRegionCount', 'nonInteractiveExactBodyRegionCount', 'nonInteractiveWholeBodyPlusExtraRegionCount', 'controlRegionCount', 'directInteractiveChildCount', 'nestedInteractiveDescendantCount'];
   return {
@@ -724,6 +753,13 @@ function sanitizeInteractiveBoundary(value = {}) {
     nearestControlDepthBucket: CONTROL_DEPTH_BUCKETS.has(value.nearestControlDepthBucket) ? value.nearestControlDepthBucket : 'NONE',
     bestBoundaryEvidence: BOUNDARY_EVIDENCE.has(value.bestBoundaryEvidence) ? value.bestBoundaryEvidence : 'AMBIGUOUS',
     regions: Array.isArray(value.regions) ? value.regions.slice(0, 8).map(sanitizeInteractiveBoundaryRegion) : [],
+    interactiveBoundaryAmbiguityReason: INTERACTIVE_BOUNDARY_AMBIGUITY_REASONS.has(value.interactiveBoundaryAmbiguityReason) ? value.interactiveBoundaryAmbiguityReason : 'SAFE_EVALUATION_ERROR',
+    exactRegionAbsenceReason: EXACT_REGION_ABSENCE_REASONS.has(value.exactRegionAbsenceReason) ? value.exactRegionAbsenceReason : 'SAFE_EVALUATION_ERROR',
+    controlBranchRelation: CONTROL_BRANCH_RELATIONS.has(value.controlBranchRelation) ? value.controlBranchRelation : 'UNKNOWN',
+    controlBranchCount: Math.min(24, boundedInteger(value.controlBranchCount) || 0), bodySignalBranchCount: Math.min(24, boundedInteger(value.bodySignalBranchCount) || 0),
+    firstBodyBranchIndex: value.firstBodyBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstBodyBranchIndex) || 0), firstControlBranchIndex: value.firstControlBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstControlBranchIndex) || 0), nearestBoundaryRegionIndex: value.nearestBoundaryRegionIndex === null ? null : Math.min(24, boundedInteger(value.nearestBoundaryRegionIndex) || 0),
+    primaryWrapperChain: Array.isArray(value.primaryWrapperChain) ? value.primaryWrapperChain.slice(0, 12).map(sanitizePrimaryWrapperChainRegion) : [],
+    childBranches: Array.isArray(value.childBranches) ? value.childBranches.slice(0, 12).map(sanitizeInteractiveBoundaryBranch) : [],
   };
 }
 
@@ -743,6 +779,13 @@ function sanitizePostCandidateBodySubtreeSummary(value = {}) {
     nearestControlDepthBucket: CONTROL_DEPTH_BUCKETS.has(value.nearestControlDepthBucket) ? value.nearestControlDepthBucket : 'NONE',
     bestBoundaryEvidence: BOUNDARY_EVIDENCE.has(value.bestBoundaryEvidence) ? value.bestBoundaryEvidence : 'AMBIGUOUS',
     interactiveBoundaryRegions: Array.isArray(value.interactiveBoundaryRegions) ? value.interactiveBoundaryRegions.slice(0, 8).map(sanitizeInteractiveBoundaryRegion) : [],
+    interactiveBoundaryAmbiguityReason: INTERACTIVE_BOUNDARY_AMBIGUITY_REASONS.has(value.interactiveBoundaryAmbiguityReason) ? value.interactiveBoundaryAmbiguityReason : 'SAFE_EVALUATION_ERROR',
+    exactRegionAbsenceReason: EXACT_REGION_ABSENCE_REASONS.has(value.exactRegionAbsenceReason) ? value.exactRegionAbsenceReason : 'SAFE_EVALUATION_ERROR',
+    controlBranchRelation: CONTROL_BRANCH_RELATIONS.has(value.controlBranchRelation) ? value.controlBranchRelation : 'UNKNOWN',
+    controlBranchCount: Math.min(24, boundedInteger(value.controlBranchCount) || 0), bodySignalBranchCount: Math.min(24, boundedInteger(value.bodySignalBranchCount) || 0),
+    firstBodyBranchIndex: value.firstBodyBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstBodyBranchIndex) || 0), firstControlBranchIndex: value.firstControlBranchIndex === null ? null : Math.min(24, boundedInteger(value.firstControlBranchIndex) || 0), nearestBoundaryRegionIndex: value.nearestBoundaryRegionIndex === null ? null : Math.min(24, boundedInteger(value.nearestBoundaryRegionIndex) || 0),
+    primaryWrapperChain: Array.isArray(value.primaryWrapperChain) ? value.primaryWrapperChain.slice(0, 12).map(sanitizePrimaryWrapperChainRegion) : [],
+    childBranches: Array.isArray(value.childBranches) ? value.childBranches.slice(0, 12).map(sanitizeInteractiveBoundaryBranch) : [],
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizePostCandidateBodySubtreeCandidate) : [],
   };
 }

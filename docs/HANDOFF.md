@@ -1,5 +1,9 @@
 # FAM-AUTO handoff
 
+## G5.7ER ambiguous interactive-boundary refinement
+
+The existing protected body-subtree terminal summary now retains a deterministic, privacy-safe explanation for ambiguous body/control structure: one primary ambiguity reason, exact-region absence classification, bounded primary wrapper-chain transitions, immediate body/control branch relations, and nearest local boundary indices. Under the unchanged 32 KiB/four-critical-summary reservation, aggregate classification and primary-chain/decisive branch evidence yield before secondary wrapper detail. This is observation-only: body extraction, `REJECT_INTERACTIVE`, canonical roots, baseline/newness, acknowledgement, click, retry, cleanup, and `OUTCOME_UNKNOWN` behavior are unchanged.
+
 ## G5.7EE canonical logical post-root relation
 
 The diagnostic observer and target-reload capture now normalize an already-selected feed-item wrapper to one bounded, unambiguous non-comment logical post article root. Descendants on that selected-wrapper-to-root path, or under that root, are same-post content; only a distinct non-comment article boundary is nested/independent. Comment/reply and embedded-card boundaries remain rejected. Exact-body equality, substring rejection, zero baseline before `ATTEMPT_STARTED`, trusted `0 -> 1` newness, one-click/one-reload limits, cleanup, `OUTCOME_UNKNOWN`, and no-retry semantics are unchanged.

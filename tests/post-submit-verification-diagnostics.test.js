@@ -414,6 +414,35 @@ test('interactive-boundary diagnostics distinguish isolated body regions from un
   assert.equal(summary.interactiveBoundaryRegions.some((region) => region.value !== undefined), false);
 });
 
+test('interactive-boundary ambiguity refinement classifies deterministic body/control fixtures without changing extraction', () => {
+  const inspect = (subtrees) => diagnoseArticleBodySubtrees(bodyArticle(subtrees), 'immutable body').interactiveBoundary;
+  // A/B: exact body child and controls are separate siblings.
+  const separate = inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('immutable body', { parentBlockIndex: 1 }), bodySubtree('control', { parentBlockIndex: 1, interactive: true })]);
+  assert.equal(separate.controlBranchRelation, 'SEPARATE_CHILD_BRANCH');
+  assert.equal(separate.exactRegionAbsenceReason, 'EXACT_REGION_PRESENT');
+  assert.ok(separate.primaryWrapperChain.length > 0);
+  assert.ok(separate.childBranches.some((branch) => branch.branchClass === 'BODY_ONLY_BRANCH'));
+  assert.ok(separate.childBranches.some((branch) => branch.branchClass === 'CONTROL_ONLY_BRANCH'));
+  // C/D: a body wrapper owns controls; a direct interactive node is excluded.
+  const ancestor = inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('control', { parentBlockIndex: 1, interactive: true })]);
+  assert.equal(ancestor.controlBranchRelation, 'BODY_ANCESTOR_OF_CONTROLS');
+  assert.equal(inspect([bodySubtree('immutable body', { interactive: true })]).exactRegionAbsenceReason, 'EXACT_REGION_STRUCTURALLY_EXCLUDED');
+  // E/F/G/H/I: duplicated wrappers, hidden exact, excluded exact, competing exact, and no exact DOM region.
+  const duplicated = inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('immutable body', { hasInteractiveDescendant: true })]);
+  assert.equal(duplicated.interactiveBoundaryAmbiguityReason, 'WRAPPER_CHAIN_DUPLICATION');
+  assert.equal(inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('immutable body', { parentBlockIndex: 1, visible: false })]).exactRegionAbsenceReason, 'EXACT_REGION_STRUCTURALLY_EXCLUDED');
+  assert.equal(inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('immutable body', { parentBlockIndex: 1, interactiveAncestor: true })]).exactRegionAbsenceReason, 'EXACT_REGION_STRUCTURALLY_EXCLUDED');
+  const competing = inspect([bodySubtree('immutable body', { hasInteractiveDescendant: true }), bodySubtree('immutable body', { parentBlockIndex: 1 }), bodySubtree('immutable body', { parentBlockIndex: 1 })]);
+  assert.equal(competing.interactiveBoundaryAmbiguityReason, 'MULTIPLE_EXACT_REGION_CANDIDATES');
+  assert.equal(competing.exactRegionAbsenceReason, 'MULTIPLE_EXACT_REGION_CANDIDATES');
+  assert.equal(inspect([bodySubtree('immutable body extra', { hasInteractiveDescendant: true })]).exactRegionAbsenceReason, 'NO_EXACT_DOM_BODY_REGION');
+  // J/K/L: bounded capture, comment/reply, and embedded article remain diagnostic-only exclusions.
+  const budget = inspect(Array.from({ length: 24 }, (_, index) => bodySubtree('immutable body extra', { hasInteractiveDescendant: index === 0, parentBlockIndex: index ? 1 : null })));
+  assert.equal(budget.exactRegionAbsenceReason, 'REGION_BUDGET_EXHAUSTED');
+  assert.equal(inspect([bodySubtree('immutable body', { commentReplyAncestor: true, hasInteractiveDescendant: true })]).interactiveWrapperCount, 0);
+  assert.equal(inspect([bodySubtree('immutable body', { articleRelation: 'INDEPENDENT_NESTED_ARTICLE', hasInteractiveDescendant: true })]).interactiveWrapperCount, 0);
+});
+
 test('canonical logical post-root relations accept same-post wrappers and reject independent, comment, and hidden boundaries', () => {
   const samePost = (relation, overrides = {}) => bodySubtree('immutable body', { articleRelation: relation, ...overrides });
   const inspect = (subtrees) => diagnoseArticleBodySubtrees(bodyArticle(subtrees), 'immutable body').subtrees;
@@ -717,6 +746,8 @@ function observedBodyPressureSummary() {
     candidateCountInspected: 2, bodySubstringCandidateCount: 1, minimalExactBodySubtreeCandidateCount: 0, exactContiguousBlockSequenceCandidateCount: 0, bodyWithHeaderOutsideCount: 0, bodyWithActionsOutsideCount: 0, bodyWithHeaderAndActionsOutsideCount: 0, bodyPresentButNotIsolatableCount: 1, ambiguousCount: 0, newAfterClickExactBodyCandidateCount: 0, visibleAttachedExactBodyCandidateCount: 0,
     bodyBlockCount: 24, eligibleBodyBlockCount: 0, headerRejectedCount: 0, timestampRejectedCount: 0, actionRejectedCount: 0, commentReplyRejectedCount: 0, nestedArticleRejectedCount: 19, interactiveRejectedCount: 0, hiddenRejectedCount: 5, detachedRejectedCount: 0, ambiguousRejectedCount: 0,
     exactBodyBlockCount: 0, wholeBodyPlusExtraBlockCount: 10, partialBodySignalBlockCount: 10, exactContiguousSequenceCount: 0, wholeBodyPlusExtraSequenceCount: 80,
+    interactiveBoundaryAmbiguityReason: 'WRAPPER_CHAIN_DUPLICATION', exactRegionAbsenceReason: 'NO_EXACT_DOM_BODY_REGION',
+    primaryWrapperChain: [{ regionIndex: 1, parentRegionIndex: null, depthRelativeToPrimaryWrapper: 0, tagFamily: 'DIV', containsImmutableText: true, exactImmutableMatch: false, lengthRelation: 'LONGER', interactive: false, interactiveAncestor: false, hasInteractiveDescendant: true, directInteractiveChildCount: 1, nestedInteractiveDescendantCount: 2, childBodySignalRegionCount: 1, childExactBodyRegionCount: 0, boundaryTransition: 'AMBIGUITY_BEGINS' }],
     bestSupportedBodyIsolationClass: 'BODY_PRESENT_BUT_NOT_ISOLATABLE', bestObservedBlockPattern: 'NO_BODY_SIGNAL', candidates: [secondary, candidate],
   };
 }
@@ -733,6 +764,7 @@ test('32KiB body-summary compaction preserves one primary body-bearing candidate
     const body = persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree;
     assert.equal(body.detailTruncated, true); assert.equal(body.primaryCandidateDetailRetained, true); assert.equal(body.secondaryCandidateDetailDropped, true);
     assert.equal(body.parentChainDetailRetained, true); assert.equal(body.sequenceDetailRetained, true); assert.equal(body.candidates.length, 1);
+    assert.equal(body.interactiveBoundaryAmbiguityReason, 'WRAPPER_CHAIN_DUPLICATION'); assert.equal(body.primaryWrapperChain[0].boundaryTransition, 'AMBIGUITY_BEGINS');
     const primary = body.candidates[0]; assert.equal(primary.candidateCorrelationId, 'POST_CANDIDATE_2'); assert.ok(primary.subtrees.length <= 16); assert.ok(primary.contiguousSequences.length <= 8);
     assert.ok(primary.subtrees.some((block) => block.containsImmutableText && block.eligibility === 'REJECT_NESTED_ARTICLE'));
     // The 16-slot detail budget prioritizes immutable-bearing blocks. Hidden

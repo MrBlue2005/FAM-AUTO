@@ -1,5 +1,7 @@
 # Changelog
 
+- Ambiguous interactive-boundary diagnostics now retain a deterministic safe reason, exact-region absence classification, bounded primary wrapper-chain transitions, and immediate body/control branch evidence in the existing protected body-subtree summary. The fixed 32 KiB cap and four-summary reservation remain unchanged; this is diagnostics-only and does not alter extraction, baseline/newness, acknowledgement, click, retry, or outcome semantics.
+
 - Post-candidate body-subtree diagnostics now classify whether immutable text inside a same-post wrapper with descendant controls has a separately captured non-interactive body region. The bounded, privacy-safe interactive-boundary evidence is retained inside the existing protected terminal summary only; extraction, baseline admission, verification, click, and retry behavior are unchanged.
 
 - Pre-click live-publication baselines now fail closed unless a clean zero is positively proven by complete, uncapped discovery with at least one visible eligible post surface and no unresolved immutable-body signal. Empty, capped, incomplete, evaluation-error, nested-ambiguous, and untrusted-body-signal scans cannot reach `ATTEMPT_STARTED`; body extraction, post-click verification, retry, and acknowledgement semantics are unchanged.
