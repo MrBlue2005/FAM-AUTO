@@ -5,21 +5,23 @@ const assert = require('node:assert/strict');
 
 const {
   CLIPBOARD_PASTE,
+  RETAINED_EDITOR_FILL,
   RETAINED_EDITOR_SHIFT_ENTER,
   writePostText,
 } = require('../app/facebook/textWriter');
 const { normalizeComposerText, verifyComposerText } = require('../app/local-agent/FacebookLiveReadiness');
 
-function retainedEditorFixture() {
+function retainedEditorFixture({ collapseConsecutiveSoftBreaks = false } = {}) {
   const calls = [];
   let value = '';
   const editorLocator = {
     waitForElementState: async (state) => calls.push(`WAIT:${state}`),
     click: async () => calls.push('CLICK'),
     pressSequentially: async (text) => { calls.push(`TYPE:${text}`); value += text; },
+    fill: async (text) => { calls.push(`FILL:${text}`); value = text; },
     press: async (key) => {
       calls.push(`KEY:${key}`);
-      if (key === 'Shift+Enter') value += '\n';
+      if (key === 'Shift+Enter' && (!collapseConsecutiveSoftBreaks || !value.endsWith('\n'))) value += '\n';
     },
     evaluate: async () => true,
     isVisible: async () => true,
@@ -91,13 +93,36 @@ test('retained multiline insertion preserves CRLF, three-line, trailing-newline,
 });
 
 test('retained multiline insertion neither duplicates nor collapses an internal blank line', async () => {
-  const fixture = retainedEditorFixture();
+  const fixture = retainedEditorFixture({ collapseConsecutiveSoftBreaks: true });
   const text = 'first\n\nthird';
-  await writePostText(fixture.page, text, fixture.composer);
+  const result = await writePostText(fixture.page, text, fixture.composer);
   await verifyComposerText(fixture.composer, text);
+  assert.equal(result.insertionMethod, RETAINED_EDITOR_FILL);
   assert.equal(fixture.value(), text);
   assert.equal((fixture.value().match(/\n/g) || []).length, 2);
-  assert.equal(fixture.calls.filter((call) => call === 'KEY:Shift+Enter').length, 2);
+  assert.deepEqual(fixture.calls, ['WAIT:visible', 'CLICK', 'FILL:first\n\nthird']);
+});
+
+test('retained editor fill preserves repeated blank lines and the exact diagnostic fixture body', async () => {
+  const diagnosticBody = [
+    'TEST RX AUTOMATION — DIAGNOSTIC FIXTURE — RXV-7FS-DIAG-20260919-001',
+    '',
+    'Verificare tehnică: păstrează exact diacriticele românești ă â î ș ț, punctuația și linia goală.',
+    'Această linie intenționat mai lungă confirmă că textul sintetic nu este trunchiat, duplicat sau modificat prin normalizare înainte de validarea candidate discovery și body capture.',
+  ].join('\n');
+  for (const text of ['A\n\nB', 'A\n\n\nB', diagnosticBody]) {
+    const fixture = retainedEditorFixture({ collapseConsecutiveSoftBreaks: true });
+    const result = await writePostText(fixture.page, text, fixture.composer);
+    await verifyComposerText(fixture.composer, text);
+    assert.equal(result.insertionMethod, RETAINED_EDITOR_FILL);
+    assert.equal(fixture.value(), text);
+    assert.equal(fixture.calls.filter((call) => call.startsWith('FILL:')).length, 1);
+    assert.equal(fixture.calls.some((call) => call.startsWith('TYPE:') || call.startsWith('KEY:')), false);
+  }
+  assert.equal(diagnosticBody.length, 346);
+  assert.equal(Buffer.byteLength(diagnosticBody, 'utf8'), 370);
+  assert.equal(diagnosticBody.split('\n').length, 4);
+  assert.equal((diagnosticBody.match(/\n/g) || []).length, 3);
 });
 
 test('retained multiline insertion fails closed when the paired Locator is missing', async () => {

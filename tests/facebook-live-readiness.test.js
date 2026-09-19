@@ -164,6 +164,11 @@ test('composer text uses only harmless normalization and rejects missing, change
   await assert.rejects(verifyComposerText(composerModel({ text: 'immutable snapshot extra' }), 'immutable snapshot'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
 });
 
+test('exact composer verification still rejects one missing or one additional newline', async () => {
+  await assert.rejects(verifyComposerText(composerModel({ text: 'A\nB' }), 'A\n\nB'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+  await assert.rejects(verifyComposerText(composerModel({ text: 'A\n\nB' }), 'A\nB'), { code: 'FACEBOOK_CONTENT_MISMATCH' });
+});
+
 test('retained contenteditable reader reconstructs only visual block and br line boundaries', async () => {
   assert.deepEqual(visualPlainTextFromContenteditable(element('DIV', [
     element('DIV', [textNode('line1')]),
