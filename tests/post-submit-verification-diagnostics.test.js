@@ -778,7 +778,7 @@ test('32KiB body-summary compaction preserves one primary body-bearing candidate
     assert.ok(primary.subtrees.some((block) => block.parentBlockIndex === null));
     assert.ok(primary.contiguousSequences.some((sequence) => sequence.sequenceContainsImmutableText));
     assert.equal(body.nestedArticleRejectedCount, 19); assert.equal(body.hiddenRejectedCount, 5); assert.equal(body.wholeBodyPlusExtraBlockCount, 10); assert.equal(body.partialBodySignalBlockCount, 10);
-    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook text|secret-cookie|selector|className|domPath/i);
+    assert.doesNotMatch(JSON.stringify(persisted), /private Facebook text|secret-cookie|\[role=|className|domPath/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -810,6 +810,9 @@ test('target reload verification metadata is merged into the existing critical s
       trustedNewnessEstablished: true, postReloadExactTrustedPostCount: 1, newnessTransitionClass: 'ZERO_TO_ONE',
       bodyDescentAdmissionSource: 'DESCENDANT_SIGNAL', candidateRootBodySignal: false, candidateDescendantBodySignal: true,
       baselinebodyDescentAdmissionSource: 'NONE', baselinecandidateRootBodySignal: false, baselinecandidateDescendantBodySignal: false,
+      discoveryComplete: true, candidateCapReached: false,
+      captureDiagnostics: { rootSelectorMatchCount: 2, rootSelectorCapReached: false, rootCountBeforeEligibility: 2, rootCountAfterComposerExclusion: 2, rootCountAfterCommentReplyExclusion: 2, rootCountAfterDialogExclusion: 2, rootCountAfterAllEligibilityFiltering: 2, captureStageResult: 'NO_SIGNAL_IN_SELECTED_ROOT', candidates: [{ candidateIndex: 1, preCapOrdinal: 1, rootReaderParityClass: 'NO_SIGNAL_DIFFERENT_LENGTH', bodySignalInWindow25To64: true, firstBodySignalRawOrdinal: 25, containsZeroWidthChar: true, captureStageResult: 'DESCENDANT_SIGNAL_ONLY_AFTER_24', rawText: 'private candidate text', selector: '#private' }] },
+      baselineCaptureDiagnostics: { rootSelectorMatchCount: 1, rootCountBeforeEligibility: 1, rootCountAfterAllEligibilityFiltering: 1, captureStageResult: 'ROOT_SIGNAL_FOUND', candidates: [] },
       rawUrl: 'https://facebook.example/private', rawText: 'private immutable post', selector: '[role=article]',
     } });
     const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'target_reload_safe.json'), 'utf8'));
@@ -818,6 +821,8 @@ test('target reload verification metadata is merged into the existing critical s
     assert.equal(value.baselineResultClass, 'BASELINE_ZERO_EXACT_POSTS'); assert.equal(value.trustedNewnessEstablished, true); assert.equal(value.newnessTransitionClass, 'ZERO_TO_ONE');
     assert.equal(value.bodyDescentAdmissionSource, 'DESCENDANT_SIGNAL'); assert.equal(value.candidateRootBodySignal, false); assert.equal(value.candidateDescendantBodySignal, true);
     assert.equal(value.baselinebodyDescentAdmissionSource, 'NONE'); assert.equal(value.baselinecandidateRootBodySignal, false); assert.equal(value.baselinecandidateDescendantBodySignal, false);
-    assert.doesNotMatch(JSON.stringify(persisted), /facebook\.example|private immutable|role=article/i);
+    assert.equal(value.discoveryComplete, true); assert.equal(value.captureDiagnostics.rootSelectorMatchCount, 2); assert.equal(value.captureDiagnostics.candidates[0].firstBodySignalRawOrdinal, 25);
+    assert.equal(value.captureDiagnostics.candidates[0].containsZeroWidthChar, true); assert.equal(value.baselineCaptureDiagnostics.captureStageResult, 'ROOT_SIGNAL_FOUND');
+    assert.doesNotMatch(JSON.stringify(persisted), /facebook\.example|private immutable|private candidate|#private|role=article/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

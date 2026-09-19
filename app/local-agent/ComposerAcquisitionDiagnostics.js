@@ -526,6 +526,38 @@ const NEWNESS_TRANSITION_CLASSES = new Set(['ZERO_TO_ONE', 'ZERO_TO_ZERO', 'ZERO
 const BODY_EXTRACTION_RESULTS = new Set(['EXACT_BODY_DIRECT', 'EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION', 'EXACT_BODY_CONTIGUOUS_BLOCKS', 'BODY_SUBSTRING_ONLY', 'BODY_AMBIGUOUS', 'BODY_NOT_FOUND', 'SAFE_EVALUATION_ERROR']);
 const BODY_DESCENT_RESULTS = new Set(['EXACT_SAFE_BODY_REGION', 'BODY_SIGNAL_LOST', 'BODY_SIGNAL_SPLIT_AMBIGUOUS', 'BODY_CONTROL_INSEPARABLE', 'COMMENT_REPLY_BOUNDARY', 'INDEPENDENT_ARTICLE_BOUNDARY', 'HIDDEN_OR_DETACHED_BOUNDARY', 'INTERACTIVE_ANCESTOR_BOUNDARY', 'DEPTH_LIMIT_REACHED', 'NODE_LIMIT_REACHED', 'SAFE_EVALUATION_ERROR']);
 const BODY_DESCENT_ADMISSION_SOURCES = new Set(['NONE', 'ROOT_SIGNAL', 'DESCENDANT_SIGNAL', 'ROOT_AND_DESCENDANT_SIGNAL']);
+const CAPTURE_STAGE_RESULTS = new Set(['ROOT_SELECTOR_ZERO', 'ROOT_SELECTOR_CAP_REACHED', 'NO_ELIGIBLE_ROOTS', 'ELIGIBLE_ROOT_NO_ROOT_SIGNAL', 'ROOT_SIGNAL_FOUND', 'RAW_DESCENDANT_SIGNAL_FOUND', 'DESCENDANT_SIGNAL_ONLY_AFTER_24', 'DESCENDANT_SIGNAL_REDUCED_OUT', 'ROOT_REPRESENTATION_MISMATCH', 'NO_SIGNAL_IN_SELECTED_ROOT', 'CAPTURE_EVALUATION_ERROR', 'UNKNOWN']);
+const ROOT_READER_PARITY_CLASSES = new Set(['BOTH_SIGNAL', 'INNER_ONLY_SIGNAL', 'TEXTCONTENT_ONLY_SIGNAL', 'NO_SIGNAL_SAME_LENGTH', 'NO_SIGNAL_DIFFERENT_LENGTH', 'SAFE_EVALUATION_ERROR']);
+
+function sanitizeCaptureCandidate(value = {}) {
+  const count = (key, max = 10000) => Math.min(max, boundedInteger(value[key]) || 0);
+  return {
+    candidateIndex: count('candidateIndex', 16), preCapOrdinal: count('preCapOrdinal', 16),
+    tagFamily: ['ARTICLE', 'DIV', 'SECTION', 'OTHER'].includes(value.tagFamily) ? value.tagFamily : 'OTHER', roleFamily: ['ARTICLE', 'NONE', 'OTHER'].includes(value.roleFamily) ? value.roleFamily : 'OTHER',
+    visible: value.visible === true, attached: value.attached === true, nestedArticle: value.nestedArticle === true, commentReply: value.commentReply === true, composerLike: value.composerLike === true, dialogLike: value.dialogLike === true,
+    rootInnerTextContainsImmutable: value.rootInnerTextContainsImmutable === true, rootTextContentContainsImmutable: value.rootTextContentContainsImmutable === true, rootVisualTextContainsImmutable: value.rootVisualTextContainsImmutable === true, rootAnyReaderContainsImmutable: value.rootAnyReaderContainsImmutable === true,
+    rootNormalizedLength: count('rootNormalizedLength', 1000000), rootLineCount: count('rootLineCount'), rootNewlineCount: count('rootNewlineCount'), representationLengthsDiffer: value.representationLengthsDiffer === true, normalizedLengthsDiffer: value.normalizedLengthsDiffer === true,
+    rootReaderParityClass: ROOT_READER_PARITY_CLASSES.has(value.rootReaderParityClass) ? value.rootReaderParityClass : 'SAFE_EVALUATION_ERROR',
+    rawDescendantSelectorMatchCount: count('rawDescendantSelectorMatchCount'), rawDescendantCap: 64, rawDescendantCapReached: value.rawDescendantCapReached === true,
+    rawVisibleCount: count('rawVisibleCount', 64), rawAttachedCount: count('rawAttachedCount', 64), rawHiddenCount: count('rawHiddenCount', 64), rawDetachedCount: count('rawDetachedCount', 64),
+    firstBodySignalRawOrdinal: value.firstBodySignalRawOrdinal == null ? null : count('firstBodySignalRawOrdinal', 64), bodySignalRawCount: count('bodySignalRawCount', 64), bodySignalInWindow1To24: value.bodySignalInWindow1To24 === true, bodySignalInWindow25To64: value.bodySignalInWindow25To64 === true,
+    bodySignalBeyond64Known: value.bodySignalBeyond64Known === true, bodySignalBeyond64: value.bodySignalBeyond64Known === true ? value.bodySignalBeyond64 === true : 'UNKNOWN',
+    reducedBlockCount: count('reducedBlockCount', 24), reducedBlockCap: 24, reducedBlockCapReached: value.reducedBlockCapReached === true,
+    firstBodySignalReducedOrdinal: value.firstBodySignalReducedOrdinal == null ? null : count('firstBodySignalReducedOrdinal', 24), reducedBodySignalCount: count('reducedBodySignalCount', 24), parentLinksPreservedCount: count('parentLinksPreservedCount', 24), parentLinksMissingBecauseParentOutsideReducedSet: count('parentLinksMissingBecauseParentOutsideReducedSet', 24),
+    containsZeroWidthChar: value.containsZeroWidthChar === true, containsBidiControl: value.containsBidiControl === true, containsSoftHyphen: value.containsSoftHyphen === true, containsNBSP: value.containsNBSP === true, containsCRLFNormalization: value.containsCRLFNormalization === true,
+    captureStageResult: CAPTURE_STAGE_RESULTS.has(value.captureStageResult) ? value.captureStageResult : 'UNKNOWN',
+  };
+}
+
+function sanitizeCaptureDiagnostics(value = {}) {
+  const count = (key) => boundedInteger(value[key]) || 0;
+  return {
+    rootSelectorMatchCount: count('rootSelectorMatchCount'), rootSelectorCap: 16, rootSelectorCapReached: value.rootSelectorCapReached === true,
+    rootCountBeforeEligibility: Math.min(16, count('rootCountBeforeEligibility')), rootCountAfterComposerExclusion: Math.min(16, count('rootCountAfterComposerExclusion')),
+    rootCountAfterCommentReplyExclusion: Math.min(16, count('rootCountAfterCommentReplyExclusion')), rootCountAfterDialogExclusion: Math.min(16, count('rootCountAfterDialogExclusion')), rootCountAfterAllEligibilityFiltering: Math.min(16, count('rootCountAfterAllEligibilityFiltering')),
+    captureStageResult: CAPTURE_STAGE_RESULTS.has(value.captureStageResult) ? value.captureStageResult : 'UNKNOWN', candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(sanitizeCaptureCandidate) : [],
+  };
+}
 
 function sanitizeBodyDescent(value = {}, prefix = '') {
   const key = (name) => `${prefix}${name}`;
@@ -555,12 +587,15 @@ function sanitizeTargetReloadVerification(value = {}) {
     baselineAttempted: value.baselineAttempted === true, baselineCanonicalTargetValid: value.baselineCanonicalTargetValid === true,
     baselineCandidateCount: Math.min(16, count('baselineCandidateCount')), baselineExactTrustedPostCount: Math.min(16, count('baselineExactTrustedPostCount')), baselineTrustedExactPostCount: Math.min(16, count('baselineTrustedExactPostCount')),
     baselineDiscoveryComplete: value.baselineDiscoveryComplete === true, baselineCandidateCapReached: value.baselineCandidateCapReached === true,
+    discoveryComplete: value.discoveryComplete === true, candidateCapReached: value.candidateCapReached === true,
     baselineVisibleAttachedCandidateCount: Math.min(16, count('baselineVisibleAttachedCandidateCount')),
     baselineImmutableBodySignalCandidateCount: Math.min(16, count('baselineImmutableBodySignalCandidateCount')),
     baselineUntrustedBodySignalCount: Math.min(16, count('baselineUntrustedBodySignalCount')),
     baselineCandidateEvaluationErrorCount: Math.min(16, count('baselineCandidateEvaluationErrorCount')),
     baselineResultClass: BASELINE_RESULT_CLASSES.has(value.baselineResultClass) ? value.baselineResultClass : 'BASELINE_SAFE_EVALUATION_ERROR',
     composerExcludedFromBaseline: value.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: value.commentsExcludedFromBaseline === true,
+    ...(value.captureDiagnostics && typeof value.captureDiagnostics === 'object' ? { captureDiagnostics: sanitizeCaptureDiagnostics(value.captureDiagnostics) } : {}),
+    ...(value.baselineCaptureDiagnostics && typeof value.baselineCaptureDiagnostics === 'object' ? { baselineCaptureDiagnostics: sanitizeCaptureDiagnostics(value.baselineCaptureDiagnostics) } : {}),
     ...sanitizeBodyDescent(value), ...sanitizeBodyDescent(value, 'baseline'),
     trustedNewnessEstablished: value.trustedNewnessEstablished === true,
     postReloadExactTrustedPostCount: Math.min(16, count('postReloadExactTrustedPostCount')),
@@ -1007,6 +1042,35 @@ function compactRequiredCriticalRecord(record, maxBytes) {
       if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
       Object.assign(summary, compactPrimaryBodyCandidate(record.postCandidateBodySubtree, limits[0], limits[1]));
       summary.detailTruncated = true;
+    }
+    return compacted;
+  }
+  if (compacted.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' && compacted.postPublicationStructural?.targetReloadVerification) {
+    const structural = compacted.postPublicationStructural;
+    const reload = structural.targetReloadVerification;
+    structural.acknowledgementCandidates = [];
+    structural.articleCandidates = [];
+    structural.detailTruncated = true;
+    const minimalCandidate = (candidate) => ({
+      candidateIndex: candidate.candidateIndex, preCapOrdinal: candidate.preCapOrdinal,
+      rootInnerTextContainsImmutable: candidate.rootInnerTextContainsImmutable, rootTextContentContainsImmutable: candidate.rootTextContentContainsImmutable,
+      rootVisualTextContainsImmutable: candidate.rootVisualTextContainsImmutable, rootAnyReaderContainsImmutable: candidate.rootAnyReaderContainsImmutable,
+      rootReaderParityClass: candidate.rootReaderParityClass, representationLengthsDiffer: candidate.representationLengthsDiffer, normalizedLengthsDiffer: candidate.normalizedLengthsDiffer,
+      firstBodySignalRawOrdinal: candidate.firstBodySignalRawOrdinal, bodySignalRawCount: candidate.bodySignalRawCount,
+      bodySignalInWindow1To24: candidate.bodySignalInWindow1To24, bodySignalInWindow25To64: candidate.bodySignalInWindow25To64,
+      bodySignalBeyond64Known: candidate.bodySignalBeyond64Known, bodySignalBeyond64: candidate.bodySignalBeyond64,
+      firstBodySignalReducedOrdinal: candidate.firstBodySignalReducedOrdinal, reducedBodySignalCount: candidate.reducedBodySignalCount,
+      parentLinksMissingBecauseParentOutsideReducedSet: candidate.parentLinksMissingBecauseParentOutsideReducedSet,
+      containsZeroWidthChar: candidate.containsZeroWidthChar, containsBidiControl: candidate.containsBidiControl, containsSoftHyphen: candidate.containsSoftHyphen, containsNBSP: candidate.containsNBSP, containsCRLFNormalization: candidate.containsCRLFNormalization,
+      captureStageResult: candidate.captureStageResult,
+    });
+    for (const key of ['captureDiagnostics', 'baselineCaptureDiagnostics']) {
+      if (Array.isArray(reload[key]?.candidates)) reload[key].candidates = reload[key].candidates.map(minimalCandidate);
+    }
+    reload.captureDiagnosticDetailTruncated = true;
+    for (const limit of [8, 4, 2, 1, 0]) {
+      if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
+      for (const key of ['captureDiagnostics', 'baselineCaptureDiagnostics']) reload[key].candidates = reload[key].candidates.slice(0, limit);
     }
     return compacted;
   }

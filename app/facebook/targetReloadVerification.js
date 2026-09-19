@@ -27,6 +27,52 @@ const BASELINE_RESULT = Object.freeze({
   UNAVAILABLE: 'BASELINE_UNAVAILABLE',
   SAFE_EVALUATION_ERROR: 'BASELINE_SAFE_EVALUATION_ERROR',
 });
+const CAPTURE_STAGE_RESULT = Object.freeze({
+  ROOT_SELECTOR_ZERO: 'ROOT_SELECTOR_ZERO', ROOT_SELECTOR_CAP_REACHED: 'ROOT_SELECTOR_CAP_REACHED', NO_ELIGIBLE_ROOTS: 'NO_ELIGIBLE_ROOTS',
+  ELIGIBLE_ROOT_NO_ROOT_SIGNAL: 'ELIGIBLE_ROOT_NO_ROOT_SIGNAL', ROOT_SIGNAL_FOUND: 'ROOT_SIGNAL_FOUND', RAW_DESCENDANT_SIGNAL_FOUND: 'RAW_DESCENDANT_SIGNAL_FOUND',
+  DESCENDANT_SIGNAL_ONLY_AFTER_24: 'DESCENDANT_SIGNAL_ONLY_AFTER_24', DESCENDANT_SIGNAL_REDUCED_OUT: 'DESCENDANT_SIGNAL_REDUCED_OUT', ROOT_REPRESENTATION_MISMATCH: 'ROOT_REPRESENTATION_MISMATCH',
+  NO_SIGNAL_IN_SELECTED_ROOT: 'NO_SIGNAL_IN_SELECTED_ROOT', CAPTURE_EVALUATION_ERROR: 'CAPTURE_EVALUATION_ERROR', UNKNOWN: 'UNKNOWN',
+});
+const ROOT_READER_PARITY_CLASS = Object.freeze({
+  BOTH_SIGNAL: 'BOTH_SIGNAL', INNER_ONLY_SIGNAL: 'INNER_ONLY_SIGNAL', TEXTCONTENT_ONLY_SIGNAL: 'TEXTCONTENT_ONLY_SIGNAL',
+  NO_SIGNAL_SAME_LENGTH: 'NO_SIGNAL_SAME_LENGTH', NO_SIGNAL_DIFFERENT_LENGTH: 'NO_SIGNAL_DIFFERENT_LENGTH', SAFE_EVALUATION_ERROR: 'SAFE_EVALUATION_ERROR',
+});
+const CAPTURE_STAGE_VALUES = new Set(Object.values(CAPTURE_STAGE_RESULT));
+const ROOT_READER_PARITY_VALUES = new Set(Object.values(ROOT_READER_PARITY_CLASS));
+const captureCount = (value, max = 10000) => Math.max(0, Math.min(max, Number(value) || 0));
+const safeCaptureCandidate = (value = {}) => ({
+  candidateIndex: captureCount(value.candidateIndex, 16), preCapOrdinal: captureCount(value.preCapOrdinal, 16),
+  tagFamily: ['ARTICLE', 'DIV', 'SECTION', 'OTHER'].includes(value.tagFamily) ? value.tagFamily : 'OTHER',
+  roleFamily: ['ARTICLE', 'NONE', 'OTHER'].includes(value.roleFamily) ? value.roleFamily : 'OTHER',
+  visible: value.visible === true, attached: value.attached === true, nestedArticle: value.nestedArticle === true,
+  commentReply: value.commentReply === true, composerLike: value.composerLike === true, dialogLike: value.dialogLike === true,
+  rootInnerTextContainsImmutable: value.rootInnerTextContainsImmutable === true, rootTextContentContainsImmutable: value.rootTextContentContainsImmutable === true,
+  rootVisualTextContainsImmutable: value.rootVisualTextContainsImmutable === true, rootAnyReaderContainsImmutable: value.rootAnyReaderContainsImmutable === true,
+  rootNormalizedLength: captureCount(value.rootNormalizedLength, 1000000), rootLineCount: captureCount(value.rootLineCount, 10000), rootNewlineCount: captureCount(value.rootNewlineCount, 10000),
+  representationLengthsDiffer: value.representationLengthsDiffer === true, normalizedLengthsDiffer: value.normalizedLengthsDiffer === true,
+  rootReaderParityClass: ROOT_READER_PARITY_VALUES.has(value.rootReaderParityClass) ? value.rootReaderParityClass : ROOT_READER_PARITY_CLASS.SAFE_EVALUATION_ERROR,
+  rawDescendantSelectorMatchCount: captureCount(value.rawDescendantSelectorMatchCount), rawDescendantCap: 64, rawDescendantCapReached: value.rawDescendantCapReached === true,
+  rawVisibleCount: captureCount(value.rawVisibleCount, 64), rawAttachedCount: captureCount(value.rawAttachedCount, 64), rawHiddenCount: captureCount(value.rawHiddenCount, 64), rawDetachedCount: captureCount(value.rawDetachedCount, 64),
+  firstBodySignalRawOrdinal: value.firstBodySignalRawOrdinal == null ? null : captureCount(value.firstBodySignalRawOrdinal, 64), bodySignalRawCount: captureCount(value.bodySignalRawCount, 64),
+  bodySignalInWindow1To24: value.bodySignalInWindow1To24 === true, bodySignalInWindow25To64: value.bodySignalInWindow25To64 === true,
+  bodySignalBeyond64Known: value.bodySignalBeyond64Known === true, bodySignalBeyond64: value.bodySignalBeyond64Known === true ? value.bodySignalBeyond64 === true : 'UNKNOWN',
+  reducedBlockCount: captureCount(value.reducedBlockCount, 24), reducedBlockCap: 24, reducedBlockCapReached: value.reducedBlockCapReached === true,
+  firstBodySignalReducedOrdinal: value.firstBodySignalReducedOrdinal == null ? null : captureCount(value.firstBodySignalReducedOrdinal, 24), reducedBodySignalCount: captureCount(value.reducedBodySignalCount, 24),
+  parentLinksPreservedCount: captureCount(value.parentLinksPreservedCount, 24), parentLinksMissingBecauseParentOutsideReducedSet: captureCount(value.parentLinksMissingBecauseParentOutsideReducedSet, 24),
+  containsZeroWidthChar: value.containsZeroWidthChar === true, containsBidiControl: value.containsBidiControl === true, containsSoftHyphen: value.containsSoftHyphen === true,
+  containsNBSP: value.containsNBSP === true, containsCRLFNormalization: value.containsCRLFNormalization === true,
+  captureStageResult: CAPTURE_STAGE_VALUES.has(value.captureStageResult) ? value.captureStageResult : CAPTURE_STAGE_RESULT.UNKNOWN,
+});
+function safeCaptureDiagnostics(value = {}) {
+  return {
+    rootSelectorMatchCount: captureCount(value.rootSelectorMatchCount), rootSelectorCap: 16, rootSelectorCapReached: value.rootSelectorCapReached === true,
+    rootCountBeforeEligibility: captureCount(value.rootCountBeforeEligibility, 16), rootCountAfterComposerExclusion: captureCount(value.rootCountAfterComposerExclusion, 16),
+    rootCountAfterCommentReplyExclusion: captureCount(value.rootCountAfterCommentReplyExclusion, 16), rootCountAfterDialogExclusion: captureCount(value.rootCountAfterDialogExclusion, 16),
+    rootCountAfterAllEligibilityFiltering: captureCount(value.rootCountAfterAllEligibilityFiltering, 16),
+    captureStageResult: CAPTURE_STAGE_VALUES.has(value.captureStageResult) ? value.captureStageResult : CAPTURE_STAGE_RESULT.UNKNOWN,
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 16).map(safeCaptureCandidate) : [],
+  };
+}
 const bodyDescent = (body) => body?.bodyDescentResult === BODY_DESCENT_RESULT.EXACT_SAFE_BODY_REGION;
 const descentFields = (value = {}, prefix = '') => ({
   [`${prefix}bodyDescentAdmissionSource`]: Object.values(BODY_DESCENT_ADMISSION_SOURCES).includes(value.bodyDescentAdmissionSource) ? value.bodyDescentAdmissionSource : BODY_DESCENT_ADMISSION_SOURCES.NONE,
@@ -71,12 +117,14 @@ function summary(result = {}) {
     baselineAttempted: result.baselineAttempted === true, baselineCanonicalTargetValid: result.baselineCanonicalTargetValid === true,
     baselineCandidateCount: Math.max(0, Math.min(16, Number(result.baselineCandidateCount) || 0)), baselineExactTrustedPostCount: baselineCount, baselineTrustedExactPostCount: baselineCount,
     baselineDiscoveryComplete: result.baselineDiscoveryComplete === true, baselineCandidateCapReached: result.baselineCandidateCapReached === true,
+    discoveryComplete: result.discoveryComplete === true, candidateCapReached: result.candidateCapReached === true,
     baselineVisibleAttachedCandidateCount: Math.max(0, Math.min(16, Number(result.baselineVisibleAttachedCandidateCount) || 0)),
     baselineImmutableBodySignalCandidateCount: Math.max(0, Math.min(16, Number(result.baselineImmutableBodySignalCandidateCount) || 0)),
     baselineUntrustedBodySignalCount: Math.max(0, Math.min(16, Number(result.baselineUntrustedBodySignalCount) || 0)),
     baselineCandidateEvaluationErrorCount: Math.max(0, Math.min(16, Number(result.baselineCandidateEvaluationErrorCount) || 0)),
     baselineResultClass, composerExcludedFromBaseline: result.composerExcludedFromBaseline === true, commentsExcludedFromBaseline: result.commentsExcludedFromBaseline === true,
     ...descentFields(result), ...descentFields(result, 'baseline'),
+    captureDiagnostics: safeCaptureDiagnostics(result.captureDiagnostics), baselineCaptureDiagnostics: safeCaptureDiagnostics(result.baselineCaptureDiagnostics),
     trustedNewnessEstablished, postReloadExactTrustedPostCount: postCount, newnessTransitionClass: transition,
   };
 }
@@ -86,32 +134,36 @@ function summary(result = {}) {
 // capture therefore supplies false and identical historical posts fail closed.
 function classifyRefreshedTargetCandidates(candidates, immutableText, options = {}) {
   try {
-    const rows = eligibleCandidates(candidates);
+    const discovery = normalizeCandidateDiscovery(candidates);
+    if (discovery.captureDiagnostics.captureStageResult === CAPTURE_STAGE_RESULT.CAPTURE_EVALUATION_ERROR) throw new Error('capture evaluation failed');
+    const rows = eligibleCandidates(discovery.candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `RELOAD_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
     const exact = visibleAttached.filter(({ body }) => bodyDescent(body));
     const nestedExact = visibleAttached.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface === true && bodyDescent(body));
     const trusted = exact.filter(({ body }) => body.candidate?.hasNestedArticleTextSurface !== true);
     const primaryDescent = visibleAttached.find(({ body }) => body.bodyDescentAttempted) || {};
-    const base = { candidateCount: rows.length, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length + nestedExact.length, bodyExtractionAttempted: true, bodyExtractionResult: trusted.length === 1 ? trusted[0].body.bodyExtractionResult : trusted.length > 1 || nestedExact.length ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS : visibleAttached.find(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY)?.body.bodyExtractionResult || BODY_EXTRACTION_RESULT.BODY_NOT_FOUND, bodyExactAfterUiExclusionCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION).length, bodyExactContiguousBlockCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS).length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0, ...descentFields(primaryDescent.body || {}) };
+    const base = { candidateCount: rows.length, discoveryComplete: discovery.discoveryComplete, candidateCapReached: discovery.candidateCapReached, captureDiagnostics: discovery.captureDiagnostics, visibleAttachedCandidateCount: visibleAttached.length, exactBodyCandidateCount: exact.length + nestedExact.length, bodyExtractionAttempted: true, bodyExtractionResult: trusted.length === 1 ? trusted[0].body.bodyExtractionResult : trusted.length > 1 || nestedExact.length ? BODY_EXTRACTION_RESULT.BODY_AMBIGUOUS : visibleAttached.find(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.BODY_SUBSTRING_ONLY)?.body.bodyExtractionResult || BODY_EXTRACTION_RESULT.BODY_NOT_FOUND, bodyExactAfterUiExclusionCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_AFTER_STRUCTURAL_UI_EXCLUSION).length, bodyExactContiguousBlockCount: exact.filter(({ body }) => body.bodyExtractionResult === BODY_EXTRACTION_RESULT.EXACT_BODY_CONTIGUOUS_BLOCKS).length, structurallyTrustedExactCandidateCount: trusted.length, duplicateExactCandidateCount: trusted.length > 1 ? trusted.length : 0, ...descentFields(primaryDescent.body || {}) };
     if (!trusted.length) return { ...base, resultClass: nestedExact.length || visibleAttached.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true) ? RESULT.STRUCTURE_UNTRUSTED : RESULT.NOT_FOUND, ambiguityReason: nestedExact.length || visibleAttached.some(({ body }) => body.candidate?.hasNestedArticleTextSurface === true) ? 'NESTED_ARTICLE' : 'NONE' };
     if (trusted.length > 1) return { ...base, resultClass: RESULT.AMBIGUOUS, ambiguityReason: 'MULTIPLE_EXACT_CANDIDATES' };
     if (options.trustedNewness !== true) return { ...base, resultClass: RESULT.DUPLICATE_UNRESOLVED, ambiguityReason: 'NO_TRUSTED_NEWNESS' };
     return { ...base, resultClass: RESULT.VERIFIED_EXACT_TARGET_POST, ambiguityReason: 'NONE' };
   } catch {
-    return { candidateCount: 0, visibleAttachedCandidateCount: 0, exactBodyCandidateCount: 0, bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, structurallyTrustedExactCandidateCount: 0, duplicateExactCandidateCount: 0, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' };
+    const discovery = normalizeCandidateDiscovery(candidates);
+    return { candidateCount: 0, discoveryComplete: discovery.discoveryComplete, candidateCapReached: discovery.candidateCapReached, captureDiagnostics: discovery.captureDiagnostics, visibleAttachedCandidateCount: 0, exactBodyCandidateCount: 0, bodyExtractionAttempted: true, bodyExtractionResult: BODY_EXTRACTION_RESULT.SAFE_EVALUATION_ERROR, bodyExactAfterUiExclusionCount: 0, bodyExactContiguousBlockCount: 0, structurallyTrustedExactCandidateCount: 0, duplicateExactCandidateCount: 0, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' };
   }
 }
 
 function normalizeCandidateDiscovery(input) {
   if (Array.isArray(input)) {
-    return { candidates: input.slice(0, 16), discoveryComplete: input.length < 16, candidateCapReached: input.length >= 16 };
+    return { candidates: input.slice(0, 16), discoveryComplete: input.length < 16, candidateCapReached: input.length >= 16, captureDiagnostics: safeCaptureDiagnostics() };
   }
   const candidates = Array.isArray(input?.candidates) ? input.candidates.slice(0, 16) : [];
   return {
     candidates,
     discoveryComplete: input?.discovery?.discoveryComplete === true,
     candidateCapReached: input?.discovery?.candidateCapReached === true || candidates.length >= 16,
+    captureDiagnostics: safeCaptureDiagnostics(input?.captureDiagnostics),
   };
 }
 
@@ -132,6 +184,9 @@ function baselinePermitsNewness(baseline) {
 function classifyPreClickBaseline(candidates, immutableText) {
   try {
     const discovery = normalizeCandidateDiscovery(candidates);
+    if (discovery.captureDiagnostics.captureStageResult === CAPTURE_STAGE_RESULT.CAPTURE_EVALUATION_ERROR) {
+      return { baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, baselineDiscoveryComplete: false, baselineCandidateCapReached: false, baselineCaptureDiagnostics: discovery.captureDiagnostics, composerExcludedFromBaseline: false, commentsExcludedFromBaseline: false, baselineResultClass: BASELINE_RESULT.SAFE_EVALUATION_ERROR };
+    }
     const rows = eligibleCandidates(discovery.candidates);
     const reduced = rows.map((raw, index) => ({ raw, body: diagnoseArticleBodySubtrees({ ...raw, candidateCorrelationId: `BASELINE_CANDIDATE_${index + 1}` }, immutableText) }));
     const visibleAttached = reduced.filter(({ body }) => body.candidate?.visible && body.candidate?.attached);
@@ -145,6 +200,7 @@ function classifyPreClickBaseline(candidates, immutableText) {
       baselineAttempted: true, baselineCanonicalTargetValid: true,
       baselineCandidateCount: rows.length, baselineExactTrustedPostCount: trusted.length, baselineTrustedExactPostCount: trusted.length,
       baselineDiscoveryComplete: discovery.discoveryComplete, baselineCandidateCapReached: discovery.candidateCapReached,
+      baselineCaptureDiagnostics: discovery.captureDiagnostics,
       baselineVisibleAttachedCandidateCount: visibleAttached.length, baselineImmutableBodySignalCandidateCount: bodySignals.length,
       baselineUntrustedBodySignalCount: untrustedBodySignals.length, baselineCandidateEvaluationErrorCount: evaluationErrors.length,
       composerExcludedFromBaseline: discovery.candidates.some((candidate) => candidate?.composerDescendant === true),
@@ -164,9 +220,17 @@ function classifyPreClickBaseline(candidates, immutableText) {
 }
 
 async function captureTargetCandidates(page, options = {}) {
-  return page.evaluate((composerNode) => {
+  try {
+  return await page.evaluate(({ composerNode, immutableText }) => {
     const visible = (node) => { try { const style = getComputedStyle(node); const rect = node.getBoundingClientRect(); return node.isConnected && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; } catch { return false; } };
     const depth = (node, root) => { let current = node; let value = 0; while (current?.parentElement && current !== root && value < 24) { current = current.parentElement; value += 1; } return value; };
+    const normalize = (value) => String(value || '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
+    const expected = normalize(immutableText);
+    const containsExpected = (value) => expected.length > 0 && normalize(value).includes(expected);
+    const sensitive = (values) => {
+      const joined = values.map((value) => String(value || '')).join('');
+      return { containsZeroWidthChar: /[\u200B-\u200D\uFEFF]/.test(joined), containsBidiControl: /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/.test(joined), containsSoftHyphen: /\u00AD/.test(joined), containsNBSP: /\u00A0/.test(joined), containsCRLFNormalization: /\r\n?/.test(joined) };
+    };
     const articleSelector = 'article,[role="article"]';
     const isCommentOrReply = (node) => node?.closest?.('[role="comment"], [data-commentid], [data-testid*="comment"], [data-testid*="reply"]') !== null;
     // Reload candidates are themselves article roots. Nested articles can be
@@ -174,11 +238,11 @@ async function captureTargetCandidates(page, options = {}) {
     // excluded); any other nested article remains an independent boundary.
     const hasIndependentNestedArticle = (node, root) => Array.from(node?.querySelectorAll?.(articleSelector) || []).some((candidate) => candidate !== root && !isCommentOrReply(candidate));
     const nodes = Array.from(document.querySelectorAll('[role="article"], article'));
-    return {
-      discovery: { discoveryComplete: nodes.length < 16, candidateCapReached: nodes.length >= 16 },
-      candidates: nodes.slice(0, 16).map((node) => {
+    const retainedNodes = nodes.slice(0, 16);
+    const captured = retainedNodes.map((node, candidateOffset) => {
       const canonicalRoot = node;
-      const bodyNodes = Array.from(node.querySelectorAll('div,span,p,section')).slice(0, 64);
+      const allBodyNodes = Array.from(node.querySelectorAll('div,span,p,section'));
+      const bodyNodes = allBodyNodes.slice(0, 64);
       const bodyIndexByNode = new Map(bodyNodes.map((child, index) => [child, index + 1]));
       const capturedParentIndex = (child) => {
         let parent = child.parentElement;
@@ -189,6 +253,55 @@ async function captureTargetCandidates(page, options = {}) {
         }
         return null;
       };
+      const rootInner = String(node.innerText || ''); const rootContent = String(node.textContent || '');
+      const normalizedInner = normalize(rootInner); const normalizedContent = normalize(rootContent);
+      const innerSignal = containsExpected(rootInner); const contentSignal = containsExpected(rootContent);
+      const rawSignals = bodyNodes.map((child) => containsExpected(String(child.innerText || child.textContent || '')));
+      const reducedNodes = bodyNodes.slice(0, 24);
+      const reducedSignals = rawSignals.slice(0, 24);
+      const parentIndices = reducedNodes.map(capturedParentIndex);
+      const rootReaderParityClass = innerSignal && contentSignal ? 'BOTH_SIGNAL' : innerSignal ? 'INNER_ONLY_SIGNAL' : contentSignal ? 'TEXTCONTENT_ONLY_SIGNAL' : rootInner.length === rootContent.length && normalizedInner.length === normalizedContent.length ? 'NO_SIGNAL_SAME_LENGTH' : 'NO_SIGNAL_DIFFERENT_LENGTH';
+      const firstRaw = rawSignals.findIndex(Boolean); const firstReduced = reducedSignals.findIndex(Boolean);
+      const commentReply = node.closest('[role="comment"], [data-commentid], [data-testid*="comment"], [data-testid*="reply"]') !== null;
+      const composerLike = composerNode instanceof Element && (node === composerNode || composerNode.contains(node) || node.contains(composerNode));
+      const dialogLike = node.closest('[role="dialog"]') !== null;
+      let captureStageResult = innerSignal !== contentSignal ? 'ROOT_REPRESENTATION_MISMATCH' : innerSignal || contentSignal ? 'ROOT_SIGNAL_FOUND' : rawSignals.slice(0, 24).some(Boolean) ? 'RAW_DESCENDANT_SIGNAL_FOUND' : rawSignals.slice(24).some(Boolean) ? 'DESCENDANT_SIGNAL_ONLY_AFTER_24' : 'NO_SIGNAL_IN_SELECTED_ROOT';
+      const diagnostic = {
+        candidateIndex: candidateOffset + 1, preCapOrdinal: candidateOffset + 1,
+        tagFamily: ['ARTICLE', 'DIV', 'SECTION'].includes(node.tagName) ? node.tagName : 'OTHER',
+        roleFamily: String(node.getAttribute('role') || '').toLowerCase() === 'article' ? 'ARTICLE' : node.getAttribute('role') ? 'OTHER' : 'NONE',
+        visible: visible(node), attached: node.isConnected === true, nestedArticle: hasIndependentNestedArticle(node, canonicalRoot) || (node.parentElement?.closest(articleSelector) !== null && !isCommentOrReply(node)),
+        commentReply, composerLike, dialogLike,
+        rootInnerTextContainsImmutable: innerSignal, rootTextContentContainsImmutable: contentSignal, rootVisualTextContainsImmutable: innerSignal, rootAnyReaderContainsImmutable: innerSignal || contentSignal,
+        rootNormalizedLength: normalizedInner.length, rootLineCount: normalizedInner.length ? normalizedInner.split('\n').length : 0, rootNewlineCount: (normalizedInner.match(/\n/g) || []).length,
+        representationLengthsDiffer: rootInner.length !== rootContent.length, normalizedLengthsDiffer: normalizedInner.length !== normalizedContent.length, rootReaderParityClass,
+        rawDescendantSelectorMatchCount: allBodyNodes.length, rawDescendantCap: 64, rawDescendantCapReached: allBodyNodes.length >= 64,
+        rawVisibleCount: bodyNodes.filter(visible).length, rawAttachedCount: bodyNodes.filter((child) => child.isConnected === true).length,
+        rawHiddenCount: bodyNodes.filter((child) => !visible(child)).length, rawDetachedCount: bodyNodes.filter((child) => child.isConnected !== true).length,
+        firstBodySignalRawOrdinal: firstRaw < 0 ? null : firstRaw + 1, bodySignalRawCount: rawSignals.filter(Boolean).length,
+        bodySignalInWindow1To24: rawSignals.slice(0, 24).some(Boolean), bodySignalInWindow25To64: rawSignals.slice(24, 64).some(Boolean),
+        bodySignalBeyond64Known: allBodyNodes.length <= 64, bodySignalBeyond64: allBodyNodes.length <= 64 ? false : 'UNKNOWN',
+        reducedBlockCount: reducedNodes.length, reducedBlockCap: 24, reducedBlockCapReached: bodyNodes.length >= 24,
+        firstBodySignalReducedOrdinal: firstReduced < 0 ? null : firstReduced + 1, reducedBodySignalCount: reducedSignals.filter(Boolean).length,
+        parentLinksPreservedCount: parentIndices.filter((index) => Number.isInteger(index) && index <= 24).length,
+        parentLinksMissingBecauseParentOutsideReducedSet: parentIndices.filter((index) => Number.isInteger(index) && index > 24).length,
+        ...sensitive([rootInner, rootContent, ...bodyNodes.map((child) => String(child.innerText || child.textContent || ''))]), captureStageResult,
+      };
+      return { node, canonicalRoot, bodyNodes, capturedParentIndex, diagnostic };
+    });
+    const eligibleDiagnostics = captured.map((item) => item.diagnostic).filter((item) => !item.composerLike && !item.commentReply && !item.dialogLike);
+    let captureStageResult = nodes.length === 0 ? 'ROOT_SELECTOR_ZERO' : nodes.length >= 16 ? 'ROOT_SELECTOR_CAP_REACHED' : eligibleDiagnostics.length === 0 ? 'NO_ELIGIBLE_ROOTS'
+      : eligibleDiagnostics.some((item) => item.captureStageResult === 'ROOT_REPRESENTATION_MISMATCH') ? 'ROOT_REPRESENTATION_MISMATCH'
+        : eligibleDiagnostics.some((item) => item.rootAnyReaderContainsImmutable) ? 'ROOT_SIGNAL_FOUND'
+          : eligibleDiagnostics.some((item) => item.bodySignalInWindow1To24) ? 'RAW_DESCENDANT_SIGNAL_FOUND'
+            : eligibleDiagnostics.some((item) => item.bodySignalInWindow25To64) ? 'DESCENDANT_SIGNAL_REDUCED_OUT' : 'NO_SIGNAL_IN_SELECTED_ROOT';
+    const afterComposer = captured.filter((item) => !item.diagnostic.composerLike);
+    const afterComment = afterComposer.filter((item) => !item.diagnostic.commentReply);
+    const afterDialog = afterComment.filter((item) => !item.diagnostic.dialogLike);
+    return {
+      discovery: { discoveryComplete: nodes.length < 16, candidateCapReached: nodes.length >= 16 },
+      captureDiagnostics: { rootSelectorMatchCount: nodes.length, rootSelectorCap: 16, rootSelectorCapReached: nodes.length >= 16, rootCountBeforeEligibility: captured.length, rootCountAfterComposerExclusion: afterComposer.length, rootCountAfterCommentReplyExclusion: afterComment.length, rootCountAfterDialogExclusion: afterDialog.length, rootCountAfterAllEligibilityFiltering: eligibleDiagnostics.length, captureStageResult, candidates: captured.map((item) => item.diagnostic) },
+      candidates: captured.map(({ node, canonicalRoot, bodyNodes, capturedParentIndex }) => {
       return {
       candidateFamily: String(node.getAttribute('role') || '').toLowerCase() === 'article' ? 'ARTICLE_ROLE' : node.tagName === 'ARTICLE' ? 'POST_CONTAINER_LIKE' : 'UNKNOWN_ARTICLE_LIKE',
       visible: visible(node), attached: node.isConnected === true,
@@ -224,7 +337,10 @@ async function captureTargetCandidates(page, options = {}) {
     };
       }),
     };
-  }, options.composerHandle || null);
+  }, { composerNode: options.composerHandle || null, immutableText: options.immutableText || '' });
+  } catch {
+    return { discovery: { discoveryComplete: false, candidateCapReached: false }, candidates: [], captureDiagnostics: safeCaptureDiagnostics({ captureStageResult: CAPTURE_STAGE_RESULT.CAPTURE_EVALUATION_ERROR }) };
+  }
 }
 
 async function capturePreClickBaseline(page, options = {}) {
@@ -236,7 +352,7 @@ async function capturePreClickBaseline(page, options = {}) {
     return finish({ baselineAttempted: true, baselineCanonicalTargetValid: false, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, composerExcludedFromBaseline: false, commentsExcludedFromBaseline: false, baselineResultClass: BASELINE_RESULT.TARGET_MISMATCH });
   }
   try {
-    return finish(classifyPreClickBaseline(await (options.captureCandidates || captureTargetCandidates)(page, { composerHandle: options.composerHandle }), options.immutableText));
+    return finish(classifyPreClickBaseline(await (options.captureCandidates || captureTargetCandidates)(page, { composerHandle: options.composerHandle, immutableText: options.immutableText }), options.immutableText));
   } catch {
     return finish({ baselineAttempted: true, baselineCanonicalTargetValid: true, baselineCandidateCount: 0, baselineExactTrustedPostCount: 0, composerExcludedFromBaseline: false, commentsExcludedFromBaseline: false, baselineResultClass: BASELINE_RESULT.SAFE_EVALUATION_ERROR });
   }
@@ -256,9 +372,9 @@ async function verifyRefreshedTargetPost(page, options = {}) {
     verifyTarget?.(page.url(), options.targetCanonical);
   } catch { return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: false, navigationSucceeded: true, resultClass: RESULT.TARGET_MISMATCH, ambiguityReason: 'NONE' }); }
   try {
-    const classified = classifyRefreshedTargetCandidates(await (options.captureCandidates || captureTargetCandidates)(page), options.immutableText, { trustedNewness: options.trustedNewness === true && baselinePermitsNewness(options.preClickBaseline) });
+    const classified = classifyRefreshedTargetCandidates(await (options.captureCandidates || captureTargetCandidates)(page, { immutableText: options.immutableText }), options.immutableText, { trustedNewness: options.trustedNewness === true && baselinePermitsNewness(options.preClickBaseline) });
     return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true, ...options.preClickBaseline, ...classified, ...descentFields(options.preClickBaseline || {}, 'baseline') });
   } catch { return finish({ navigationAttempted: true, navigationCount: 1, canonicalTargetBeforeNavigation: true, canonicalTargetAfterNavigation: true, navigationSucceeded: true, resultClass: RESULT.SAFE_EVALUATION_ERROR, ambiguityReason: 'SAFE_EVALUATION_ERROR' }); }
 }
 
-module.exports = { RESULT, BASELINE_RESULT, summary, eligibleCandidates, baselinePermitsNewness, classifyRefreshedTargetCandidates, classifyPreClickBaseline, captureTargetCandidates, capturePreClickBaseline, verifyRefreshedTargetPost };
+module.exports = { RESULT, BASELINE_RESULT, CAPTURE_STAGE_RESULT, ROOT_READER_PARITY_CLASS, summary, safeCaptureDiagnostics, eligibleCandidates, baselinePermitsNewness, classifyRefreshedTargetCandidates, classifyPreClickBaseline, captureTargetCandidates, capturePreClickBaseline, verifyRefreshedTargetPost };
