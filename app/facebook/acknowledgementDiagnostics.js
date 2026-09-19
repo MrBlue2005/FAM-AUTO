@@ -8,7 +8,7 @@ const ACKNOWLEDGEMENT_PATTERN = /postarea (ta )?(a fost|este acum) publicat[ăa]
 const MAX_ACKNOWLEDGEMENT_CANDIDATES = 16;
 const MAX_ACKNOWLEDGEMENT_SNAPSHOTS = 6;
 const SNAPSHOT_DELAYS_MS = Object.freeze([0, 250, 1000, 5000, 30000, 90000]);
-const SEMANTIC_CLASSIFICATIONS = new Set(['PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'GENERIC_SUCCESS_LIKE', 'GENERIC_ERROR_LIKE', 'UNRELATED_NOTIFICATION_LIKE', 'EMPTY_OR_UNAVAILABLE', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
+const SEMANTIC_CLASSIFICATIONS = new Set(['PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'SUBMISSION_PENDING_LIKE', 'GENERIC_SUCCESS_LIKE', 'GENERIC_ERROR_LIKE', 'UNRELATED_NOTIFICATION_LIKE', 'EMPTY_OR_UNAVAILABLE', 'AMBIGUOUS', 'SAFE_EVALUATION_ERROR']);
 const LANGUAGE_CLASSIFICATIONS = new Set(['RO', 'EN', 'OTHER', 'UNKNOWN']);
 const BODY_EXTRACTION_RESULT = Object.freeze({
   EXACT_BODY_DIRECT: 'EXACT_BODY_DIRECT',
@@ -583,27 +583,30 @@ function summarizeArticleBodySubtrees(candidates = []) {
 function classifyAcknowledgementSemanticText(renderedText, accessibilityText) {
   try {
     const value = normaliseEphemeralText(`${String(renderedText || '')} ${String(accessibilityText || '')}`);
-    if (!value) return { semanticClassification: 'EMPTY_OR_UNAVAILABLE', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false };
+    if (!value) return { semanticClassification: 'EMPTY_OR_UNAVAILABLE', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false, hasPendingConcept: false, hasApprovalConcept: false };
     const hasPublicationConcept = /\b(publicat|publicata|publicare|publica|publish(?:ed|ing)?|posted)\b/.test(value);
     const hasSuccessConcept = /\b(succes(?:ful(?:ly)?)?|reusit|finalizat|completed?|done|publicat|publicata|published|posted)\b/.test(value);
-    const hasFailureConcept = /\b(esuat|nereusit|failed|failure|could not|nu s-a putut|nu poate)\b/.test(value);
+    const hasFailureConcept = /\b(esuat|nereusit|failed|failure|could not|nu s-a putut|nu poate|not approved|wasn't approved|was not approved|nu a fost aprobata|respins|rejected)\b/.test(value);
     const hasPostObjectConcept = /\b(postarea|postul|postare|your post|post)\b/.test(value);
     const hasGroupConcept = /\b(grup|group)\b/.test(value);
     const hasRetryConcept = /\b(reincearca|incearca din nou|retry|try again)\b/.test(value);
     const hasErrorConcept = /\b(eroare|error|problem|went wrong)\b/.test(value);
+    const hasPendingConcept = /\b(pending|awaiting|in asteptare|in curs de verificare|in curs de revizuire)\b|submitted for approval|sent for approval|trimisa spre aprobare|asteapta aprobarea|needs approval|requires approval/.test(value);
+    const hasApprovalConcept = /\b(approval|approve|approved|aprobare|aprobarea|aprobata|administrator)\b/.test(value);
     const roSignals = /\b(postarea|postul|publicata|publicare|succes|reusit|eroare|grup|incearca)\b/g;
     const enSignals = /\b(your|post|published|publish|success|failed|error|group|retry)\b/g;
     const roCount = (value.match(roSignals) || []).length; const enCount = (value.match(enSignals) || []).length;
     const languageClassification = roCount > enCount ? 'RO' : enCount > roCount ? 'EN' : roCount || enCount ? 'OTHER' : 'OTHER';
     const publicationSpecific = hasPublicationConcept && hasPostObjectConcept;
-    const semanticClassification = publicationSpecific && (hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'PUBLICATION_FAILURE_LIKE'
+    const semanticClassification = hasPostObjectConcept && hasPendingConcept && !(hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'SUBMISSION_PENDING_LIKE'
+      : hasPostObjectConcept && (hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'PUBLICATION_FAILURE_LIKE'
       : publicationSpecific && hasSuccessConcept ? 'PUBLICATION_SUCCESS_LIKE'
         : hasFailureConcept || hasErrorConcept ? 'GENERIC_ERROR_LIKE'
           : hasSuccessConcept ? 'GENERIC_SUCCESS_LIKE'
             : 'UNRELATED_NOTIFICATION_LIKE';
-    return { semanticClassification, languageClassification, hasPublicationConcept, hasSuccessConcept, hasFailureConcept, hasPostObjectConcept, hasGroupConcept, hasRetryConcept, hasErrorConcept };
+    return { semanticClassification, languageClassification, hasPublicationConcept, hasSuccessConcept, hasFailureConcept, hasPostObjectConcept, hasGroupConcept, hasRetryConcept, hasErrorConcept, hasPendingConcept, hasApprovalConcept };
   } catch {
-    return { semanticClassification: 'SAFE_EVALUATION_ERROR', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false };
+    return { semanticClassification: 'SAFE_EVALUATION_ERROR', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false, hasPendingConcept: false, hasApprovalConcept: false };
   }
 }
 
@@ -648,6 +651,8 @@ function safeCandidate(value = {}) {
     hasGroupConcept: typeof value.hasGroupConcept === 'boolean' ? value.hasGroupConcept : semantic.hasGroupConcept,
     hasRetryConcept: typeof value.hasRetryConcept === 'boolean' ? value.hasRetryConcept : semantic.hasRetryConcept,
     hasErrorConcept: typeof value.hasErrorConcept === 'boolean' ? value.hasErrorConcept : semantic.hasErrorConcept,
+    hasPendingConcept: typeof value.hasPendingConcept === 'boolean' ? value.hasPendingConcept : semantic.hasPendingConcept,
+    hasApprovalConcept: typeof value.hasApprovalConcept === 'boolean' ? value.hasApprovalConcept : semantic.hasApprovalConcept,
     accessibleNameSource: ['NONE', 'TEXT_CONTENT', 'ARIA_LABEL', 'ARIA_LABELLEDBY', 'DESCENDANT_TEXT', 'OTHER_ACCESSIBLE_SOURCE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR'].includes(value.accessibleNameSource) ? value.accessibleNameSource : 'SAFE_EVALUATION_ERROR',
     textSource: ['NONE', 'DIRECT_TEXT_NODE', 'DESCENDANT_TEXT', 'MIXED_TEXT_STRUCTURE', 'UNAVAILABLE', 'SAFE_EVALUATION_ERROR'].includes(value.textSource) ? value.textSource : 'SAFE_EVALUATION_ERROR',
     semanticContainer: ['TOAST_LIKE', 'LIVE_REGION_LIKE', 'DIALOG_LIKE', 'BUTTON_LIKE', 'STATUS_CONTAINER_LIKE', 'ALERT_CONTAINER_LIKE', 'GENERIC_CONTAINER', 'UNKNOWN'].includes(value.semanticContainer) ? value.semanticContainer : 'UNKNOWN',
@@ -703,19 +708,20 @@ async function inspectAcknowledgementShapes(page, options = {}) {
       const semantic = (text, accessibility) => {
         try {
           const value = `${text || ''} ${accessibility || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-          if (!value) return { semanticClassification: 'EMPTY_OR_UNAVAILABLE', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false };
+          if (!value) return { semanticClassification: 'EMPTY_OR_UNAVAILABLE', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false, hasPendingConcept: false, hasApprovalConcept: false };
           const hasPublicationConcept = /\b(publicat|publicata|publicare|publica|publish(?:ed|ing)?|posted)\b/.test(value);
           const hasSuccessConcept = /\b(succes(?:ful(?:ly)?)?|reusit|finalizat|completed?|done|publicat|publicata|published|posted)\b/.test(value);
-          const hasFailureConcept = /\b(esuat|nereusit|failed|failure|could not|nu s-a putut|nu poate)\b/.test(value);
+          const hasFailureConcept = /\b(esuat|nereusit|failed|failure|could not|nu s-a putut|nu poate|not approved|wasn't approved|was not approved|nu a fost aprobata|respins|rejected)\b/.test(value);
           const hasPostObjectConcept = /\b(postarea|postul|postare|your post|post)\b/.test(value);
           const hasGroupConcept = /\b(grup|group)\b/.test(value); const hasRetryConcept = /\b(reincearca|incearca din nou|retry|try again)\b/.test(value); const hasErrorConcept = /\b(eroare|error|problem|went wrong)\b/.test(value);
+          const hasPendingConcept = /\b(pending|awaiting|in asteptare|in curs de verificare|in curs de revizuire)\b|submitted for approval|sent for approval|trimisa spre aprobare|asteapta aprobarea|needs approval|requires approval/.test(value); const hasApprovalConcept = /\b(approval|approve|approved|aprobare|aprobarea|aprobata|administrator)\b/.test(value);
           const roCount = (value.match(/\b(postarea|postul|publicata|publicare|succes|reusit|eroare|grup|incearca)\b/g) || []).length;
           const enCount = (value.match(/\b(your|post|published|publish|success|failed|error|group|retry)\b/g) || []).length;
           const languageClassification = roCount > enCount ? 'RO' : enCount > roCount ? 'EN' : roCount || enCount ? 'OTHER' : 'OTHER';
           const publicationSpecific = hasPublicationConcept && hasPostObjectConcept;
-          const semanticClassification = publicationSpecific && (hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'PUBLICATION_FAILURE_LIKE' : publicationSpecific && hasSuccessConcept ? 'PUBLICATION_SUCCESS_LIKE' : hasFailureConcept || hasErrorConcept ? 'GENERIC_ERROR_LIKE' : hasSuccessConcept ? 'GENERIC_SUCCESS_LIKE' : 'UNRELATED_NOTIFICATION_LIKE';
-          return { semanticClassification, languageClassification, hasPublicationConcept, hasSuccessConcept, hasFailureConcept, hasPostObjectConcept, hasGroupConcept, hasRetryConcept, hasErrorConcept };
-        } catch { return { semanticClassification: 'SAFE_EVALUATION_ERROR', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false }; }
+          const semanticClassification = hasPostObjectConcept && hasPendingConcept && !(hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'SUBMISSION_PENDING_LIKE' : hasPostObjectConcept && (hasFailureConcept || hasErrorConcept || hasRetryConcept) ? 'PUBLICATION_FAILURE_LIKE' : publicationSpecific && hasSuccessConcept ? 'PUBLICATION_SUCCESS_LIKE' : hasFailureConcept || hasErrorConcept ? 'GENERIC_ERROR_LIKE' : hasSuccessConcept ? 'GENERIC_SUCCESS_LIKE' : 'UNRELATED_NOTIFICATION_LIKE';
+          return { semanticClassification, languageClassification, hasPublicationConcept, hasSuccessConcept, hasFailureConcept, hasPostObjectConcept, hasGroupConcept, hasRetryConcept, hasErrorConcept, hasPendingConcept, hasApprovalConcept };
+        } catch { return { semanticClassification: 'SAFE_EVALUATION_ERROR', languageClassification: 'UNKNOWN', hasPublicationConcept: false, hasSuccessConcept: false, hasFailureConcept: false, hasPostObjectConcept: false, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false, hasPendingConcept: false, hasApprovalConcept: false }; }
       };
       const selector = '[role="status"], [role="alert"], [aria-live], [aria-label], [title]';
       const out = [];
@@ -858,11 +864,11 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         existing.lastObservedBucket = elapsedBucket(now() - startedAt);
         existing.lastObservedRelativeBucket = relativeBucket(now() - startedAt);
         existing.observationCount = Math.min(1000, existing.observationCount + 1);
-        for (const feature of ['hasPublicationConcept', 'hasSuccessConcept', 'hasFailureConcept', 'hasPostObjectConcept', 'hasGroupConcept', 'hasRetryConcept', 'hasErrorConcept']) existing[feature] = existing[feature] || candidate[feature];
+        for (const feature of ['hasPublicationConcept', 'hasSuccessConcept', 'hasFailureConcept', 'hasPostObjectConcept', 'hasGroupConcept', 'hasRetryConcept', 'hasErrorConcept', 'hasPendingConcept', 'hasApprovalConcept']) existing[feature] = existing[feature] || candidate[feature];
         existing.languageSeen.add(candidate.languageClassification);
         // Preserve the strongest observation for the bounded candidate while
         // retaining the existing strict matcher as the sole success authority.
-        const rank = { PUBLICATION_SUCCESS_LIKE: 5, PUBLICATION_FAILURE_LIKE: 5, GENERIC_SUCCESS_LIKE: 4, GENERIC_ERROR_LIKE: 4, UNRELATED_NOTIFICATION_LIKE: 3, AMBIGUOUS: 2, EMPTY_OR_UNAVAILABLE: 1, SAFE_EVALUATION_ERROR: 0 };
+        const rank = { PUBLICATION_SUCCESS_LIKE: 5, PUBLICATION_FAILURE_LIKE: 5, SUBMISSION_PENDING_LIKE: 5, GENERIC_SUCCESS_LIKE: 4, GENERIC_ERROR_LIKE: 4, UNRELATED_NOTIFICATION_LIKE: 3, AMBIGUOUS: 2, EMPTY_OR_UNAVAILABLE: 1, SAFE_EVALUATION_ERROR: 0 };
         if ((rank[candidate.semanticClassification] || 0) > (rank[existing.semanticClassification] || 0)) existing.semanticClassification = candidate.semanticClassification;
         continue;
       }
@@ -945,6 +951,8 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         hasGroupConcept: entry.hasGroupConcept,
         hasRetryConcept: entry.hasRetryConcept,
         hasErrorConcept: entry.hasErrorConcept,
+        hasPendingConcept: entry.hasPendingConcept,
+        hasApprovalConcept: entry.hasApprovalConcept,
         firstObservedRelativeBucket: entry.firstObservedRelativeBucket,
         lastObservedRelativeBucket: entry.lastObservedRelativeBucket,
         observationCount: entry.observationCount,
@@ -960,6 +968,7 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         totalSemanticCandidates: candidates.length,
         publicationSuccessLikeCount: publicationSuccess.length,
         publicationFailureLikeCount: count('PUBLICATION_FAILURE_LIKE'),
+        submissionPendingLikeCount: count('SUBMISSION_PENDING_LIKE'),
         genericSuccessLikeCount: count('GENERIC_SUCCESS_LIKE'),
         genericErrorLikeCount: count('GENERIC_ERROR_LIKE'),
         unrelatedNotificationLikeCount: count('UNRELATED_NOTIFICATION_LIKE'),
@@ -975,11 +984,14 @@ function createAcknowledgementShapeObserver(page, options = {}) {
         groupConceptObserved: observed('hasGroupConcept'),
         retryConceptObserved: observed('hasRetryConcept'),
         errorConceptObserved: observed('hasErrorConcept'),
+        pendingConceptObserved: observed('hasPendingConcept'),
+        approvalConceptObserved: observed('hasApprovalConcept'),
         languageROObserved: languageObserved('RO'),
         languageENObserved: languageObserved('EN'),
         languageOtherObserved: languageObserved('OTHER'),
         currentMatcherMatched: candidates.some((candidate) => candidate.currentMatcherMatched),
         semanticPublicationSuccessObserved: publicationSuccess.length > 0,
+        semanticSubmissionPendingObserved: count('SUBMISSION_PENDING_LIKE') > 0,
         candidates: candidates.map(({ languageSeen, currentMatcherMatched, ...candidate }) => candidate),
       };
     },

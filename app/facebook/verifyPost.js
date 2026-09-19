@@ -85,6 +85,32 @@ function failurePredicate(composer, acknowledgement) {
   return composer.passed ? 'ACKNOWLEDGEMENT_NOT_OBSERVED' : 'COMPOSER_NOT_HIDDEN';
 }
 
+const POST_SUBMIT_OUTCOME = Object.freeze({
+  PUBLISHED_ACKNOWLEDGED: 'PUBLISHED_ACKNOWLEDGED',
+  PUBLISHED_VISIBLE_EXACT: 'PUBLISHED_VISIBLE_EXACT',
+  SUBMITTED_FOR_APPROVAL: 'SUBMITTED_FOR_APPROVAL',
+  EXPLICIT_FACEBOOK_FAILURE: 'EXPLICIT_FACEBOOK_FAILURE',
+  UNCONFIRMED: 'UNCONFIRMED',
+});
+
+function classifyPostSubmitOutcome({ composerPassed, acknowledgementPassed, targetReload, semanticSummary } = {}) {
+  const exactCount = Math.max(0, Math.min(16, Number(targetReload?.postReloadExactTrustedPostCount) || 0));
+  const counts = { matchingImmutableBodyCount: exactCount, matchingTokenCount: exactCount };
+  if (composerPassed === true && acknowledgementPassed === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_ACKNOWLEDGED, outcomeEvidenceSource: 'EXPLICIT_ACKNOWLEDGEMENT', ...counts };
+  if (composerPassed === true && targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST') return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'CANONICAL_TARGET_RELOAD', ...counts };
+  if (semanticSummary?.semanticSubmissionPendingObserved === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.SUBMITTED_FOR_APPROVAL, outcomeEvidenceSource: 'PENDING_MODERATION_ACKNOWLEDGEMENT', ...counts };
+  if ((Number(semanticSummary?.publicationFailureLikeCount) || 0) > 0 || (Number(semanticSummary?.genericErrorLikeCount) || 0) > 0) return { outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', ...counts };
+  return { outcomeClassification: POST_SUBMIT_OUTCOME.UNCONFIRMED, outcomeEvidenceSource: 'NO_AUTHORITATIVE_EVIDENCE', ...counts };
+}
+
+function classifyCurrentLocation(page, canonicalTargetStillValid) {
+  if (canonicalTargetStillValid === true) return 'CANONICAL_TARGET';
+  try {
+    const url = new URL(String(page?.url?.() || ''));
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === 'www.facebook.com' ? 'APPROVED_FACEBOOK_OTHER' : 'UNAPPROVED_OR_INVALID';
+  } catch { return 'UNAVAILABLE'; }
+}
+
 // The acknowledgement matcher remains a valid success source. Once the
 // composer is provably hidden, a short bounded grace gives it an opportunity
 // to resolve before the single, canonical-target-only post-attempt verifier.
@@ -111,11 +137,17 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     const elapsed = Math.max(0, now() - startedAt);
     const targetVerified = targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST';
     const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: composer.passed && (acknowledgement.passed || targetVerified) ? acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : 'TARGET_RELOAD_PROOF_PASSED' : 'NOT_SATISFIED', failurePredicate: composer.passed && targetVerified ? 'NONE' : failurePredicate(composer, acknowledgement) };
-    try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const acknowledgementShapeSummary = acknowledgementShapes.stop();
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
+    Object.assign(summary, classifyPostSubmitOutcome({ composerPassed: composer.passed, acknowledgementPassed: acknowledgement.passed, targetReload, semanticSummary: acknowledgementSemanticSummary }), {
+      verificationSurfaceSearched: targetReload ? 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD' : 'ACKNOWLEDGEMENT_SURFACES',
+      currentLocationClassification: classifyCurrentLocation(page, options.canonicalTargetStillValid),
+      pendingModerationEvidenceObserved: acknowledgementSemanticSummary.semanticSubmissionPendingObserved === true,
+      explicitErrorEvidenceObserved: acknowledgementSemanticSummary.publicationFailureLikeCount > 0 || acknowledgementSemanticSummary.genericErrorLikeCount > 0,
+    });
+    try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const postPublicationStructuralSummary = {
       ...acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid)),
       // Preserve pre-click baseline evidence even when the independent
@@ -138,6 +170,9 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
 }
 
 module.exports = {
+  POST_SUBMIT_OUTCOME,
+  classifyPostSubmitOutcome,
+  classifyCurrentLocation,
   verifyPostPublished,
   verifyLivePostPublished,
 };

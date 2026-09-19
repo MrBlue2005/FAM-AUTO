@@ -406,6 +406,10 @@ const POST_SUBMIT_CLICK_ERRORS = new Set(['NONE', 'TIMEOUT', 'SAFE_CLICK_ERROR']
 const POST_SUBMIT_ELAPSED_BUCKETS = new Set([
   'UNDER_1_SECOND', 'UNDER_5_SECONDS', 'UNDER_30_SECONDS', 'UNDER_120_SECONDS', 'AT_OR_OVER_TIMEOUT', 'UNKNOWN',
 ]);
+const POST_SUBMIT_OUTCOMES = new Set(['PUBLISHED_ACKNOWLEDGED', 'PUBLISHED_VISIBLE_EXACT', 'SUBMITTED_FOR_APPROVAL', 'EXPLICIT_FACEBOOK_FAILURE', 'UNCONFIRMED']);
+const POST_SUBMIT_EVIDENCE_SOURCES = new Set(['EXPLICIT_ACKNOWLEDGEMENT', 'CANONICAL_TARGET_RELOAD', 'PENDING_MODERATION_ACKNOWLEDGEMENT', 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', 'NO_AUTHORITATIVE_EVIDENCE']);
+const POST_SUBMIT_VERIFICATION_SURFACES = new Set(['ACKNOWLEDGEMENT_SURFACES', 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD']);
+const POST_SUBMIT_LOCATION_CLASSES = new Set(['CANONICAL_TARGET', 'APPROVED_FACEBOOK_OTHER', 'UNAPPROVED_OR_INVALID', 'UNAVAILABLE']);
 const boundedDuration = (value) => Math.max(0, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
 
 function sanitizePostSubmitClick(value = {}) {
@@ -433,6 +437,14 @@ function sanitizePostSubmitVerification(value = {}) {
     acknowledgementPredicate: POST_SUBMIT_PREDICATE_RESULTS.has(value.acknowledgementPredicate) ? value.acknowledgementPredicate : 'NOT_COMPLETED',
     successPredicate: POST_SUBMIT_SUCCESS_PREDICATES.has(value.successPredicate) ? value.successPredicate : 'NOT_SATISFIED',
     failurePredicate: POST_SUBMIT_FAILURE_PREDICATES.has(value.failurePredicate) ? value.failurePredicate : 'OTHER_SAFE_FAILURE',
+    outcomeClassification: POST_SUBMIT_OUTCOMES.has(value.outcomeClassification) ? value.outcomeClassification : 'UNCONFIRMED',
+    outcomeEvidenceSource: POST_SUBMIT_EVIDENCE_SOURCES.has(value.outcomeEvidenceSource) ? value.outcomeEvidenceSource : 'NO_AUTHORITATIVE_EVIDENCE',
+    verificationSurfaceSearched: POST_SUBMIT_VERIFICATION_SURFACES.has(value.verificationSurfaceSearched) ? value.verificationSurfaceSearched : 'ACKNOWLEDGEMENT_SURFACES',
+    currentLocationClassification: POST_SUBMIT_LOCATION_CLASSES.has(value.currentLocationClassification) ? value.currentLocationClassification : 'UNAVAILABLE',
+    matchingImmutableBodyCount: Math.min(16, boundedInteger(value.matchingImmutableBodyCount) || 0),
+    matchingTokenCount: Math.min(16, boundedInteger(value.matchingTokenCount) || 0),
+    pendingModerationEvidenceObserved: bool('pendingModerationEvidenceObserved'),
+    explicitErrorEvidenceObserved: bool('explicitErrorEvidenceObserved'),
   };
 }
 
@@ -466,7 +478,7 @@ function sanitizeAcknowledgementShape(value = {}) {
 }
 
 const ACK_SEMANTIC_CLASSES = new Set([
-  'PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'GENERIC_SUCCESS_LIKE',
+  'PUBLICATION_SUCCESS_LIKE', 'PUBLICATION_FAILURE_LIKE', 'SUBMISSION_PENDING_LIKE', 'GENERIC_SUCCESS_LIKE',
   'GENERIC_ERROR_LIKE', 'UNRELATED_NOTIFICATION_LIKE', 'EMPTY_OR_UNAVAILABLE',
   'AMBIGUOUS', 'SAFE_EVALUATION_ERROR',
 ]);
@@ -475,6 +487,7 @@ const ACK_RELATIVE_BUCKETS = new Set(['UNDER_1S', 'UNDER_5S', 'UNDER_15S', 'UNDE
 const ACK_SEMANTIC_FEATURES = [
   'hasPublicationConcept', 'hasSuccessConcept', 'hasFailureConcept',
   'hasPostObjectConcept', 'hasGroupConcept', 'hasRetryConcept', 'hasErrorConcept',
+  'hasPendingConcept', 'hasApprovalConcept',
 ];
 
 function sanitizeAcknowledgementSemanticCandidate(value = {}) {
@@ -496,7 +509,7 @@ function sanitizeAcknowledgementSemanticCandidate(value = {}) {
 
 function sanitizeAcknowledgementSemantic(value = {}) {
   const counts = [
-    'totalSemanticCandidates', 'publicationSuccessLikeCount', 'publicationFailureLikeCount',
+    'totalSemanticCandidates', 'publicationSuccessLikeCount', 'publicationFailureLikeCount', 'submissionPendingLikeCount',
     'genericSuccessLikeCount', 'genericErrorLikeCount', 'unrelatedNotificationLikeCount',
     'ambiguousCount', 'roleAlertPublicationSuccessLikeCount',
     'roleStatusPublicationSuccessLikeCount', 'ariaLivePublicationSuccessLikeCount',
@@ -505,7 +518,7 @@ function sanitizeAcknowledgementSemantic(value = {}) {
   const flags = [
     ...ACK_SEMANTIC_FEATURES.map((key) => key.replace(/^has/, '').replace(/Concept$/, 'ConceptObserved').replace(/^([A-Z])/, (match) => match.toLowerCase())),
     'languageROObserved', 'languageENObserved', 'languageOtherObserved',
-    'currentMatcherMatched', 'semanticPublicationSuccessObserved',
+    'currentMatcherMatched', 'semanticPublicationSuccessObserved', 'semanticSubmissionPendingObserved',
   ];
   return {
     ...Object.fromEntries(counts.map((key) => [key, boundedInteger(value[key]) || 0])),

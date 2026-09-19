@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { verifyLivePostPublished } = require('../app/facebook/verifyPost');
+const { POST_SUBMIT_OUTCOME, classifyPostSubmitOutcome, verifyLivePostPublished } = require('../app/facebook/verifyPost');
 const { createAcknowledgementShapeObserver, classifyAcknowledgementSemanticText, diagnoseArticleTextParity, diagnoseArticleBodySubtrees, summarizeArticleTextParity, summarizeArticleBodySubtrees } = require('../app/facebook/acknowledgementDiagnostics');
 const { submitScopedPublishControl } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
@@ -73,7 +73,9 @@ test('post-submit summary records strict success without changing both-predicate
   assertSummary(sink.records, {
     clickReturned: true, canonicalTargetStillValid: true, composerState: 'ATTACHED_HIDDEN',
     acknowledgementClassification: 'MATCH_FOUND', composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'PASSED',
-    successPredicate: 'BOTH_PREDICATES_PASSED', failurePredicate: 'NONE',
+    successPredicate: 'BOTH_PREDICATES_PASSED', failurePredicate: 'NONE', outcomeClassification: 'PUBLISHED_ACKNOWLEDGED',
+    outcomeEvidenceSource: 'EXPLICIT_ACKNOWLEDGEMENT', verificationSurfaceSearched: 'ACKNOWLEDGEMENT_SURFACES',
+    currentLocationClassification: 'CANONICAL_TARGET',
   });
   assert.ok(sink.records.some((record) => record.stage === 'ACK_SEMANTIC_SUMMARY'));
   assert.ok(sink.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_SUMMARY'));
@@ -84,7 +86,39 @@ test('post-submit summary records strict success without changing both-predicate
 test('post-submit summary distinguishes acknowledgement timeout from composer-hidden success', async () => {
   const sink = diagnostic();
   assert.equal(await verifyLivePostPublished(page(locator({ visible: false, count: 0 })), locator({ hidden: true, visible: false }), 120000, { diagnostic: sink }), false);
-  assertSummary(sink.records, { composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'FAILED_TIMEOUT', failurePredicate: 'ACKNOWLEDGEMENT_NOT_OBSERVED', acknowledgementClassification: 'NONE' });
+  assertSummary(sink.records, { composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'FAILED_TIMEOUT', failurePredicate: 'ACKNOWLEDGEMENT_NOT_OBSERVED', acknowledgementClassification: 'NONE', outcomeClassification: 'UNCONFIRMED' });
+});
+
+test('post-submit outcome evidence distinguishes visible publication, pending approval, explicit error, and unconfirmed states', () => {
+  assert.deepEqual(classifyPostSubmitOutcome({ composerPassed: true, targetReload: { resultClass: 'VERIFIED_EXACT_TARGET_POST', postReloadExactTrustedPostCount: 1 } }), {
+    outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'CANONICAL_TARGET_RELOAD', matchingImmutableBodyCount: 1, matchingTokenCount: 1,
+  });
+  assert.deepEqual(classifyPostSubmitOutcome({ composerPassed: true, semanticSummary: { semanticSubmissionPendingObserved: true } }), {
+    outcomeClassification: POST_SUBMIT_OUTCOME.SUBMITTED_FOR_APPROVAL, outcomeEvidenceSource: 'PENDING_MODERATION_ACKNOWLEDGEMENT', matchingImmutableBodyCount: 0, matchingTokenCount: 0,
+  });
+  assert.deepEqual(classifyPostSubmitOutcome({ composerPassed: true, semanticSummary: { publicationFailureLikeCount: 1 } }), {
+    outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', matchingImmutableBodyCount: 0, matchingTokenCount: 0,
+  });
+  assert.deepEqual(classifyPostSubmitOutcome({ composerPassed: true, targetReload: { resultClass: 'NOT_FOUND', postReloadExactTrustedPostCount: 0 } }), {
+    outcomeClassification: POST_SUBMIT_OUTCOME.UNCONFIRMED, outcomeEvidenceSource: 'NO_AUTHORITATIVE_EVIDENCE', matchingImmutableBodyCount: 0, matchingTokenCount: 0,
+  });
+});
+
+test('composer close plus pending or error acknowledgement stays unsuccessful and records the distinct outcome', async () => {
+  for (const [semanticText, outcomeClassification] of [
+    ['Your post was submitted for approval and is pending.', 'SUBMITTED_FOR_APPROVAL'],
+    ['Your post was not approved.', 'EXPLICIT_FACEBOOK_FAILURE'],
+  ]) {
+    const sink = diagnostic();
+    const result = await verifyLivePostPublished(page(locator({ visible: false, count: 0 })), locator({ hidden: true, visible: false }), 120000, {
+      diagnostic: sink, clickReturned: true, canonicalTargetStillValid: true, acknowledgementGraceMs: 0,
+      captureAcknowledgementShapes: async () => ({ result: 'AVAILABLE', candidates: [acknowledgementCandidate({ key: 'notice', role: 'status', semanticText })], articles: [] }),
+      scheduleAcknowledgementObservation: (callback) => { callback(); return 1; }, cancelAcknowledgementObservation: () => {},
+      verifyRefreshedTarget: async () => ({ resultClass: 'NOT_FOUND', postReloadExactTrustedPostCount: 0 }),
+    });
+    assert.equal(result, false);
+    assertSummary(sink.records, { outcomeClassification, successPredicate: 'NOT_SATISFIED', matchingImmutableBodyCount: 0, matchingTokenCount: 0 });
+  }
 });
 
 test('post-submit summary distinguishes a visible retained composer from acknowledgement success', async () => {
@@ -199,6 +233,17 @@ test('acknowledgement semantic classifier separates generic, unrelated, failure,
   assert.equal(classifyAcknowledgementSemanticText('', '').semanticClassification, 'EMPTY_OR_UNAVAILABLE');
 });
 
+test('acknowledgement semantic classifier models pending approval separately from published success and rejection', () => {
+  const english = classifyAcknowledgementSemanticText('Your post was submitted for approval and is pending.', '');
+  const romanian = classifyAcknowledgementSemanticText('Postarea ta a fost trimisa spre aprobare.', '');
+  const rejected = classifyAcknowledgementSemanticText('Your post was not approved.', '');
+  assert.equal(english.semanticClassification, 'SUBMISSION_PENDING_LIKE');
+  assert.equal(english.hasPendingConcept, true); assert.equal(english.hasApprovalConcept, true);
+  assert.equal(romanian.semanticClassification, 'SUBMISSION_PENDING_LIKE');
+  assert.equal(rejected.semanticClassification, 'PUBLICATION_FAILURE_LIKE');
+  assert.equal(english.semanticClassification === 'PUBLICATION_SUCCESS_LIKE', false);
+});
+
 test('semantic observer retains role-alert aria-live publication success and its transient timing without changing matcher authority', async () => {
   const { semantic } = await acknowledgementSummary([[
     acknowledgementCandidate({
@@ -217,6 +262,7 @@ test('semantic observer retains role-alert aria-live publication success and its
     semanticClassification: 'PUBLICATION_SUCCESS_LIKE', languageClassification: 'EN',
     hasPublicationConcept: true, hasSuccessConcept: true, hasFailureConcept: false,
     hasPostObjectConcept: true, hasGroupConcept: false, hasRetryConcept: false, hasErrorConcept: false,
+    hasPendingConcept: false, hasApprovalConcept: false,
     firstObservedRelativeBucket: 'UNDER_1S', lastObservedRelativeBucket: 'UNDER_1S', observationCount: 1, transient: true,
   });
 });
@@ -244,6 +290,24 @@ test('semantic acknowledgement persistence redacts text material and retains pro
     assert.ok(terminal); assert.equal(terminal.acknowledgementSemantic.publicationSuccessLikeCount, 1);
     assert.equal(terminal.acknowledgementSemantic.candidates[0].semanticClassification, 'PUBLICATION_SUCCESS_LIKE');
     assert.doesNotMatch(JSON.stringify(persisted), /private acknowledgement|token 123|abc123|private name|facebook\.example/i);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('post-submit outcome persistence keeps bounded enums and counts while dropping private Facebook material', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-post-outcome-diagnostic-'));
+  try {
+    const sink = createComposerAcquisitionDiagnosticSink({ directory }).forTask('live_execution_post_outcome');
+    sink.postSubmitVerificationSummary({
+      outcomeClassification: 'SUBMITTED_FOR_APPROVAL', outcomeEvidenceSource: 'PENDING_MODERATION_ACKNOWLEDGEMENT',
+      verificationSurfaceSearched: 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD', matchingImmutableBodyCount: 99, matchingTokenCount: 99,
+      pendingModerationEvidenceObserved: true, explicitErrorEvidenceObserved: false,
+      rawText: 'private pending post body', url: 'https://facebook.example/private', cookie: 'private-cookie',
+    });
+    const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'live_execution_post_outcome.json'), 'utf8'));
+    const value = persisted.records[0].postSubmitVerification;
+    assert.equal(value.outcomeClassification, 'SUBMITTED_FOR_APPROVAL');
+    assert.equal(value.matchingImmutableBodyCount, 16); assert.equal(value.matchingTokenCount, 16); assert.equal(value.pendingModerationEvidenceObserved, true);
+    assert.doesNotMatch(JSON.stringify(persisted), /private pending|facebook\.example|private-cookie/i);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
