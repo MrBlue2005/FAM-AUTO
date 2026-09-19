@@ -128,6 +128,7 @@ const ZERO_MEDIA_INSPECTION_RESULTS = new Set(['OK', 'COUNT_OPERATION_FAILED', '
 const PROTECTED_STAGES = new Set([
   PRE_SELECTOR_SNAPSHOT_STAGE,
   PRE_SELECTOR_SUMMARY_STAGE,
+  SELECTOR_PARITY_SNAPSHOT_STAGE,
   SELECTOR_PARITY_SUMMARY_STAGE,
   CONTENT_MISMATCH_SUMMARY_STAGE,
   ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
@@ -1191,6 +1192,13 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         if (requiredCritical && criticalReservationEnabled) {
           while (records.length >= effectiveMaxRecords && evictForRequiredCritical(records)) { /* required terminals yield only lower classes */ }
           while (serializedTaskBytes(safeId, [...records, incomingRecord]) > maxBytes && evictForRequiredCritical(records)) { /* ordinary -> protected -> terminal -> non-required critical */ }
+        } else if (criticalReservationEnabled && terminal) {
+          // Protected terminal diagnostics may use currently unoccupied
+          // critical capacity. Required critical summaries deterministically
+          // evict these records later if they need that reserved space.
+          while (records.length >= effectiveMaxRecords && evictLowerPriority(records, incomingPriority)) { /* lower priorities yield first */ }
+          while (records.length && serializedTaskBytes(safeId, [...records, incomingRecord]) > maxBytes
+            && evictLowerPriority(records, incomingPriority)) { /* remain bounded while retaining protected summaries */ }
         } else if (criticalReservationEnabled) {
           // Non-required records never consume capacity reserved for any of the
           // four required terminals, even before those terminals are emitted.

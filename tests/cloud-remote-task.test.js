@@ -6,6 +6,7 @@ const http = require('node:http');
 const express = require('express');
 const { createHostedBffApp } = require('../server/hosted-bff');
 const { createCloudRemoteTaskRouter, safeTask } = require('../server/cloud-remote-task-api');
+const { PREPUBLISH_DIAGNOSTIC_TASK_TYPE } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 
 const origin = 'http://127.0.0.1:5173'; const password = 'remote task password'; const salt = Buffer.alloc(16, 7);
 const passwordHash = `scrypt$16384$8$1$${salt.toString('hex')}$${crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }).toString('hex')}`;
@@ -13,6 +14,14 @@ const userPassword = 'user remote password'; const userSalt = Buffer.alloc(16, 8
 const userPasswordHash = `scrypt$16384$8$1$${userSalt.toString('hex')}$${crypto.scryptSync(userPassword, userSalt, 64, { N: 16384, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }).toString('hex')}`;
 const agentId = 'agent_SYNTHETIC'; const profileId = 'profile_SYNTHETIC';
 const env = (enabled = true, options = {}) => ({ NODE_ENV: 'test', AUTH_ENABLED: 'true', ADMIN_PASSWORD_SCRYPT: passwordHash, USER_USERNAME: 'user', USER_PASSWORD_SCRYPT: userPasswordHash, RX_BFF_SESSION_SIGNING_SECRET: 'remote-task-test-signing-secret-that-is-long-enough', RX_BFF_ALLOWED_ORIGINS: origin, RX_BFF_CLOUD_REMOTE_TASKS_ENABLED: enabled ? 'true' : 'false', RX_BFF_CHROMIUM_PREFLIGHT_ENABLED: options.chromiumPreflightEnabled ? 'true' : 'false', RX_BFF_CONTROLLED_EXECUTION_ENABLED: options.controlledExecutionEnabled ? 'true' : 'false', RX_BFF_SYNTHETIC_AGENT_ID: options.configuredAgentId ?? agentId, RX_BFF_SYNTHETIC_PROFILE_ID: options.configuredProfileId ?? profileId });
+
+test('safe task readback distinguishes an intentional pre-publish diagnostic completion from publication', () => {
+  const task = safeTask({
+    task_id: 'diagnostic', task_type: PREPUBLISH_DIAGNOSTIC_TASK_TYPE, status: 'COMPLETED',
+    result: { prepublishDiagnostic: true, diagnosticCheckpoint: 'PREPUBLISH_BOUNDARY_REACHED', publicationAttempted: false, publishEnabled: false, sideEffectState: 'NOT_ATTEMPTED', blockers: [] },
+  });
+  assert.deepEqual(task.result, { prepublishDiagnostic: true, diagnosticCheckpoint: 'PREPUBLISH_BOUNDARY_REACHED', publicationAttempted: false, publishEnabled: false, sideEffectState: 'NOT_ATTEMPTED', blockers: [] });
+});
 
 function store({ online = true, agentExists = true, profileExists = true, ownershipCorrect = true, profileReady = true, activeProfileId = '' } = {}) {
   const tasks = new Map(); let creates = 0;

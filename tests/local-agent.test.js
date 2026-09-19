@@ -16,7 +16,7 @@ const { LocalAgentCredentials } = require('../app/local-agent/LocalAgentCredenti
 const { bootstrapLocalAgent, validateHostedAgentConfig } = require('../app/local-agent/bootstrap');
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { detectSessionState } = require('../app/local-agent/FacebookSessionReadinessExecutor');
-const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
+const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE, PREPUBLISH_DIAGNOSTIC_MODE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { verifyComposerText } = require('../app/local-agent/FacebookLiveReadiness');
 const { normalizeExpectedFacebookAccountId } = require('../app/local-agent/FacebookIdentityConfig');
@@ -432,6 +432,22 @@ function liveFixture(overrides = {}) {
   };
 }
 
+function prepublishDiagnosticFixture(overrides = {}) {
+  const live = liveFixture();
+  return {
+    ...live,
+    task_id: 'prepublish_diagnostic_task',
+    task_type: PREPUBLISH_DIAGNOSTIC_TASK_TYPE,
+    payload: {
+      ...live.payload,
+      mode: PREPUBLISH_DIAGNOSTIC_MODE,
+      publishEnabled: false,
+      execution_config: { mode: PREPUBLISH_DIAGNOSTIC_MODE, publishEnabled: false, stopBeforePublish: true, rehearsal: false },
+    },
+    ...overrides,
+  };
+}
+
 function loadPostCreatorForTest(stubs) {
   const postCreatorPath = require.resolve('../app/facebook/postCreator');
   const dependencyPaths = {
@@ -519,6 +535,86 @@ test('live executor seam is mock-only, persists marker before submit, and comple
   assert.ok(calls.indexOf('MARK_ATTEMPT') < calls.indexOf('SUBMIT'));
   await assert.rejects(createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: false })(liveFixture()), { code: 'LIVE_EXECUTION_DISABLED' });
   await assert.rejects(createLiveCampaignExecutionExecutor({ getProfile: () => ({ status: 'READY' }) }, () => [], { enabled: true })(liveFixture()), { code: 'LIVE_EXECUTION_NOT_IMPLEMENTED' });
+});
+
+test('pre-publish diagnostic reuses normal preparation and stops deterministically before marker or submit', async () => {
+  const fixture = liveSeamFixture({
+    publisher: {
+      verifyAfterLeaseReadiness: async () => { fixture.calls.push('POST_LEASE_READY'); return { sessionReady: true, targetReady: true, composerReady: true }; },
+      cleanup: async () => fixture.calls.push('CLEANUP'),
+    },
+  });
+  const trace = [];
+  const result = await fixture.execute(prepublishDiagnosticFixture(), { transport: fixture.transport, trace: (stage) => trace.push(stage) });
+  assert.deepEqual(result, {
+    prepublishDiagnostic: true,
+    diagnosticMode: PREPUBLISH_DIAGNOSTIC_MODE,
+    diagnosticCheckpoint: 'PREPUBLISH_BOUNDARY_REACHED',
+    publicationAttempted: false,
+    publishEnabled: false,
+    sideEffectState: 'NOT_ATTEMPTED',
+    manualReviewRequired: false,
+    blockers: [],
+  });
+  assert.deepEqual(fixture.calls, ['PREPARE', 'READY', 'LEASE', 'POST_LEASE_READY', 'CLEANUP']);
+  assert.deepEqual(trace, ['PREPARE_COMPLETE', 'PUBLISHER_READY', 'LEASE_VALID', 'POST_LEASE_PUBLISHER_READY', 'PREPUBLISH_DIAGNOSTIC_CHECKPOINT']);
+  assert.equal(fixture.calls.includes('MARK_ATTEMPT'), false);
+  assert.equal(fixture.calls.includes('SUBMIT'), false);
+  assert.equal(fixture.calls.includes('VERIFY'), false);
+});
+
+test('diagnostic mode defaults off and malformed stop flags fail before preparation', async () => {
+  const production = liveSeamFixture();
+  const productionResult = await production.execute(liveFixture(), { transport: production.transport });
+  assert.equal(productionResult.sideEffectState, 'VERIFIED_SUCCESS');
+  assert.ok(production.calls.includes('SUBMIT'));
+
+  const malformed = liveSeamFixture();
+  const task = liveFixture({ payload: { ...liveFixture().payload, execution_config: { publishEnabled: true, stopBeforePublish: true } } });
+  await assert.rejects(malformed.execute(task, { transport: malformed.transport }), { code: 'LIVE_EXECUTION_SNAPSHOT_INVALID' });
+  assert.deepEqual(malformed.calls, []);
+});
+
+test('real adapter defensively rejects direct diagnostic submit before the publish primitive', async () => {
+  let launches = 0;
+  const adapter = createRealFacebookPublisherAdapter({ getProfile: () => ({ status: 'READY' }) }, () => [], { openBrowser: async () => { launches += 1; } });
+  await assert.rejects(adapter.submit(prepublishDiagnosticFixture()), { code: 'DIAGNOSTIC_PUBLISH_FORBIDDEN' });
+  assert.equal(launches, 0);
+});
+
+test('CloudAgentService completes a diagnostic result and releases its profile lock without a side-effect marker', async () => {
+  const fixture = liveSeamFixture({
+    publisher: {
+      verifyAfterLeaseReadiness: async () => { fixture.calls.push('POST_LEASE_READY'); return { sessionReady: true, targetReady: true, composerReady: true }; },
+      cleanup: async () => fixture.calls.push('CLEANUP'),
+    },
+  });
+  const task = prepublishDiagnosticFixture(); const events = []; let completion = null;
+  const transport = {
+    ...fixture.transport,
+    heartbeat: async () => {},
+    claimNextTask: async () => ({ task }),
+    getCancellationState: async () => ({ cancellation_requested: false }),
+    reportRunning: async () => events.push('RUNNING'),
+    reportCompletion: async (_task, result) => { completion = result; events.push('COMPLETION_PERSISTED'); },
+    reportFailure: async () => events.push('FAILED'),
+    reportOutcomeUnknown: async () => events.push('OUTCOME_UNKNOWN'),
+    reportCancelled: async () => events.push('CANCELLED'),
+  };
+  const service = new CloudAgentService({
+    transport,
+    registry: { getSafeMetadata: () => ({ agent_id: 'agent_live' }) },
+    executor: { runProfile: async (_profileId, handler, details) => { details.onAcquired(); try { return await handler(); } finally { details.onReleased(); } } },
+    executeTask: (executionTask, _cancel, context) => fixture.execute(executionTask, context),
+    events: (event) => events.push(event),
+  });
+  await service.runOnce();
+  assert.equal(completion.diagnosticCheckpoint, 'PREPUBLISH_BOUNDARY_REACHED');
+  assert.equal(completion.publicationAttempted, false);
+  assert.equal(fixture.calls.includes('MARK_ATTEMPT'), false);
+  assert.equal(fixture.calls.includes('SUBMIT'), false);
+  assert.ok(events.indexOf('COMPLETION_PERSISTED') < events.indexOf('PROFILE_LOCK_RELEASED'));
+  assert.deepEqual(events.filter((event) => ['FAILED', 'OUTCOME_UNKNOWN', 'CANCELLED'].includes(event)), []);
 });
 
 test('live executor seam fails before publish on pre-marker or marker failure and resolves post-marker ambiguity safely', async () => {

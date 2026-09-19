@@ -10,6 +10,7 @@ const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig')
 const { verifyAuthenticatedFacebookAccountId } = require('./FacebookSessionIdentity');
 const { canonicalFacebookGroupTarget, verifyCanonicalFacebookGroupTarget, requirePreparedComposer, ensureRetainedComposer, verifyComposerText, inspectComposerMedia, findScopedPublishControl, ensureScopedPublishControl } = require('./FacebookLiveReadiness');
 const { createComposerAcquisitionDiagnosticSink } = require('./ComposerAcquisitionDiagnostics');
+const { diagnosticStopRequested } = require('./PrepublishDiagnosticPolicy');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 const FACEBOOK_ROOT_URL = 'https://www.facebook.com/';
@@ -202,6 +203,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       await verifyPublishControl(publishButton, composer);
     },
     async submit(task) {
+      if (diagnosticStopRequested(task)) throw failure('DIAGNOSTIC_PUBLISH_FORBIDDEN', 'Pre-publish diagnostic tasks cannot invoke the publish action.');
       requirePrepared(task);
       if (!publishButton) throw failure('PUBLISH_CONTROL_UNAVAILABLE', 'Facebook publish control was not verified.');
       if (submitInvoked) throw failure('PUBLISH_ALREADY_ATTEMPTED', 'The live publisher will not submit twice.');

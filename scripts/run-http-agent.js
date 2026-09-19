@@ -10,7 +10,7 @@ const { createCampaignPreflightExecutor } = require('../app/local-agent/Campaign
 const { createControlledCampaignExecutionExecutor } = require('../app/local-agent/ControlledCampaignExecutionExecutor');
 const { createChromiumSafePreflightExecutor } = require('../app/local-agent/ChromiumSafePreflightExecutor');
 const { createFacebookSessionReadinessExecutor } = require('../app/local-agent/FacebookSessionReadinessExecutor');
-const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
+const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE, createLiveCampaignExecutionExecutor } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { createRealFacebookPublisherAdapter } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createRehearsalLivePublisherAdapter } = require('../app/local-agent/RehearsalLivePublisherAdapter');
 const { validateHttpAgentConfig } = require('../app/local-agent/bootstrap');
@@ -35,7 +35,7 @@ const liveExecution = createLiveCampaignExecutionExecutor(registry, runtimeProfi
 const legacyCloudExecution = createCloudFacebookTaskExecutor(registry, runtimeProfiles);
 const executeTask = dryRun
   ? async (task, _isCancellationRequested, context) => {
-    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task, context);
+    if ([LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE].includes(task.task_type)) return liveExecution(task, context);
     if (task.task_type === 'CAMPAIGN_PREFLIGHT') return campaignPreflight(task);
     if (task.task_type === 'CONTROLLED_CAMPAIGN_EXECUTION') return controlledExecution(task);
     if (task.task_type === 'CHROMIUM_SAFE_PREFLIGHT') return chromiumSafePreflight(task);
@@ -45,7 +45,7 @@ const executeTask = dryRun
     return { dry_run: true, publishEnabled: false };
   }
   : async (task, isCancellationRequested, context) => {
-    if (task.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) return liveExecution(task, context);
+    if ([LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE].includes(task.task_type)) return liveExecution(task, context);
     return legacyCloudExecution(task, isCancellationRequested);
   };
 const events = (type, data) => console.log(`RX_AGENT_EVENT:${JSON.stringify({ type, ...data })}`);

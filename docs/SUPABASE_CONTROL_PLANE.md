@@ -12,6 +12,14 @@ The immutable local `agent_id`/`profile_id` values remain primary identities. Cr
 
 The task state machine is Protocol v1: `QUEUED → CLAIMED → RUNNING → COMPLETED|FAILED|CANCELLED|OUTCOME_UNKNOWN`. `OUTCOME_UNKNOWN` is terminal until an explicit operator resolution.
 
+### Pre-publish browser diagnostic
+
+`FACEBOOK_PREPUBLISH_DIAGNOSTIC` is the explicit, non-publishing task type for exercising the real managed-browser preparation path. Its server-owned payload must use `mode: PREPUBLISH_DIAGNOSTIC`, set both publish flags to `false`, and set `execution_config.stopBeforePublish: true`. The mode is off unless all of those fields and the dedicated task type agree; ordinary `LIVE_CAMPAIGN_EXECUTION` snapshots retain their existing behavior.
+
+The diagnostic claims, locks the profile, navigates, prepares the composer, validates its exact body/media, renews its lease, and runs the same post-lease readiness and pre-click baseline diagnostics as the production path. It then completes with `diagnosticCheckpoint: PREPUBLISH_BOUNDARY_REACHED`, `publicationAttempted: false`, and `sideEffectState: NOT_ATTEMPTED`. It never records `ATTEMPT_STARTED`, calls submit, or runs publication outcome verification. The real adapter independently rejects any diagnostic-marked task passed to `submit()` with `DIAGNOSTIC_PUBLISH_FORBIDDEN`, providing a second guard immediately outside the click primitive.
+
+The existing JSON payload, task state machine, agent protocol, and database schema already support this task type; no migration is required. A trusted server/control-plane caller must construct the immutable diagnostic snapshot. Browser input cannot turn a normal live task into diagnostic mode, and the live-confirmation route continues to construct only ordinary publish-capable snapshots.
+
 ## Atomic claims, leases, and idempotency
 
 The first valid terminal transition wins permanently. An identical retry returns the original terminal snapshot without another audit event; a later different terminal transition is rejected.

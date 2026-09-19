@@ -5,13 +5,25 @@
 // injected explicitly, and production startup injects none.
 const LIVE_CAMPAIGN_EXECUTION_TASK_TYPE = 'LIVE_CAMPAIGN_EXECUTION';
 const LIVE_EXECUTION_MODE = 'LIVE_EXECUTION';
+const {
+  PREPUBLISH_DIAGNOSTIC_TASK_TYPE,
+  PREPUBLISH_DIAGNOSTIC_MODE,
+  diagnosticStopRequested,
+  isValidPrepublishDiagnosticSnapshot,
+} = require('./PrepublishDiagnosticPolicy');
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function uncertain(reason, message) { return Object.assign(new Error(message), { code: 'EXECUTION_OUTCOME_UNKNOWN', reason }); }
 
 function requireLiveSnapshot(task, registry, runtimeProfiles, transport) {
   const payload = task.payload || {};
-  if (payload.mode !== LIVE_EXECUTION_MODE || payload.publishEnabled !== true || payload.execution_config?.publishEnabled !== true) throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Live execution requires a server-owned publish-enabled snapshot.');
+  const diagnostic = isValidPrepublishDiagnosticSnapshot(task);
+  const live = task?.task_type === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE
+    && payload.mode === LIVE_EXECUTION_MODE
+    && payload.publishEnabled === true
+    && payload.execution_config?.publishEnabled === true
+    && !diagnosticStopRequested(task);
+  if (!live && !diagnostic) throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Execution requires a valid server-owned live or pre-publish diagnostic snapshot.');
   if (!task.agent_id || !task.profile_id || (transport?.agentId && String(task.agent_id) !== String(transport.agentId))) throw failure('LIVE_EXECUTION_ROUTING_INVALID', 'Live execution routing is invalid.');
   if (!payload.campaign?.campaign_id || !payload.post?.post_id || !Number.isInteger(payload.post?.day) || !payload.target?.target_id || !payload.target?.url) throw failure('LIVE_EXECUTION_SNAPSHOT_INVALID', 'Live execution snapshot is incomplete.');
   const profile = registry?.getProfile?.(task.profile_id, runtimeProfiles());
@@ -26,6 +38,7 @@ function requireLiveSnapshot(task, registry, runtimeProfiles, transport) {
   } else if (!Array.isArray(localMedia) || media.length !== localMedia.length) {
     throw failure('MEDIA_EXECUTION_INCOMPLETE', 'Live execution media was not verified before publishing.');
   }
+  return { diagnostic };
 }
 
 function requirePublisher(publisher) {
@@ -41,7 +54,7 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
   if (arguments.length <= 1 && registry && typeof registry === 'object' && Object.prototype.hasOwnProperty.call(registry, 'enabled')) { options = registry; registry = null; runtimeProfiles = () => []; }
   const { enabled = false, publisher = null } = options;
   return async (task, context = {}) => {
-    if (task?.task_type !== LIVE_CAMPAIGN_EXECUTION_TASK_TYPE) throw failure('UNSUPPORTED_TASK_TYPE', 'Unsupported live task type.');
+    if (![LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE].includes(task?.task_type)) throw failure('UNSUPPORTED_TASK_TYPE', 'Unsupported live task type.');
     if (enabled !== true) throw failure('LIVE_EXECUTION_DISABLED', 'Live campaign execution is disabled.');
 
     // A claimed/reconnected attempted task is never a license to submit again.
@@ -53,27 +66,40 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
       const transport = context.transport;
       const trace = typeof context.trace === 'function' ? context.trace : () => {};
       const cancellationRequested = typeof context.isCancellationRequested === 'function' ? context.isCancellationRequested : async () => false;
-      requireLiveSnapshot(task, registry, runtimeProfiles, transport);
-      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      const { diagnostic } = requireLiveSnapshot(task, registry, runtimeProfiles, transport);
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: !diagnostic, blockers: [] };
       await adapter.prepare(task, { trace });
       trace('PREPARE_COMPLETE');
       const readiness = await adapter.verifyReady(task);
       if (!readinessAccepted(readiness)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready.');
       trace('PUBLISHER_READY');
-      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: !diagnostic, blockers: [] };
       if (!transport || typeof transport.renewLease !== 'function' || typeof transport.markSideEffectAttemptStarted !== 'function' || typeof transport.markSideEffectVerifiedSuccess !== 'function') throw failure('LIVE_TRANSPORT_UNAVAILABLE', 'Live control-plane transport is unavailable.');
 
       // The final lease is followed by two cancellation boundaries and a
       // complete, side-effect-free real-browser readiness recheck.
       await transport.renewLease(task);
       trace('LEASE_VALID');
-      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: !diagnostic, blockers: [] };
       if (typeof adapter.verifyAfterLeaseReadiness === 'function') {
         const readinessAfterLease = await adapter.verifyAfterLeaseReadiness(task);
         if (!readinessAccepted(readinessAfterLease)) throw failure('PUBLISHER_NOT_READY', 'The reviewed publisher is not ready after lease renewal.');
         trace('POST_LEASE_PUBLISHER_READY');
       }
-      if (await cancellationRequested()) return { cancelled: true, publishEnabled: true, blockers: [] };
+      if (await cancellationRequested()) return { cancelled: true, publishEnabled: !diagnostic, blockers: [] };
+      if (diagnostic) {
+        trace('PREPUBLISH_DIAGNOSTIC_CHECKPOINT');
+        return {
+          prepublishDiagnostic: true,
+          diagnosticMode: PREPUBLISH_DIAGNOSTIC_MODE,
+          diagnosticCheckpoint: 'PREPUBLISH_BOUNDARY_REACHED',
+          publicationAttempted: false,
+          publishEnabled: false,
+          sideEffectState: 'NOT_ATTEMPTED',
+          manualReviewRequired: false,
+          blockers: [],
+        };
+      }
       await transport.markSideEffectAttemptStarted(task);
       trace('ATTEMPT_STARTED_PERSISTED');
       if (await cancellationRequested()) throw uncertain('CANCELLED_AFTER_ATTEMPT_STARTED', 'Cancellation arrived after live publication authorization.');
@@ -97,4 +123,10 @@ function createLiveCampaignExecutionExecutor(registry, runtimeProfiles, options 
   };
 }
 
-module.exports = { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, createLiveCampaignExecutionExecutor };
+module.exports = {
+  LIVE_CAMPAIGN_EXECUTION_TASK_TYPE,
+  LIVE_EXECUTION_MODE,
+  PREPUBLISH_DIAGNOSTIC_TASK_TYPE,
+  PREPUBLISH_DIAGNOSTIC_MODE,
+  createLiveCampaignExecutionExecutor,
+};

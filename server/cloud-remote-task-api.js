@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { CAMPAIGN_PREFLIGHT_TASK_TYPE, buildCampaignPreflightSnapshot, safeCampaignPreflightResult } = require('./cloud-campaign-preflight');
 const { CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE, buildControlledExecutionSnapshot, safeControlledExecutionResult } = require('./cloud-controlled-execution');
-const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE } = require('../app/local-agent/LiveCampaignExecutionExecutor');
+const { LIVE_CAMPAIGN_EXECUTION_TASK_TYPE, LIVE_EXECUTION_MODE, PREPUBLISH_DIAGNOSTIC_TASK_TYPE } = require('../app/local-agent/LiveCampaignExecutionExecutor');
 const { CHROMIUM_SAFE_PREFLIGHT_TASK_TYPE, safeChromiumPreflightResult } = require('./cloud-chromium-preflight');
 const { FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE, safeFacebookSessionResult } = require('./facebook-session-preflight');
 const { managedTaskOwnerId, taskWithServerOwner } = require('./task-ownership');
@@ -56,6 +56,14 @@ function safeResult(result, taskType) {
   if (taskType === FACEBOOK_SESSION_READINESS_PREFLIGHT_TASK_TYPE) return safeFacebookSessionResult(result);
   if (taskType === CAMPAIGN_PREFLIGHT_TASK_TYPE) return safeCampaignPreflightResult(result);
   if (taskType === CONTROLLED_CAMPAIGN_EXECUTION_TASK_TYPE) return safeControlledExecutionResult(result);
+  if (taskType === PREPUBLISH_DIAGNOSTIC_TASK_TYPE && result?.prepublishDiagnostic === true) return {
+    prepublishDiagnostic: true,
+    diagnosticCheckpoint: result.diagnosticCheckpoint === 'PREPUBLISH_BOUNDARY_REACHED' ? 'PREPUBLISH_BOUNDARY_REACHED' : null,
+    publicationAttempted: result.publicationAttempted === true,
+    publishEnabled: false,
+    sideEffectState: result.sideEffectState === 'NOT_ATTEMPTED' ? 'NOT_ATTEMPTED' : null,
+    blockers: Array.isArray(result.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [],
+  };
   if (taskType === LIVE_CAMPAIGN_EXECUTION_TASK_TYPE && result?.liveExecution === true) return { liveExecution: true, executionRehearsal: result.executionRehearsal === true, sideEffectState: result.sideEffectState === 'VERIFIED_SUCCESS' ? 'VERIFIED_SUCCESS' : null, blockers: Array.isArray(result.blockers) ? result.blockers.filter((value) => typeof value === 'string').slice(0, 16) : [] };
   return null;
 }
