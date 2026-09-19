@@ -225,13 +225,20 @@ async function taskHistoryContext(store) {
 
 async function managedExecutionTargets(store, userId) {
   const assignments = await store.listManagedUserExecutionTargets(userId, { enabledOnly: true });
-  const [agents, profiles] = await Promise.all([store.listControlPlaneAgents(), store.listControlPlaneProfiles()]);
+  const [agents, profiles, activeTasks] = await Promise.all([
+    store.listControlPlaneAgents(),
+    store.listControlPlaneProfiles(),
+    typeof store.listActiveControlPlaneTasks === 'function' ? store.listActiveControlPlaneTasks() : [],
+  ]);
   const agentById = new Map(agents.map((agent) => [String(agent.agent_id), agent])); const profileById = new Map(profiles.map((profile) => [String(profile.profile_id), profile]));
   return assignments.map((assignment) => {
     const agent = agentById.get(String(assignment.device_id)); const profile = profileById.get(String(assignment.profile_id)); const seen = Date.parse(agent?.last_seen_at || '');
     const online = ['ONLINE', 'BUSY', 'DEGRADED'].includes(String(agent?.reported_status || '').toUpperCase()) && Number.isFinite(seen) && Date.now() - seen <= AGENT_HEARTBEAT_FRESHNESS_MS;
     const profileStatus = String(profile?.status || 'UNAVAILABLE').toUpperCase();
-    return { deviceId: String(assignment.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(assignment.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), online, profileStatus, canRequestPreflight: Boolean(agent && profile && profile.agent_id === assignment.device_id && online && profileStatus === 'READY') };
+    const profileTasks = activeTasks.filter((task) => task.agent_id === assignment.device_id && task.profile_id === assignment.profile_id);
+    const workload = activeWorkload(profileTasks);
+    const profileConflict = workload.claimedTaskCount + workload.runningTaskCount > 0;
+    return { deviceId: String(assignment.device_id), deviceDisplayName: String(agent?.display_name || 'Dispozitiv indisponibil'), profileId: String(assignment.profile_id), profileDisplayName: String(profile?.display_name || 'Profil indisponibil'), online, profileStatus, activeTaskCount: workload.activeTaskCount, profileConflict, canRequestPreflight: Boolean(agent && profile && profile.agent_id === assignment.device_id && online && profileStatus === 'READY' && workload.activeTaskCount === 0) };
   });
 }
 
