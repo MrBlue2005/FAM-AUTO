@@ -1,5 +1,11 @@
 # FAM-AUTO handoff
 
+## Managed USER creator campaign visibility
+
+An authenticated managed USER who creates a new cloud campaign now receives exactly one enabled visibility relation to that newly created campaign. The BFF derives the creator UUID only from the signed server-side session; browser fields cannot select a recipient. A dedicated service-role-only PostgreSQL RPC creates the campaign, its posts, and the creator visibility row in one transaction, with request-ID/hash idempotency and a creation-only guard that rejects pre-existing campaigns. If visibility cannot be established, the transaction fails without leaving a successful but unreadable campaign.
+
+This prospective rule is not general ACL management. ADMIN-only campaign-visibility endpoints are unchanged; managed users still cannot grant, remove, enumerate, or modify arbitrary visibility, cannot self-assign pre-existing campaigns, and gain no ADMIN rights. Other managed users remain isolated, existing campaigns receive no backfill, and target visibility and device/profile assignment remain independent.
+
 ## G5.7FR capture-stage diagnostics
 
 `captureTargetCandidates()` now retains bounded, privacy-safe evidence showing where an immutable-body signal disappears: root-selector totals and the unchanged 16-root cap, sequential eligibility-filter counts, retained candidate ordinals and safe root shape, root-reader parity, the unchanged 64-descendant raw window, ordinal windows 1-24 and 25-64, and the unchanged 24-block reduction with parent-link loss counts. Fixed `captureStageResult` and `rootReaderParityClass` enums distinguish selector/cap exclusion, reader mismatch, raw descendant evidence, post-24 reduction loss, no selected-root signal, and safe evaluation failure. Normalization-sensitive observations are booleans only; no text, character position, selector, DOM identity, URL, cookie, token, or content hash is retained.

@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { mapCampaign, mapFolder, mapSchedule, mapTarget } = require('./cloud-dashboard-read-api');
+const { managedTaskOwnerId } = require('./task-ownership');
 
 const fail = (message, status = 400, code) => Object.assign(new Error(message), { status, code });
 const string = (value, label, required = false) => {
@@ -39,7 +40,7 @@ function postsFromDto(posts) {
   });
 }
 
-async function campaignWrite(store, dto, kind, legacyId) {
+async function campaignWrite(store, dto, kind, legacyId, user) {
   const id = string(legacyId || dto?.id, 'campaign id', true);
   if (legacyId && dto?.id && String(dto.id) !== legacyId) throw fail('Cloud campaign legacy IDs cannot be renamed. Create a new campaign instead.', 409);
   const folders = await store.listCampaignFolders(); const folder = dto?.folderId ? folders.find((row) => row.legacy_id === dto.folderId) : null;
@@ -50,7 +51,17 @@ async function campaignWrite(store, dto, kind, legacyId) {
     profile_id: string(dto?.facebookProfileId || dto?.postingProfileId, 'profile'),
     data: Object.fromEntries(['transactionType', 'company', 'description', 'location', 'price'].flatMap((key) => dto?.[key] === undefined ? [] : [[key, dto[key]]])),
   };
-  const result = await store.saveCampaign({ campaign, posts: postsFromDto(dto?.posts), expectedRevision: revision(dto?.revision, true), requestId: requestId(dto.__request) });
+  const posts = postsFromDto(dto?.posts);
+  const expectedRevision = revision(dto?.revision, true);
+  const creatorUserId = legacyId ? null : managedTaskOwnerId(user);
+  if (creatorUserId && expectedRevision === 0 && typeof store.createCampaignForManagedUser !== 'function') {
+    throw fail('Creator campaign visibility is unavailable; no campaign was created.', 503, 'APP_CREATOR_VISIBILITY_UNAVAILABLE');
+  }
+  if (creatorUserId && expectedRevision === 0) {
+    await store.createCampaignForManagedUser({ campaign, posts, creatorUserId, requestId: requestId(dto.__request) });
+  } else {
+    await store.saveCampaign({ campaign, posts, expectedRevision, requestId: requestId(dto.__request) });
+  }
   const current = (await store.listCampaigns(kind)).find((row) => row.legacy_id === id);
   if (!current) throw fail('Campaign save did not return a readable cloud record.', 409);
   return mapCampaign(current, new Map(folders.map((row) => [row.folder_id, row.legacy_id])));
@@ -103,7 +114,7 @@ function createCloudApplicationMutationRouter(store) {
     else throw fail('Unknown application record type.', 404);
     return { revision: Number.isInteger(row?.revision) ? row.revision : 0 };
   })()));
-  const campaign = (kind, legacyId) => (req, res) => send(res, campaignWrite(store, { ...req.body, __request: req }, kind, legacyId), legacyId ? 200 : 201);
+  const campaign = (kind, legacyId) => (req, res) => send(res, campaignWrite(store, { ...req.body, __request: req }, kind, legacyId, req.user), legacyId ? 200 : 201);
   router.post('/properties', campaign('property')); router.put('/properties/:legacyId', (req, res) => campaign('property', req.params.legacyId)(req, res));
   router.delete('/properties/:legacyId', (req, res) => send(res, store.deleteCampaign({ legacyId: req.params.legacyId, kind: 'property', expectedRevision: revision(req.body?.revision) }).then(() => ({ id: req.params.legacyId }))));
   router.post('/jobs', campaign('job')); router.put('/jobs/:legacyId', (req, res) => campaign('job', req.params.legacyId)(req, res));

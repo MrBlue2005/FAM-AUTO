@@ -18,6 +18,8 @@ Every application table has RLS enabled. `anon` and `authenticated` receive no t
 
 `202609080004_application_transactional_rpcs.sql` adds only the compound-write boundary: `rx_app_write_campaign_with_posts`, `rx_app_write_schedule_with_campaigns`, and `rx_app_set_post_media`. Each accepts an expected revision and a request ID/hash. A stale revision with a new request is rejected; an exact retry returns its saved result. The RPC transaction rolls back its idempotency row, parent row and relation changes if any later write fails. They are `SECURITY INVOKER` functions with `search_path = pg_catalog, public`, no PUBLIC/anon/authenticated execute grant, and service-role-only execution. Results/execution runs intentionally have no RPC because the present schema has no required multi-table write invariant there.
 
+`202609200001_creator_campaign_visibility.sql` adds a separate creation-only compound boundary for authenticated managed users. The BFF supplies the creator UUID from the signed session, never from campaign DTO input. `rx_app_create_campaign_with_posts_for_creator` atomically creates the new campaign/posts and one enabled `hosted_user_campaign_visibility` row for that creator; an exact request retry reuses its stored result, while a pre-existing campaign is rejected so the RPC cannot become a self-assignment path. A visibility failure rolls back the complete creation. Arbitrary visibility management remains ADMIN-only, other users remain isolated, existing campaigns are not backfilled, and target/execution assignment policy is unchanged.
+
 ## Snapshot compatibility
 
 Future task creation reads a coherent application revision and writes the complete immutable material into the existing `tasks.payload`:

@@ -38,6 +38,7 @@ class SupabaseApplicationDataStore extends ApplicationDataStore {
     return { campaign: campaigns[0] || null, target: targets[0] || null };
   }
   saveCampaign({ campaign, posts, expectedRevision = 0, requestId = uuid() }) { requireValue(campaign?.legacy_id, 'campaign.legacy_id'); requireValue(campaign?.kind, 'campaign.kind'); requireValue(campaign?.title, 'campaign.title'); if (!['property', 'job'].includes(campaign.kind) || !Array.isArray(posts)) throw appError('Invalid campaign snapshot.'); return this.rpc('rx_app_write_campaign_with_posts', { p_campaign: campaign, p_posts: posts, p_expected_revision: expectedRevision, p_request_id: requestId, p_request_hash: hash({ campaign, posts, expectedRevision }) }); }
+  createCampaignForManagedUser({ campaign, posts, creatorUserId, requestId = uuid() }) { requireValue(campaign?.legacy_id, 'campaign.legacy_id'); requireValue(campaign?.kind, 'campaign.kind'); requireValue(campaign?.title, 'campaign.title'); requireValue(creatorUserId, 'creatorUserId'); if (!['property', 'job'].includes(campaign.kind) || !Array.isArray(posts)) throw appError('Invalid campaign snapshot.'); return this.rpc('rx_app_create_campaign_with_posts_for_creator', { p_campaign: campaign, p_posts: posts, p_creator_user_id: creatorUserId, p_request_id: requestId, p_request_hash: hash({ campaign, posts, creatorUserId }) }); }
   savePost(value) { return this.saveCampaign(value); }
   listTargets() { return this.request('/rest/v1/app_targets?select=*&order=display_name.asc'); }
   listTargetsForManagedUser(userId) {

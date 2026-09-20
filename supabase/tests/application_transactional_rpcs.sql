@@ -40,16 +40,53 @@ begin
   end if;
 end $$;
 
+do $$
+declare
+  v_creator uuid := '40000000-0000-4000-8000-000000000001';
+  v_campaign jsonb := jsonb_build_object('legacy_id','rpc-creator-campaign','kind','property','title','Creator fixture','active',true,'data','{}'::jsonb);
+  v_result jsonb;
+  v_campaign_id uuid;
+begin
+  insert into public.hosted_users(user_id, username, username_normalized, password_scrypt)
+  values (v_creator, 'rpc_creator', 'rpc_creator', 'synthetic-test-hash');
+  v_result := public.rx_app_create_campaign_with_posts_for_creator(
+    v_campaign, jsonb_build_array(jsonb_build_object('day',1,'text','creator','active',true)), v_creator,
+    '40000000-0000-4000-8000-000000000002', repeat('4',64)
+  );
+  select campaign_id into v_campaign_id from public.app_campaigns where legacy_id = 'rpc-creator-campaign' and kind = 'property';
+  if v_campaign_id is null or (select count(*) from public.hosted_user_campaign_visibility where user_id = v_creator and campaign_id = v_campaign_id) <> 1 then
+    raise exception 'creator campaign and visibility were not committed together';
+  end if;
+  if public.rx_app_create_campaign_with_posts_for_creator(
+    v_campaign, jsonb_build_array(jsonb_build_object('day',1,'text','creator','active',true)), v_creator,
+    '40000000-0000-4000-8000-000000000002', repeat('4',64)
+  ) is distinct from v_result then raise exception 'creator campaign retry was not idempotent'; end if;
+  begin
+    perform public.rx_app_create_campaign_with_posts_for_creator(
+      jsonb_build_object('legacy_id','rpc-creator-rollback','kind','property','title','Rollback fixture','active',true,'data','{}'::jsonb),
+      jsonb_build_array(jsonb_build_object('day',1,'text','rollback','active',true)),
+      '40000000-0000-4000-8000-000000000099', '40000000-0000-4000-8000-000000000003', repeat('5',64)
+    );
+    raise exception 'missing creator unexpectedly committed';
+  exception when foreign_key_violation then null;
+  end;
+  if exists (select 1 from public.app_campaigns where legacy_id = 'rpc-creator-rollback')
+     or exists (select 1 from public.app_write_idempotency where operation = 'campaign_with_posts_for_creator' and request_id = '40000000-0000-4000-8000-000000000003') then
+    raise exception 'creator visibility failure left a partial campaign or idempotency row';
+  end if;
+end $$;
+
 reset role;
 do $$
 declare fn record;
 begin
-  for fn in select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in ('rx_app_write_campaign_with_posts','rx_app_write_schedule_with_campaigns','rx_app_set_post_media') loop
+  for fn in select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in ('rx_app_write_campaign_with_posts','rx_app_create_campaign_with_posts_for_creator','rx_app_write_schedule_with_campaigns','rx_app_set_post_media') loop
     if has_function_privilege('public', fn.oid, 'EXECUTE') or has_function_privilege('anon', fn.oid, 'EXECUTE') or has_function_privilege('authenticated', fn.oid, 'EXECUTE') or not has_function_privilege('service_role', fn.oid, 'EXECUTE') then raise exception 'unexpected application RPC grants for %', fn.oid::regprocedure; end if;
   end loop;
 end $$;
 set local role anon;
 do $$ begin begin perform public.rx_app_write_campaign_with_posts('{}','[]',0,'20000000-0000-0000-0000-000000000007',repeat('0',64)); raise exception 'anon unexpectedly executed application RPC'; exception when insufficient_privilege then null; end; end $$;
+do $$ begin begin perform public.rx_app_create_campaign_with_posts_for_creator('{}','[]','40000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000004',repeat('0',64)); raise exception 'anon unexpectedly executed creator RPC'; exception when insufficient_privilege then null; end; end $$;
 reset role;
 set local role authenticated;
 do $$ begin begin perform public.rx_app_write_campaign_with_posts('{}','[]',0,'20000000-0000-0000-0000-000000000008',repeat('0',64)); raise exception 'authenticated unexpectedly executed application RPC'; exception when insufficient_privilege then null; end; end $$;
