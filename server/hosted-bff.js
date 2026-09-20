@@ -82,6 +82,15 @@ function normalizeOrigins(value) {
   return String(value || '').split(',').map((origin) => origin.trim()).filter(Boolean);
 }
 
+function vercelDeploymentOrigin(env) {
+  if (!env.VERCEL || !env.VERCEL_URL) return '';
+  try {
+    const url = new URL(`https://${String(env.VERCEL_URL).trim()}`);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash) return '';
+    return url.origin;
+  } catch { return ''; }
+}
+
 function normalizedSyntheticTargetId(value) {
   return String(value || '').trim();
 }
@@ -100,7 +109,8 @@ function createHostedBffConfig(env = process.env) {
   const facebookSessionAgentId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_AGENT_ID);
   const facebookSessionProfileId = normalizedSyntheticTargetId(env.RX_BFF_FACEBOOK_SESSION_PROFILE_ID);
   const developmentOrigins = normalizeOrigins(env.RX_BFF_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:3000,http://localhost:3000');
-  const allowedOrigins = production ? [publicOrigin] : [...new Set([publicOrigin, ...developmentOrigins].filter(Boolean))];
+  const deploymentOrigin = production ? vercelDeploymentOrigin(env) : '';
+  const allowedOrigins = production ? [...new Set([publicOrigin, deploymentOrigin].filter(Boolean))] : [...new Set([publicOrigin, ...developmentOrigins].filter(Boolean))];
   const errors = [];
   if (production && !authEnabled) errors.push('AUTH_ENABLED=true is required in production.');
   if (authEnabled && !env.ADMIN_PASSWORD_SCRYPT) errors.push('ADMIN_PASSWORD_SCRYPT is required when hosted BFF authentication is enabled.');

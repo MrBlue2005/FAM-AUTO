@@ -122,3 +122,40 @@ test('production sessions set Secure cookies for the configured same origin', as
     assert.equal(login.response.status, 200); assert.match(login.setCookie, /HttpOnly; SameSite=Strict; Path=\/; Max-Age=43200; Secure$/);
   }, { env: { ...environment(), NODE_ENV: 'production', RX_BFF_PUBLIC_ORIGIN: productionOrigin } });
 });
+
+test('production login trusts only the configured origin and exact Vercel deployment origin', async () => {
+  const productionOrigin = 'https://fam-auto.example';
+  const previewOrigin = 'https://fam-auto-3mcb9vhmq-rx-d568.vercel.app';
+  const productionEnv = {
+    ...environment(),
+    NODE_ENV: 'production',
+    RX_BFF_PUBLIC_ORIGIN: productionOrigin,
+    VERCEL: '1',
+    VERCEL_URL: 'fam-auto-3mcb9vhmq-rx-d568.vercel.app',
+  };
+
+  await withBff(async ({ request, base }) => {
+    const login = (requestOrigin) => request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: adminPassword }, requestOrigin });
+    assert.equal((await login(previewOrigin)).response.status, 200);
+    assert.equal((await login(productionOrigin)).response.status, 200);
+    assert.equal((await login('https://evil.vercel.app')).response.status, 403);
+    assert.equal((await login('https://fam-auto-3mcb9vhmq-rx-d568.vercel.app.evil.example')).response.status, 403);
+    assert.equal((await login('https://fam-auto-3mcb9vhmq-rx-d568-evil.vercel.app')).response.status, 403);
+    assert.equal((await login('not-an-origin')).response.status, 403);
+    const noOrigin = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: adminPassword }) });
+    assert.equal(noOrigin.status, 200);
+  }, { env: productionEnv });
+
+  const nextPreviewOrigin = 'https://fam-auto-i4vaxqf32-rx-d568.vercel.app';
+  await withBff(async ({ request }) => {
+    const login = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: adminPassword }, requestOrigin: nextPreviewOrigin });
+    assert.equal(login.response.status, 200);
+  }, { env: { ...productionEnv, VERCEL_URL: 'fam-auto-i4vaxqf32-rx-d568.vercel.app' } });
+});
+
+test('localhost development origin behavior remains unchanged', async () => {
+  await withBff(async ({ request }) => {
+    const login = await request('/api/auth/login', { method: 'POST', body: { username: 'admin', password: adminPassword }, requestOrigin: origin });
+    assert.equal(login.response.status, 200);
+  });
+});
