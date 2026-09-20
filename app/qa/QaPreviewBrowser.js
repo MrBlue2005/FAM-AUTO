@@ -116,7 +116,9 @@ function validateState(state) {
   if (state.code !== 'QA_SESSION_READY') {
     throw new QaSessionError(state.code || 'QA_HOSTED_READ_FAILED', 'The authenticated hosted read-only preflight could not be completed.');
   }
-  if (state.campaignVisibility !== 1 || !state.safeTargetVisible || state.assignmentCount !== 1 || !state.managedProfileAssignmentMatched) {
+  const campaignVisibilityProven = Number.isInteger(state.campaignVisibility) && state.campaignVisibility >= 1;
+  const exactTargetProven = state.safeTargetVisible && state.targetId === EXPECTED_TARGET_ID && state.targetGroup === EXPECTED_GROUP_ID;
+  if (!campaignVisibilityProven || !exactTargetProven || state.assignmentCount !== 1 || !state.managedProfileAssignmentMatched) {
     throw new QaSessionError('QA_HOSTED_SCOPE_MISMATCH', 'The authenticated QA session does not expose the expected target and assignment.');
   }
   if (state.activeTasks !== 0 || state.profileConflicts !== 0) {

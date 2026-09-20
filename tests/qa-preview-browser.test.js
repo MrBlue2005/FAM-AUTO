@@ -97,6 +97,36 @@ test('the exact qa_user_b4 identity is accepted', async (t) => {
   assert.equal((await browser.verify()).username, 'qa_user_b4');
 });
 
+for (const campaignVisibility of [1, 3, 10]) {
+  test(`campaign visibility ${campaignVisibility} is accepted with the exact target and assignment`, async (t) => {
+    const { browser } = fixture(t, ready({ campaignVisibility }));
+    assert.equal((await browser.verify()).campaignVisibility, campaignVisibility);
+  });
+}
+
+for (const [name, overrides] of [
+  ['missing safe target', { safeTargetVisible: false }],
+  ['wrong target identity', { targetId: 'wrong-target-id' }],
+  ['wrong target group', { targetGroup: '9999999999999999' }],
+  ['missing managed-profile assignment', { assignmentCount: 0, managedProfileAssignmentMatched: false }],
+  ['ambiguous managed-profile assignment', { assignmentCount: 2, managedProfileAssignmentMatched: false }],
+]) {
+  test(`${name} is rejected even with multiple visible campaigns`, async (t) => {
+    const { browser } = fixture(t, ready({ campaignVisibility: 3, ...overrides }));
+    await assert.rejects(browser.verify(), { code: 'QA_HOSTED_SCOPE_MISMATCH' });
+  });
+}
+
+test('an active task remains a hard failure with multiple visible campaigns', async (t) => {
+  const { browser } = fixture(t, ready({ campaignVisibility: 3, activeTasks: 1 }));
+  await assert.rejects(browser.verify(), { code: 'QA_PROFILE_NOT_IDLE' });
+});
+
+test('a profile conflict remains a hard failure with multiple visible campaigns', async (t) => {
+  const { browser } = fixture(t, ready({ campaignVisibility: 3, profileConflicts: 1 }));
+  await assert.rejects(browser.verify(), { code: 'QA_PROFILE_NOT_IDLE' });
+});
+
 test('a wrong authenticated identity is rejected', async (t) => {
   const { browser } = fixture(t, ready({ username: 'another_user', code: 'QA_IDENTITY_MISMATCH' }));
   await assert.rejects(browser.verify(), { code: 'QA_IDENTITY_MISMATCH' });
