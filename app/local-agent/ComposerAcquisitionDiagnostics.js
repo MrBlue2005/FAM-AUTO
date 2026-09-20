@@ -24,6 +24,7 @@ const STAGES = new Set([
   'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY',
   'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY',
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
+  'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
@@ -45,6 +46,7 @@ const REASON_CLASSES = new Set([
   'ZERO_MEDIA_INSPECTION',
   'PUBLISH_CONTROL_DISCOVERY',
   'POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_FAILED',
+  'SUBMIT_TRANSPORT',
   'POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION',
   'ACKNOWLEDGEMENT_SHAPE',
   'ACKNOWLEDGEMENT_SEMANTIC',
@@ -103,6 +105,7 @@ const CONTENT_MISMATCH_SUMMARY_STAGE = 'CONTENT_MISMATCH_DIAGNOSTIC_SUMMARY';
 const ZERO_MEDIA_INSPECTION_SUMMARY_STAGE = 'ZERO_MEDIA_INSPECTION_DIAGNOSTIC_SUMMARY';
 const PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE = 'PUBLISH_CONTROL_DISCOVERY_DIAGNOSTIC_SUMMARY';
 const POST_SUBMIT_VERIFICATION_SUMMARY_STAGE = 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY';
+const SUBMIT_TRANSPORT_SUMMARY_STAGE = 'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY';
 const MAX_PUBLISH_CONTROL_CANDIDATES = 16;
 const MAX_PUBLISH_CONTROL_SNAPSHOTS = 3;
 const PUBLISH_CONTROL_TAG_NAMES = new Set(['BUTTON', 'INPUT', 'DIV', 'SPAN', 'A', 'OTHER']);
@@ -134,6 +137,7 @@ const PROTECTED_STAGES = new Set([
   ZERO_MEDIA_INSPECTION_SUMMARY_STAGE,
   PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE,
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
+  SUBMIT_TRANSPORT_SUMMARY_STAGE,
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
@@ -143,19 +147,21 @@ const PROTECTED_STAGES = new Set([
 ]);
 const CRITICAL_TERMINAL_STAGES = new Set([
   POST_SUBMIT_VERIFICATION_SUMMARY_STAGE,
+  SUBMIT_TRANSPORT_SUMMARY_STAGE,
   'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY',
   'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY',
 ]);
-// These four summaries are the complete, deliberately fixed set required to
+// These summaries are the complete, deliberately fixed set required to
 // diagnose the post-click result.  A priority alone cannot reserve room for a
 // later member of this set: earlier critical records could otherwise consume
 // the whole file.  Keep each record below a deterministic ceiling and reserve
 // space for every member before accepting lower-priority evidence.
 const REQUIRED_CRITICAL_TERMINAL_STAGES = new Set(CRITICAL_TERMINAL_STAGES);
 const REQUIRED_CRITICAL_RECORD_MAX_BYTES = 7000;
+const SUBMIT_TRANSPORT_RECORD_MAX_BYTES = 2500;
 const REQUIRED_CRITICAL_FILE_OVERHEAD_BYTES = 768;
-const REQUIRED_CRITICAL_RESERVE_BYTES = (REQUIRED_CRITICAL_TERMINAL_STAGES.size * REQUIRED_CRITICAL_RECORD_MAX_BYTES) + REQUIRED_CRITICAL_FILE_OVERHEAD_BYTES;
+const REQUIRED_CRITICAL_RESERVE_BYTES = ((REQUIRED_CRITICAL_TERMINAL_STAGES.size - 1) * REQUIRED_CRITICAL_RECORD_MAX_BYTES) + SUBMIT_TRANSPORT_RECORD_MAX_BYTES + REQUIRED_CRITICAL_FILE_OVERHEAD_BYTES;
 const TERMINAL_DIAGNOSTIC_STAGES = new Set([
   'ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY',
   'ACKNOWLEDGEMENT_SEMANTIC_DIAGNOSTIC_SUMMARY',
@@ -407,7 +413,7 @@ const POST_SUBMIT_ELAPSED_BUCKETS = new Set([
   'UNDER_1_SECOND', 'UNDER_5_SECONDS', 'UNDER_30_SECONDS', 'UNDER_120_SECONDS', 'AT_OR_OVER_TIMEOUT', 'UNKNOWN',
 ]);
 const POST_SUBMIT_OUTCOMES = new Set(['PUBLISHED_ACKNOWLEDGED', 'PUBLISHED_VISIBLE_EXACT', 'SUBMITTED_FOR_APPROVAL', 'EXPLICIT_FACEBOOK_FAILURE', 'UNCONFIRMED']);
-const POST_SUBMIT_EVIDENCE_SOURCES = new Set(['EXPLICIT_ACKNOWLEDGEMENT', 'CANONICAL_TARGET_RELOAD', 'PENDING_MODERATION_ACKNOWLEDGEMENT', 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', 'NO_AUTHORITATIVE_EVIDENCE']);
+const POST_SUBMIT_EVIDENCE_SOURCES = new Set(['EXPLICIT_ACKNOWLEDGEMENT', 'CANONICAL_TARGET_RELOAD', 'PENDING_MODERATION_ACKNOWLEDGEMENT', 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', 'SUBMIT_TRANSPORT_FAILURE', 'NO_AUTHORITATIVE_EVIDENCE']);
 const POST_SUBMIT_VERIFICATION_SURFACES = new Set(['ACKNOWLEDGEMENT_SURFACES', 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD']);
 const POST_SUBMIT_LOCATION_CLASSES = new Set(['CANONICAL_TARGET', 'APPROVED_FACEBOOK_OTHER', 'UNAPPROVED_OR_INVALID', 'UNAVAILABLE']);
 const boundedDuration = (value) => Math.max(0, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
@@ -417,6 +423,51 @@ function sanitizePostSubmitClick(value = {}) {
     clickReturned: value.clickReturned === true,
     elapsedMs: boundedDuration(value.elapsedMs),
     clickError: POST_SUBMIT_CLICK_ERRORS.has(value.clickError) ? value.clickError : 'SAFE_CLICK_ERROR',
+  };
+}
+
+const TRANSPORT_HOSTNAME_CLASSES = new Set(['FACEBOOK_WWW', 'FACEBOOK_WEB', 'FACEBOOK_ROOT']);
+const TRANSPORT_PATH_CLASSES = new Set(['GRAPHQL', 'AJAX', 'API', 'OTHER_FACEBOOK']);
+const TRANSPORT_RESOURCE_TYPES = new Set(['FETCH', 'XHR', 'DOCUMENT']);
+const TRANSPORT_STATUS_CLASSES = new Set(['HTTP_2XX', 'HTTP_4XX', 'HTTP_5XX', 'HTTP_OTHER']);
+const TRANSPORT_RESPONSE_CLASSES = new Set(['SERVER_REJECTION', 'CLIENT_REJECTION', 'PERMISSION_OR_MODERATION_FAILURE', 'GRAPHQL_ERRORS_PRESENT', 'MUTATION_ACKNOWLEDGEMENT', 'UNKNOWN_RESPONSE_SHAPE']);
+const TRANSPORT_FAILURE_CLASSES = new Set(['ABORTED', 'TIMEOUT', 'NETWORK', 'OTHER_SAFE_FAILURE']);
+const TRANSPORT_CLASSIFICATIONS = new Set(['REQUEST_FAILED', 'PERMISSION_OR_MODERATION_FAILURE', 'GRAPHQL_ERRORS_PRESENT', 'HTTP_5XX', 'HTTP_4XX', 'MUTATION_ACKNOWLEDGEMENT', 'TRANSPORT_RESPONSE_OBSERVED', 'REQUEST_WITHOUT_RESPONSE', 'NO_RELEVANT_REQUEST']);
+const TRANSPORT_ERROR_CLASSES = new Set(['Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError', 'OTHER_ERROR']);
+const TRANSPORT_SOURCE_CLASSES = new Set(['GRAPHQL', 'AJAX', 'API', 'OTHER_FACEBOOK', 'UNCLASSIFIED']);
+const SAFE_TRANSPORT_OPERATION_NAME = /^(?=[A-Za-z][A-Za-z0-9_]{0,79}$)(?=[A-Za-z0-9_]*(?:Composer|Story|Post|Publish|Create)[A-Za-z0-9_]*Mutation$)[A-Za-z0-9_]+$/;
+const safeTransportTimestamp = (value) => typeof value === 'string' && value.length <= 32 && Number.isFinite(Date.parse(value)) ? value : null;
+const safeTransportRelative = (value) => value === null ? null : Math.max(-1000, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
+
+function sanitizeTransportRequest(value = {}) {
+  return {
+    timestamp: safeTransportTimestamp(value.timestamp), relativeToClickMs: safeTransportRelative(value.relativeToClickMs),
+    method: value.method === 'POST' ? 'POST' : 'OTHER',
+    resourceType: TRANSPORT_RESOURCE_TYPES.has(value.resourceType) ? value.resourceType : 'OTHER',
+    hostnameClass: TRANSPORT_HOSTNAME_CLASSES.has(value.hostnameClass) ? value.hostnameClass : 'FACEBOOK_ROOT',
+    pathClass: TRANSPORT_PATH_CLASSES.has(value.pathClass) ? value.pathClass : 'OTHER_FACEBOOK',
+    operationName: SAFE_TRANSPORT_OPERATION_NAME.test(value.operationName || '') ? value.operationName : null,
+  };
+}
+
+function sanitizeSubmitTransport(value = {}) {
+  return {
+    observationWindowMs: Math.max(1000, Math.min(30000, boundedInteger(value.observationWindowMs) || 30000)),
+    clickTimestamp: safeTransportTimestamp(value.clickTimestamp), clickReturnedTimestamp: safeTransportTimestamp(value.clickReturnedTimestamp),
+    composerHiddenTimestamp: safeTransportTimestamp(value.composerHiddenTimestamp), acknowledgementTimestamp: safeTransportTimestamp(value.acknowledgementTimestamp),
+    reloadTimestamp: safeTransportTimestamp(value.reloadTimestamp), firstRequestTimestamp: safeTransportTimestamp(value.firstRequestTimestamp), firstResponseTimestamp: safeTransportTimestamp(value.firstResponseTimestamp),
+    relevantRequestCount: Math.min(8, boundedInteger(value.relevantRequestCount) || 0), responseCount: Math.min(8, boundedInteger(value.responseCount) || 0),
+    requestFailureCount: Math.min(8, boundedInteger(value.requestFailureCount) || 0), consoleErrorCount: Math.min(8, boundedInteger(value.consoleErrorCount) || 0),
+    pageErrorCount: Math.min(8, boundedInteger(value.pageErrorCount) || 0), navigationCount: Math.min(8, boundedInteger(value.navigationCount) || 0),
+    frameDetachCount: Math.min(8, boundedInteger(value.frameDetachCount) || 0),
+    explicitFailureObserved: value.explicitFailureObserved === true, mutationAcknowledgementObserved: value.mutationAcknowledgementObserved === true,
+    transportClassification: TRANSPORT_CLASSIFICATIONS.has(value.transportClassification) ? value.transportClassification : 'NO_RELEVANT_REQUEST',
+    requests: Array.isArray(value.requests) ? value.requests.slice(0, 8).map(sanitizeTransportRequest) : [],
+    responses: Array.isArray(value.responses) ? value.responses.slice(0, 8).map((item) => ({ ...sanitizeTransportRequest(item), status: Math.max(0, Math.min(599, boundedInteger(item.status) || 0)), statusClass: TRANSPORT_STATUS_CLASSES.has(item.statusClass) ? item.statusClass : 'HTTP_OTHER', responseClassification: TRANSPORT_RESPONSE_CLASSES.has(item.responseClassification) ? item.responseClassification : 'UNKNOWN_RESPONSE_SHAPE', graphqlErrorsPresent: item.graphqlErrorsPresent === true })) : [],
+    requestFailures: Array.isArray(value.requestFailures) ? value.requestFailures.slice(0, 8).map((item) => ({ ...sanitizeTransportRequest(item), failureClass: TRANSPORT_FAILURE_CLASSES.has(item.failureClass) ? item.failureClass : 'OTHER_SAFE_FAILURE' })) : [],
+    consoleErrors: Array.isArray(value.consoleErrors) ? value.consoleErrors.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), sourceClass: TRANSPORT_SOURCE_CLASSES.has(item.sourceClass) ? item.sourceClass : 'UNCLASSIFIED' })) : [],
+    pageErrors: Array.isArray(value.pageErrors) ? value.pageErrors.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), errorClass: TRANSPORT_ERROR_CLASSES.has(item.errorClass) ? item.errorClass : 'OTHER_ERROR' })) : [],
+    navigations: Array.isArray(value.navigations) ? value.navigations.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), hostnameClass: TRANSPORT_HOSTNAME_CLASSES.has(item.hostnameClass) ? item.hostnameClass : 'FACEBOOK_ROOT', pathClass: TRANSPORT_PATH_CLASSES.has(item.pathClass) ? item.pathClass : 'OTHER_FACEBOOK', mainFrame: item.mainFrame === true })) : [],
   };
 }
 
@@ -1042,6 +1093,15 @@ function compactRequiredCriticalRecord(record, maxBytes) {
   if (Buffer.byteLength(JSON.stringify(record), 'utf8') <= maxBytes) return record;
   const compacted = JSON.parse(JSON.stringify(record));
   const key = requiredCriticalDetailKey(compacted.stage);
+  if (compacted.stage === SUBMIT_TRANSPORT_SUMMARY_STAGE && compacted.submitTransport) {
+    const arrays = ['requests', 'responses', 'requestFailures', 'consoleErrors', 'pageErrors', 'navigations'];
+    for (const limit of [4, 2, 1, 0]) {
+      if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
+      arrays.forEach((name) => { compacted.submitTransport[name] = compacted.submitTransport[name].slice(0, limit); });
+    }
+    compacted.submitTransport.detailTruncated = true;
+    return compacted;
+  }
   if (compacted.stage === POST_CANDIDATE_BODY_SUBTREE_STAGE && compacted.postCandidateBodySubtree) {
     const summary = compacted.postCandidateBodySubtree;
     Object.assign(summary, compactPrimaryBodyCandidate(summary));
@@ -1146,6 +1206,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
           record.publishControlDiscovery = sanitizePublishControlDiscovery(shape.value);
         } else if (shape?.postSubmitClick === true) {
           record.postSubmitClick = sanitizePostSubmitClick(shape.value);
+        } else if (shape?.submitTransport === true) {
+          record.submitTransport = sanitizeSubmitTransport(shape.value);
         } else if (shape?.postSubmitVerification === true) {
           record.postSubmitVerification = sanitizePostSubmitVerification(shape.value);
         } else if (shape?.acknowledgementShape === true) {
@@ -1170,7 +1232,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         }
         rotate(directory);
         const records = readRecords(filePath);
-        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' || stage === POST_CANDIDATE_TEXT_PARITY_STAGE || stage === POST_CANDIDATE_BODY_SUBTREE_STAGE;
+        const terminal = summary || TERMINAL_STAGES.has(stage) || stage === 'EDITOR_SHAPE_SNAPSHOT' || stage === 'EDITOR_SHAPE_DIAGNOSTIC_SUMMARY' || stage === PRE_SELECTOR_SNAPSHOT_STAGE || stage === PRE_SELECTOR_SUMMARY_STAGE || stage === SELECTOR_PARITY_SNAPSHOT_STAGE || stage === SELECTOR_PARITY_SUMMARY_STAGE || stage === CONTENT_MISMATCH_SUMMARY_STAGE || stage === ZERO_MEDIA_INSPECTION_SUMMARY_STAGE || stage === PUBLISH_CONTROL_DISCOVERY_SUMMARY_STAGE || stage === SUBMIT_TRANSPORT_SUMMARY_STAGE || stage === POST_SUBMIT_VERIFICATION_SUMMARY_STAGE || stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY' || stage === POST_CANDIDATE_TEXT_PARITY_STAGE || stage === POST_CANDIDATE_BODY_SUBTREE_STAGE;
         if (stage === 'EDITOR_SHAPE_SNAPSHOT' && records.filter((item) => item.stage === stage).length >= MAX_EDITOR_SHAPE_SNAPSHOTS) return;
         // One snapshot is sufficient to explain a selector miss. Keeping the
         // first bounded sample reserves space for its terminal summary.
@@ -1193,7 +1255,8 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
         const requiredCritical = isRequiredCritical(record);
         const incomingPriority = recordPriority(record);
         const effectiveMaxRecords = criticalReservationEnabled ? Math.max(maxRecords, REQUIRED_CRITICAL_TERMINAL_STAGES.size) : maxRecords;
-        let incomingRecord = requiredCritical ? compactRequiredCriticalRecord(record, REQUIRED_CRITICAL_RECORD_MAX_BYTES) : record;
+        const requiredRecordMaxBytes = stage === SUBMIT_TRANSPORT_SUMMARY_STAGE ? SUBMIT_TRANSPORT_RECORD_MAX_BYTES : REQUIRED_CRITICAL_RECORD_MAX_BYTES;
+        let incomingRecord = requiredCritical ? compactRequiredCriticalRecord(record, requiredRecordMaxBytes) : record;
 
         // A repeated required summary supersedes its earlier snapshot without
         // displacing any other required terminal summary.
@@ -1248,6 +1311,7 @@ function createComposerAcquisitionDiagnosticSink(options = {}) {
       postSubmitClickStarted: (value) => persist('POST_SUBMIT_CLICK_STARTED', 'POST_SUBMIT_CLICK_STARTED', {}, false, { value, postSubmitClick: true }),
       postSubmitClickReturned: (value) => persist('POST_SUBMIT_CLICK_RETURNED', 'POST_SUBMIT_CLICK_RETURNED', {}, false, { value, postSubmitClick: true }),
       postSubmitClickFailed: (value) => persist('POST_SUBMIT_CLICK_FAILED', 'POST_SUBMIT_CLICK_FAILED', {}, true, { value, postSubmitClick: true }),
+      submitTransportSummary: (value) => persist(SUBMIT_TRANSPORT_SUMMARY_STAGE, 'SUBMIT_TRANSPORT', {}, true, { value, submitTransport: true }),
       postSubmitVerificationStarted: (value) => persist('POST_SUBMIT_VERIFICATION_STARTED', 'POST_SUBMIT_VERIFICATION_STARTED', {}, false, { value, postSubmitVerification: true }),
       postSubmitVerificationSummary: (value) => persist(POST_SUBMIT_VERIFICATION_SUMMARY_STAGE, 'POST_SUBMIT_VERIFICATION', {}, true, { value, postSubmitVerification: true }),
       acknowledgementShapeSummary: (value) => persist('ACKNOWLEDGEMENT_SHAPE_DIAGNOSTIC_SUMMARY', 'ACKNOWLEDGEMENT_SHAPE', {}, true, { value, acknowledgementShape: true }),
@@ -1282,6 +1346,7 @@ module.exports = {
   sanitizePublishControlCandidate,
   sanitizePublishControlDiscovery,
   sanitizePostSubmitClick,
+  sanitizeSubmitTransport,
   sanitizePostSubmitVerification,
   sanitizeAcknowledgementSemanticCandidate,
   sanitizeAcknowledgementSemantic,

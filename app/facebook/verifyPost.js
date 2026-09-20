@@ -93,13 +93,14 @@ const POST_SUBMIT_OUTCOME = Object.freeze({
   UNCONFIRMED: 'UNCONFIRMED',
 });
 
-function classifyPostSubmitOutcome({ composerPassed, acknowledgementPassed, targetReload, semanticSummary } = {}) {
+function classifyPostSubmitOutcome({ composerPassed, acknowledgementPassed, targetReload, semanticSummary, transportSummary } = {}) {
   const exactCount = Math.max(0, Math.min(16, Number(targetReload?.postReloadExactTrustedPostCount) || 0));
   const counts = { matchingImmutableBodyCount: exactCount, matchingTokenCount: exactCount };
   if (composerPassed === true && acknowledgementPassed === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_ACKNOWLEDGED, outcomeEvidenceSource: 'EXPLICIT_ACKNOWLEDGEMENT', ...counts };
   if (composerPassed === true && targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST') return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'CANONICAL_TARGET_RELOAD', ...counts };
   if (semanticSummary?.semanticSubmissionPendingObserved === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.SUBMITTED_FOR_APPROVAL, outcomeEvidenceSource: 'PENDING_MODERATION_ACKNOWLEDGEMENT', ...counts };
   if ((Number(semanticSummary?.publicationFailureLikeCount) || 0) > 0 || (Number(semanticSummary?.genericErrorLikeCount) || 0) > 0) return { outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', ...counts };
+  if (transportSummary?.explicitFailureObserved === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'SUBMIT_TRANSPORT_FAILURE', ...counts };
   return { outcomeClassification: POST_SUBMIT_OUTCOME.UNCONFIRMED, outcomeEvidenceSource: 'NO_AUTHORITATIVE_EVIDENCE', ...counts };
 }
 
@@ -128,9 +129,12 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     // an unhandled rejection. Its outcome is used only before fallback starts.
     acknowledgementPromise.catch(() => {});
     const composer = await waitPredicate(composerDialog, 'hidden', timeout);
+    if (composer.passed) options.submitTransportObserver?.markComposerHidden?.();
     const acknowledgement = composer.passed ? await acknowledgementWithinGrace(acknowledgementPromise, options.acknowledgementGraceMs) : await acknowledgementPromise;
+    if (acknowledgement.passed) options.submitTransportObserver?.markAcknowledgement?.();
     let targetReload = null;
     if (composer.passed && !acknowledgement.passed && options.clickReturned === true && options.canonicalTargetStillValid === true && typeof options.verifyRefreshedTarget === 'function') {
+      options.submitTransportObserver?.markReload?.();
       targetReload = await options.verifyRefreshedTarget();
     }
     const [composerState, acknowledgementState] = await Promise.all([observeComposerState(composerDialog), observeAcknowledgement(successMessage, acknowledgement.passed)]);
@@ -141,11 +145,13 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
     const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
     try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
-    Object.assign(summary, classifyPostSubmitOutcome({ composerPassed: composer.passed, acknowledgementPassed: acknowledgement.passed, targetReload, semanticSummary: acknowledgementSemanticSummary }), {
+    const transportSummary = await options.submitTransportObserver?.stop?.();
+    try { if (transportSummary) diagnostic?.submitTransportSummary?.(transportSummary); } catch { /* observability only */ }
+    Object.assign(summary, classifyPostSubmitOutcome({ composerPassed: composer.passed, acknowledgementPassed: acknowledgement.passed, targetReload, semanticSummary: acknowledgementSemanticSummary, transportSummary }), {
       verificationSurfaceSearched: targetReload ? 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD' : 'ACKNOWLEDGEMENT_SURFACES',
       currentLocationClassification: classifyCurrentLocation(page, options.canonicalTargetStillValid),
       pendingModerationEvidenceObserved: acknowledgementSemanticSummary.semanticSubmissionPendingObserved === true,
-      explicitErrorEvidenceObserved: acknowledgementSemanticSummary.publicationFailureLikeCount > 0 || acknowledgementSemanticSummary.genericErrorLikeCount > 0,
+      explicitErrorEvidenceObserved: acknowledgementSemanticSummary.publicationFailureLikeCount > 0 || acknowledgementSemanticSummary.genericErrorLikeCount > 0 || transportSummary?.explicitFailureObserved === true,
     });
     try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const postPublicationStructuralSummary = {
@@ -164,6 +170,7 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     return composer.passed && (acknowledgement.passed || targetVerified);
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);
+    try { const transportSummary = await options.submitTransportObserver?.stop?.(); if (transportSummary) diagnostic?.submitTransportSummary?.(transportSummary); } catch { /* observability only */ }
     try { diagnostic?.postSubmitVerificationSummary?.({ clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'SAFE_EVALUATION_ERROR', acknowledgementCandidateCount: 0, acknowledgementClassification: 'SAFE_EVALUATION_ERROR', canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: 'NOT_COMPLETED', acknowledgementPredicate: 'NOT_COMPLETED', successPredicate: 'NOT_SATISFIED', failurePredicate: 'VERIFICATION_ERROR' }); } catch { /* observability only */ }
     throw error;
   }

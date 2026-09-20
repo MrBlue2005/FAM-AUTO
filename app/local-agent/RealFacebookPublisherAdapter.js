@@ -4,6 +4,7 @@ const { startBrowser } = require('../facebook/browserManager');
 const { openGroup } = require('../facebook/groupNavigation');
 const { createPost } = require('../facebook/postCreator');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
+const { createFacebookSubmitTransportObserver } = require('../facebook/submitTransportDiagnostics');
 const { verifyRefreshedTargetPost, capturePreClickBaseline, BASELINE_RESULT } = require('../facebook/targetReloadVerification');
 const { observeFacebookSession, requireNoExplicitNegativeSessionState } = require('./FacebookSessionReadinessExecutor');
 const { requireExpectedFacebookAccountId } = require('./FacebookIdentityConfig');
@@ -18,11 +19,13 @@ const FACEBOOK_ROOT_TIMEOUT_MS = 30000;
 
 function clickErrorClass(error) { return error?.name === 'TimeoutError' ? 'TIMEOUT' : 'SAFE_CLICK_ERROR'; }
 
-async function submitScopedPublishControl(publishButton, diagnostic, now = () => Date.now()) {
+async function submitScopedPublishControl(publishButton, diagnostic, now = () => Date.now(), transportObserver = null) {
   const startedAt = now();
+  try { transportObserver?.markClickStarted?.(); } catch { /* observability only */ }
   try { diagnostic?.postSubmitClickStarted?.({ clickReturned: false, elapsedMs: 0, clickError: 'NONE' }); } catch { /* observability only */ }
   try {
     await publishButton.click();
+    try { transportObserver?.markClickReturned?.(); } catch { /* observability only */ }
     const elapsedMs = Math.max(0, now() - startedAt);
     try { diagnostic?.postSubmitClickReturned?.({ clickReturned: true, elapsedMs, clickError: 'NONE' }); } catch { /* observability only */ }
     return true;
@@ -36,6 +39,8 @@ async function submitScopedPublishControl(publishButton, diagnostic, now = () =>
         acknowledgementCandidateCount: 0, acknowledgementClassification: 'UNAVAILABLE', canonicalTargetStillValid: false,
         composerHiddenPredicate: 'NOT_COMPLETED', acknowledgementPredicate: 'NOT_COMPLETED', successPredicate: 'NOT_SATISFIED', failurePredicate: 'CLICK_FAILED',
       });
+      const transportSummary = await transportObserver?.stop?.();
+      if (transportSummary) diagnostic?.submitTransportSummary?.(transportSummary);
     } catch { /* observability only */ }
     throw error;
   }
@@ -87,7 +92,8 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const findPublishControl = options.findPublishControl || findScopedPublishControl;
   const verifyPublishControl = options.verifyPublishControl || ensureScopedPublishControl;
   const composerDiagnostics = options.composerDiagnostics || createComposerAcquisitionDiagnosticSink();
-  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let preClickBaseline = null; let traceStage = () => {}; let taskDiagnostics = null; let textInsertionMethod = 'CLIPBOARD_PASTE';
+  const createTransportObserver = options.createSubmitTransportObserver || createFacebookSubmitTransportObserver;
+  let browser = null; let preparedTaskId = null; let composer = null; let publishButton = null; let submitInvoked = false; let expectedFacebookAccountId = null; let targetCanonical = null; let preClickBaseline = null; let traceStage = () => {}; let taskDiagnostics = null; let submitTransportObserver = null; let textInsertionMethod = 'CLIPBOARD_PASTE';
 
   function requirePrepared(task) {
     if (!browser || preparedTaskId !== task?.task_id || !composer) throw failure('PUBLISHER_NOT_PREPARED', 'Live publisher has not prepared this exact task.');
@@ -107,7 +113,8 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
     }
   }
   async function cleanup() {
-    const current = browser; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; preClickBaseline = null; traceStage = () => {}; taskDiagnostics = null; textInsertionMethod = 'CLIPBOARD_PASTE';
+    const current = browser; const observer = submitTransportObserver; browser = null; composer = null; publishButton = null; preparedTaskId = null; expectedFacebookAccountId = null; targetCanonical = null; preClickBaseline = null; traceStage = () => {}; taskDiagnostics = null; submitTransportObserver = null; textInsertionMethod = 'CLIPBOARD_PASTE';
+    await observer?.stop?.().catch?.(() => {});
     if (current?.context) await current.context.close().catch(() => {});
   }
   async function verifyCurrentReadiness(task) {
@@ -208,8 +215,10 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       if (!publishButton) throw failure('PUBLISH_CONTROL_UNAVAILABLE', 'Facebook publish control was not verified.');
       if (submitInvoked) throw failure('PUBLISH_ALREADY_ATTEMPTED', 'The live publisher will not submit twice.');
       submitInvoked = true;
+      submitTransportObserver = createTransportObserver(browser.page);
+      submitTransportObserver?.start?.();
       // DANGEROUS BOUNDARY: the sole real Facebook side effect in this adapter.
-      await submitScopedPublishControl(publishButton, taskDiagnostics);
+      await submitScopedPublishControl(publishButton, taskDiagnostics, () => Date.now(), submitTransportObserver);
     },
     async verifyOutcome(task) {
       requirePrepared(task);
@@ -230,7 +239,9 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
           preClickBaseline,
         }),
         preClickBaseline,
+        submitTransportObserver,
       });
+      submitTransportObserver = null;
       return verified ? { verified: true, state: 'VERIFIED_SUCCESS' } : { verified: false, state: 'AMBIGUOUS' };
     },
     cleanup,

@@ -646,6 +646,10 @@ function criticalPostSubmitSummary() {
   return { clickReturned: true, verificationStarted: true, verificationElapsedMs: 120000, verificationElapsedBucket: 'AT_OR_OVER_TIMEOUT', retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'DETACHED', acknowledgementCandidateCount: 0, acknowledgementClassification: 'NONE', canonicalTargetStillValid: true, composerHiddenPredicate: 'PASSED', acknowledgementPredicate: 'FAILED_TIMEOUT', successPredicate: 'NOT_SATISFIED', failurePredicate: 'ACKNOWLEDGEMENT_NOT_OBSERVED' };
 }
 
+function criticalTransportSummary() {
+  return { observationWindowMs: 30000, clickTimestamp: '2026-09-15T00:00:00.000Z', clickReturnedTimestamp: '2026-09-15T00:00:00.010Z', composerHiddenTimestamp: '2026-09-15T00:00:00.020Z', firstRequestTimestamp: '2026-09-15T00:00:00.001Z', firstResponseTimestamp: '2026-09-15T00:00:00.005Z', relevantRequestCount: 1, responseCount: 1, transportClassification: 'MUTATION_ACKNOWLEDGEMENT', mutationAcknowledgementObserved: true, requests: [{ timestamp: '2026-09-15T00:00:00.001Z', relativeToClickMs: 1, method: 'POST', resourceType: 'FETCH', hostnameClass: 'FACEBOOK_WWW', pathClass: 'GRAPHQL', operationName: 'ComposerStoryCreateMutation' }], responses: [{ timestamp: '2026-09-15T00:00:00.005Z', relativeToClickMs: 5, method: 'POST', resourceType: 'FETCH', hostnameClass: 'FACEBOOK_WWW', pathClass: 'GRAPHQL', operationName: 'ComposerStoryCreateMutation', status: 200, statusClass: 'HTTP_2XX', responseClassification: 'MUTATION_ACKNOWLEDGEMENT' }] };
+}
+
 function criticalStructuralSummary() {
   return { ackSurfaceCount: 1, composerHiddenObserved: true, publishControlGoneObserved: true, canonicalTargetStillValid: true, structuralSuccessEvidenceClass: 'COMPOSER_ONLY', pageState: { retainedComposerAttached: false, retainedComposerVisible: false, composerState: 'DETACHED', targetCanonicalValid: true, dialogCountBucket: 'ZERO', visibleDialogCountBucket: 'ZERO' }, acknowledgementCandidates: [{ role: 'status', accessibleNameSource: 'TEXT_CONTENT', textSource: 'DIRECT_TEXT_NODE', semanticContainer: 'STATUS_CONTAINER_LIKE' }] };
 }
@@ -657,6 +661,7 @@ test('near-32KiB pressure evicts lower-priority diagnostics and retains all crit
     const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-15T00:00:00.000Z' }).forTask(taskId);
     for (let index = 0; index < 12; index += 1) sink.emit('COMPOSER_POST_CLICK_OBSERVATION', 'SNAPSHOT', { counters: { potentialRootCount: index } });
     for (let index = 0; index < 8; index += 1) sink.zeroMediaInspectionSummary(pressureMediaSummary(index));
+    sink.submitTransportSummary(criticalTransportSummary());
     sink.postSubmitVerificationSummary(criticalPostSubmitSummary());
     sink.postPublicationStructuralSummary(criticalStructuralSummary());
     sink.postCandidateTextParitySummary(summarizeArticleTextParity([diagnoseArticleTextParity(parityArticle(), 'immutable body')]));
@@ -667,6 +672,7 @@ test('near-32KiB pressure evicts lower-priority diagnostics and retains all crit
     const file = path.join(directory, `${taskId}.json`); const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.ok(fs.statSync(file).size <= 32 * 1024);
     assert.ok(persisted.records.some((record) => record.stage === 'POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY'));
+    assert.ok(persisted.records.some((record) => record.stage === 'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY'));
     assert.ok(persisted.records.some((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'));
@@ -753,6 +759,7 @@ function largeRequiredBodySubtreeSummary() {
 function requiredSummaryWriters(sink) {
   return {
     POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY: () => sink.postSubmitVerificationSummary(criticalPostSubmitSummary()),
+    SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY: () => sink.submitTransportSummary(criticalTransportSummary()),
     POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY: () => sink.postPublicationStructuralSummary(largeRequiredStructuralSummary()),
     POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY: () => sink.postCandidateTextParitySummary(largeRequiredTextParitySummary()),
     POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY: () => sink.postCandidateBodySubtreeSummary(largeRequiredBodySubtreeSummary()),
@@ -762,12 +769,12 @@ function requiredSummaryWriters(sink) {
 function assertAllRequiredCriticalSummaries(filePath) {
   const persisted = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   const stages = persisted.records.map((record) => record.stage);
-  for (const stage of ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY']) assert.ok(stages.includes(stage), `${stage} must survive`);
+  for (const stage of ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY']) assert.ok(stages.includes(stage), `${stage} must survive`);
   assert.ok(fs.statSync(filePath).size <= 32 * 1024);
   return persisted;
 }
 
-test('real 32KiB starvation shape reserves capacity for the fourth required critical summary', () => {
+test('real 32KiB starvation shape reserves capacity for every required critical summary', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-fourth-'));
   try {
     const taskId = 'live_execution_critical_fourth';
@@ -775,6 +782,7 @@ test('real 32KiB starvation shape reserves capacity for the fourth required crit
     for (let index = 0; index < 20; index += 1) sink.zeroMediaInspectionSummary(pressureMediaSummary(index));
     const writers = requiredSummaryWriters(sink);
     writers.POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY();
+    writers.SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY();
     writers.POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY();
     writers.POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY();
     assert.doesNotThrow(() => writers.POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY());
@@ -822,7 +830,7 @@ test('32KiB body-summary compaction preserves one primary body-bearing candidate
     const taskId = 'live_execution_primary_body_detail';
     const sink = createComposerAcquisitionDiagnosticSink({ directory, maxRecords: 64, maxBytes: 32 * 1024, now: () => '2026-09-17T00:00:00.000Z' }).forTask(taskId);
     const writers = requiredSummaryWriters(sink);
-    writers.POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY(); writers.POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY(); writers.POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY();
+    writers.POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY(); writers.SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY(); writers.POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY(); writers.POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY();
     sink.postCandidateBodySubtreeSummary(observedBodyPressureSummary());
     const persisted = assertAllRequiredCriticalSummaries(path.join(directory, `${taskId}.json`));
     const body = persisted.records.find((record) => record.stage === 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY').postCandidateBodySubtree;
@@ -847,7 +855,7 @@ test('32KiB body-summary compaction preserves one primary body-bearing candidate
 });
 
 test('all required critical terminal insertion orders retain aggregate evidence', () => {
-  const stages = ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'];
+  const stages = ['POST_SUBMIT_VERIFICATION_DIAGNOSTIC_SUMMARY', 'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY', 'POST_PUBLICATION_STRUCTURAL_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_TEXT_PARITY_DIAGNOSTIC_SUMMARY', 'POST_CANDIDATE_BODY_SUBTREE_DIAGNOSTIC_SUMMARY'];
   const permutations = (items) => items.length < 2 ? [items] : items.flatMap((item, index) => permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]));
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rx-critical-order-'));
   try {
