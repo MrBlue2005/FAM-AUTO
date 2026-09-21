@@ -7,6 +7,12 @@ const DEFAULT_WINDOW_MS = 30000;
 const SAFE_OPERATION_NAME = /^(?=[A-Za-z][A-Za-z0-9_]{0,79}$)(?=[A-Za-z0-9_]*(?:Composer|Story|Post|Publish|Create)[A-Za-z0-9_]*Mutation$)[A-Za-z0-9_]+$/;
 const FACEBOOK_HOSTS = new Set(['facebook.com', 'www.facebook.com', 'web.facebook.com']);
 const PERMISSION_OR_MODERATION_CODES = new Set([10, 190, 200, 368, 506, 1357004]);
+const COMPOSER_CREATE_OPERATION = 'ComposerStoryCreateMutation';
+const SAFE_OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/;
+const SAFE_TYPENAME = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
+const PENDING_STATUSES = new Set(['PENDING', 'PENDING_APPROVAL', 'PENDING_REVIEW', 'AWAITING_APPROVAL', 'AWAITING_REVIEW', 'SUBMITTED_FOR_APPROVAL', 'IN_REVIEW']);
+const FAILURE_STATUSES = new Set(['FAILED', 'FAILURE', 'ERROR', 'REJECTED', 'DENIED', 'BLOCKED', 'NOT_AUTHORIZED', 'PERMISSION_DENIED', 'POLICY_VIOLATION']);
+const SUCCESS_STATUSES = new Set(['SUCCESS', 'SUCCEEDED', 'OK', 'CREATED', 'PUBLISHED', 'ACCEPTED']);
 
 function timestamp(value) { return new Date(value).toISOString(); }
 function boundedRelative(now, clickAt) { return clickAt === null ? null : Math.max(-1000, Math.min(120000, Math.trunc(now - clickAt))); }
@@ -29,11 +35,23 @@ function safeOperationName(postData) {
   try {
     const params = new URLSearchParams(postData);
     const candidate = params.get('fb_api_req_friendly_name') || params.get('operationName');
-    return SAFE_OPERATION_NAME.test(candidate || '') ? candidate : null;
+    if (candidate) return SAFE_OPERATION_NAME.test(candidate) ? candidate : null;
   } catch { /* try the bounded JSON shape */ }
   try {
     const value = JSON.parse(postData);
     return SAFE_OPERATION_NAME.test(value?.operationName || '') ? value.operationName : null;
+  } catch { return null; }
+}
+
+function safeDocumentId(postData) {
+  if (typeof postData !== 'string' || postData.length === 0 || postData.length > MAX_RESPONSE_INSPECTION_BYTES) return null;
+  try {
+    const value = new URLSearchParams(postData).get('doc_id');
+    if (value) return /^\d{1,32}$/.test(value) ? value : null;
+  } catch { /* try the bounded JSON shape */ }
+  try {
+    const value = JSON.parse(postData)?.doc_id;
+    return /^\d{1,32}$/.test(String(value || '')) ? String(value) : null;
   } catch { return null; }
 }
 
@@ -46,30 +64,86 @@ function requestMetadata(request) {
   const pathRelevant = ['GRAPHQL', 'AJAX', 'API'].includes(urlClass.pathClass);
   const operationRelevant = /(?:composer|story|post|publish|create).*mutation|mutation.*(?:composer|story|post|publish|create)/i.test(operationName || '');
   if (!pathRelevant && !operationRelevant) return null;
-  return { method, resourceType: resourceType.toUpperCase(), ...urlClass, operationName };
+  return { method, resourceType: resourceType.toUpperCase(), ...urlClass, operationName, documentId: safeDocumentId(request?.postData?.()) };
 }
 
-function errorEnvelope(value) {
-  let errorsPresent = false; let permissionOrModerationFailure = false; let mutationAcknowledgement = false;
-  const queue = [value]; let inspected = 0;
+function normalizeKey(value) { return String(value || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase(); }
+function safeOpaqueId(value) { return typeof value === 'string' || typeof value === 'number' ? SAFE_OPAQUE_ID.test(String(value)) ? String(value) : null : null; }
+function safeEnum(value) { const result = String(value || '').toUpperCase(); return /^[A-Z][A-Z0-9_]{0,47}$/.test(result) ? result : null; }
+
+function inspectEnvelope(value, operationName) {
+  const topLevelGraphqlErrors = Array.isArray(value?.errors) && value.errors.length > 0;
+  const evidence = {
+    errorsPresent: topLevelGraphqlErrors, permissionOrModerationFailure: false, mutationAcknowledgement: false,
+    storyId: null, postId: null, feedbackId: null, creationId: null, pendingPostId: null, submissionId: null,
+    resultTypename: null, resultStatus: null, semanticSuccess: null, pendingStateObserved: false, embeddedSemanticFailureObserved: false,
+  };
+  const queue = [{ value, path: [], depth: 0 }]; let inspected = 0;
   while (queue.length && inspected < 128) {
-    const current = queue.shift(); inspected += 1;
+    const node = queue.shift(); const current = node.value; inspected += 1;
     if (!current || typeof current !== 'object') continue;
-    if (Array.isArray(current)) { queue.push(...current.slice(0, 16)); continue; }
+    if (Array.isArray(current)) { if (node.depth < 12) current.slice(0, 16).forEach((item) => queue.push({ value: item, path: node.path, depth: node.depth + 1 })); continue; }
     for (const [key, item] of Object.entries(current).slice(0, 24)) {
       const lowerKey = key.toLowerCase();
-      if ((lowerKey === 'errors' && Array.isArray(item) && item.length > 0) || (lowerKey === 'error' && item !== null && item !== false && item !== '')) errorsPresent = true;
-      if (['code', 'error_code', 'errorcode'].includes(lowerKey) && PERMISSION_OR_MODERATION_CODES.has(Number(item))) permissionOrModerationFailure = true;
+      const normalizedKey = normalizeKey(key); const parentKey = normalizeKey(node.path[node.path.length - 1]);
+      const opaque = safeOpaqueId(item);
+      if (lowerKey === 'data' && item && typeof item === 'object') evidence.mutationAcknowledgement = true;
+      if (['error', 'errors', 'failure', 'failures'].includes(lowerKey) && item !== null && item !== false && item !== '' && (!Array.isArray(item) || item.length > 0)) evidence.embeddedSemanticFailureObserved = true;
+      if (['code', 'error_code', 'errorcode'].includes(lowerKey) && PERMISSION_OR_MODERATION_CODES.has(Number(item))) evidence.permissionOrModerationFailure = true;
       if (['message', 'error_user_msg', 'errorsummary', 'error_user_title'].includes(lowerKey)
-        && /permission|not authorized|moderation|policy|blocked|spam|restrict/i.test(String(item || ''))) permissionOrModerationFailure = true;
-      if (lowerKey === 'data' && item && typeof item === 'object') mutationAcknowledgement = true;
-      if (item && typeof item === 'object') queue.push(item);
+        && /permission|not authorized|moderation|policy|blocked|spam|restrict/i.test(String(item || ''))) evidence.permissionOrModerationFailure = true;
+      if (normalizedKey === 'typename' && SAFE_TYPENAME.test(String(item || '')) && !evidence.resultTypename
+        && /(?:create|story|post|feedback|submission|mutation|result)/i.test(`${parentKey}${item}`)) evidence.resultTypename = String(item);
+      if (['status', 'publishstatus', 'publicationstatus', 'submissionstatus', 'moderationstatus', 'state'].includes(normalizedKey)) {
+        const status = safeEnum(item);
+        if (status && (PENDING_STATUSES.has(status) || FAILURE_STATUSES.has(status) || SUCCESS_STATUSES.has(status))) evidence.resultStatus = evidence.resultStatus || status;
+        if (PENDING_STATUSES.has(status)) evidence.pendingStateObserved = true;
+        if (FAILURE_STATUSES.has(status)) evidence.embeddedSemanticFailureObserved = true;
+      }
+      if (['success', 'issuccess', 'succeeded', 'didcreate', 'created'].includes(normalizedKey) && typeof item === 'boolean') {
+        evidence.semanticSuccess = item; if (item === false) evidence.embeddedSemanticFailureObserved = true;
+      }
+      if (opaque) {
+        if (['storyid', 'legacystoryid', 'legacystoryhideableid'].includes(normalizedKey) || (normalizedKey === 'id' && /^(story|storycreate|createdstory)$/.test(parentKey))) evidence.storyId = evidence.storyId || opaque;
+        else if (['postid', 'createdpostid'].includes(normalizedKey) || (normalizedKey === 'id' && /^(post|postcreate|createdpost)$/.test(parentKey))) evidence.postId = evidence.postId || opaque;
+        else if (['feedbackid'].includes(normalizedKey) || (normalizedKey === 'id' && parentKey === 'feedback')) evidence.feedbackId = evidence.feedbackId || opaque;
+        else if (['pendingpostid'].includes(normalizedKey) || (normalizedKey === 'id' && parentKey === 'pendingpost')) evidence.pendingPostId = evidence.pendingPostId || opaque;
+        else if (['submissionid'].includes(normalizedKey) || (normalizedKey === 'id' && parentKey === 'submission')) evidence.submissionId = evidence.submissionId || opaque;
+        else if (['creationid', 'clientmutationid'].includes(normalizedKey)) evidence.creationId = evidence.creationId || opaque;
+      }
+      if (item && typeof item === 'object' && node.depth < 12) queue.push({ value: item, path: [...node.path, key].slice(-8), depth: node.depth + 1 });
     }
   }
-  return { errorsPresent, permissionOrModerationFailure, mutationAcknowledgement: mutationAcknowledgement && !errorsPresent };
+  evidence.mutationAcknowledgement = evidence.mutationAcknowledgement && !evidence.errorsPresent;
+  if (operationName !== COMPOSER_CREATE_OPERATION) return evidence;
+  if (evidence.permissionOrModerationFailure || evidence.embeddedSemanticFailureObserved) evidence.responseClassification = 'CREATE_RESULT_EXPLICIT_FAILURE';
+  else if (evidence.pendingStateObserved || evidence.pendingPostId || evidence.submissionId) evidence.responseClassification = 'CREATE_RESULT_PENDING';
+  else if (evidence.storyId) evidence.responseClassification = 'CREATE_RESULT_WITH_STORY_ID';
+  else if (evidence.postId) evidence.responseClassification = 'CREATE_RESULT_WITH_POST_ID';
+  else if (evidence.feedbackId) evidence.responseClassification = 'CREATE_RESULT_WITH_FEEDBACK_ID';
+  else if (evidence.semanticSuccess === true || SUCCESS_STATUSES.has(evidence.resultStatus)) evidence.responseClassification = 'CREATE_RESULT_ACK_WITHOUT_OBJECT';
+  else evidence.responseClassification = 'CREATE_RESULT_UNKNOWN';
+  return evidence;
 }
 
-async function classifyResponse(response) {
+function safeResponseEvidence(envelope) {
+  return {
+    graphqlErrorsPresent: envelope.errorsPresent,
+    resultTypename: envelope.resultTypename,
+    resultStatus: envelope.resultStatus,
+    semanticSuccess: envelope.semanticSuccess,
+    storyIdPresent: Boolean(envelope.storyId), storyId: envelope.storyId,
+    postIdPresent: Boolean(envelope.postId), postId: envelope.postId,
+    feedbackIdPresent: Boolean(envelope.feedbackId), feedbackId: envelope.feedbackId,
+    creationIdPresent: Boolean(envelope.creationId), creationId: envelope.creationId,
+    pendingPostIdPresent: Boolean(envelope.pendingPostId), pendingPostId: envelope.pendingPostId,
+    submissionIdPresent: Boolean(envelope.submissionId), submissionId: envelope.submissionId,
+    pendingStateObserved: envelope.pendingStateObserved,
+    embeddedSemanticFailureObserved: envelope.embeddedSemanticFailureObserved,
+  };
+}
+
+async function classifyResponse(response, metadata = {}) {
   const status = Math.max(0, Math.min(599, Number(response?.status?.()) || 0));
   if (status >= 500) return { status, statusClass: 'HTTP_5XX', responseClassification: 'SERVER_REJECTION' };
   if (status >= 400) return { status, statusClass: 'HTTP_4XX', responseClassification: 'CLIENT_REJECTION' };
@@ -77,12 +151,40 @@ async function classifyResponse(response) {
   try {
     const text = await response.text();
     if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_INSPECTION_BYTES) return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE' };
-    const envelope = errorEnvelope(JSON.parse(text));
-    if (envelope.permissionOrModerationFailure) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: envelope.errorsPresent };
+    const operationName = metadata.operationName || safeOperationName(response?.request?.()?.postData?.());
+    const envelope = inspectEnvelope(JSON.parse(text), operationName);
+    if (envelope.permissionOrModerationFailure && envelope.errorsPresent) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: true };
     if (envelope.errorsPresent) return { status, statusClass, responseClassification: 'GRAPHQL_ERRORS_PRESENT', graphqlErrorsPresent: true };
-    if (envelope.mutationAcknowledgement) return { status, statusClass, responseClassification: 'MUTATION_ACKNOWLEDGEMENT', graphqlErrorsPresent: false };
+    if (operationName === COMPOSER_CREATE_OPERATION) return { status, statusClass, responseClassification: envelope.responseClassification, ...safeResponseEvidence(envelope) };
+    if (envelope.permissionOrModerationFailure) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: false };
+    if (envelope.mutationAcknowledgement) return { status, statusClass, responseClassification: 'MUTATION_ACKNOWLEDGEMENT', ...safeResponseEvidence(envelope) };
     return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', graphqlErrorsPresent: false };
   } catch { return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE' }; }
+}
+
+function responseOpaqueIds(response) { return ['storyId', 'postId', 'feedbackId', 'pendingPostId', 'submissionId'].map((key) => response?.[key]).filter(Boolean); }
+
+function correlateResponses(responses) {
+  const primary = responses.find((item) => item.operationName === COMPOSER_CREATE_OPERATION);
+  if (!primary) return;
+  primary.correlation = 'PRIMARY_CREATE_RESPONSE';
+  const primaryIds = new Set(responseOpaqueIds(primary));
+  responses.forEach((item) => {
+    if (item === primary || item.pathClass !== 'GRAPHQL') return;
+    const sharesId = responseOpaqueIds(item).some((id) => primaryIds.has(id));
+    item.correlation = item.operationName === COMPOSER_CREATE_OPERATION ? 'PROVEN_SAME_OPERATION'
+      : item.documentId && primary.documentId && item.documentId === primary.documentId ? 'PROVEN_SAME_DOCUMENT'
+        : sharesId ? 'PROVEN_SHARED_OBJECT_ID' : 'UNPROVEN';
+  });
+}
+
+function createdObjectVerificationReference(responses) {
+  const primary = responses.find((item) => item.operationName === COMPOSER_CREATE_OPERATION);
+  if (!primary) return null;
+  if (primary.storyId) return { objectType: 'STORY', opaqueId: primary.storyId };
+  if (primary.postId) return { objectType: 'POST', opaqueId: primary.postId };
+  if (primary.feedbackId) return { objectType: 'FEEDBACK', opaqueId: primary.feedbackId };
+  return null;
 }
 
 function createFacebookSubmitTransportObserver(page, options = {}) {
@@ -109,7 +211,7 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
       const status = Math.max(0, Math.min(599, Number(response?.status?.()) || 0));
       const entry = { ...timing, ...metadata, status, statusClass: status >= 500 ? 'HTTP_5XX' : status >= 400 ? 'HTTP_4XX' : status >= 200 && status < 300 ? 'HTTP_2XX' : 'HTTP_OTHER', responseClassification: status >= 500 ? 'SERVER_REJECTION' : status >= 400 ? 'CLIENT_REJECTION' : 'UNKNOWN_RESPONSE_SHAPE' };
       state.responses.push(entry);
-      const work = classifyResponse(response).then((classified) => Object.assign(entry, classified)).catch(() => {});
+      const work = classifyResponse(response, metadata).then((classified) => Object.assign(entry, classified)).catch(() => {});
       pending.add(work); work.finally(() => pending.delete(work));
     },
     requestfailed(request) {
@@ -158,18 +260,20 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
     return buildSummary();
   }
   function buildSummary() {
-    const explicitFailureObserved = state.requestFailures.length > 0 || state.responses.some((item) => ['HTTP_4XX', 'HTTP_5XX'].includes(item.statusClass) || ['GRAPHQL_ERRORS_PRESENT', 'PERMISSION_OR_MODERATION_FAILURE', 'SERVER_REJECTION', 'CLIENT_REJECTION'].includes(item.responseClassification));
+    correlateResponses(state.responses);
+    const explicitFailureObserved = state.requestFailures.length > 0 || state.responses.some((item) => ['HTTP_4XX', 'HTTP_5XX'].includes(item.statusClass) || ['GRAPHQL_ERRORS_PRESENT', 'PERMISSION_OR_MODERATION_FAILURE', 'CREATE_RESULT_EXPLICIT_FAILURE', 'SERVER_REJECTION', 'CLIENT_REJECTION'].includes(item.responseClassification));
     const transportClassification = state.requestFailures.length ? 'REQUEST_FAILED'
       : state.responses.some((item) => item.responseClassification === 'PERMISSION_OR_MODERATION_FAILURE') ? 'PERMISSION_OR_MODERATION_FAILURE'
         : state.responses.some((item) => item.responseClassification === 'GRAPHQL_ERRORS_PRESENT') ? 'GRAPHQL_ERRORS_PRESENT'
+          : state.responses.some((item) => item.responseClassification === 'CREATE_RESULT_EXPLICIT_FAILURE') ? 'CREATE_RESULT_EXPLICIT_FAILURE'
           : state.responses.some((item) => item.statusClass === 'HTTP_5XX') ? 'HTTP_5XX'
             : state.responses.some((item) => item.statusClass === 'HTTP_4XX') ? 'HTTP_4XX'
               : state.responses.some((item) => item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT') ? 'MUTATION_ACKNOWLEDGEMENT'
                 : state.responses.length ? 'TRANSPORT_RESPONSE_OBSERVED' : state.requests.length ? 'REQUEST_WITHOUT_RESPONSE' : 'NO_RELEVANT_REQUEST';
-    return { observationWindowMs, clickTimestamp: state.clickTimestamp, clickReturnedTimestamp: state.clickReturnedTimestamp, composerHiddenTimestamp: state.composerHiddenTimestamp, acknowledgementTimestamp: state.acknowledgementTimestamp, reloadTimestamp: state.reloadTimestamp, firstRequestTimestamp: state.requests[0]?.timestamp || null, firstResponseTimestamp: state.firstResponseTimestamp, relevantRequestCount: state.requests.length, responseCount: state.responses.length, requestFailureCount: state.requestFailures.length, consoleErrorCount: state.consoleErrors.length, pageErrorCount: state.pageErrors.length, navigationCount: state.navigations.length, frameDetachCount: state.frameDetachCount, explicitFailureObserved, mutationAcknowledgementObserved: state.responses.some((item) => item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT'), transportClassification, requests: state.requests, responses: state.responses, requestFailures: state.requestFailures, consoleErrors: state.consoleErrors, pageErrors: state.pageErrors, navigations: state.navigations };
+    return { observationWindowMs, clickTimestamp: state.clickTimestamp, clickReturnedTimestamp: state.clickReturnedTimestamp, composerHiddenTimestamp: state.composerHiddenTimestamp, acknowledgementTimestamp: state.acknowledgementTimestamp, reloadTimestamp: state.reloadTimestamp, firstRequestTimestamp: state.requests[0]?.timestamp || null, firstResponseTimestamp: state.firstResponseTimestamp, relevantRequestCount: state.requests.length, responseCount: state.responses.length, requestFailureCount: state.requestFailures.length, consoleErrorCount: state.consoleErrors.length, pageErrorCount: state.pageErrors.length, navigationCount: state.navigations.length, frameDetachCount: state.frameDetachCount, explicitFailureObserved, mutationAcknowledgementObserved: state.responses.some((item) => item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT'), transportClassification, createdObjectVerificationReference: createdObjectVerificationReference(state.responses), requests: state.requests, responses: state.responses, requestFailures: state.requestFailures, consoleErrors: state.consoleErrors, pageErrors: state.pageErrors, navigations: state.navigations };
   }
 
   return Object.freeze({ start, stop, markClickStarted() { if (state.clickAt === null) { state.clickAt = now(); state.clickTimestamp = timestamp(state.clickAt); } }, markClickReturned() { mark('clickReturnedTimestamp'); }, markComposerHidden() { mark('composerHiddenTimestamp'); }, markAcknowledgement() { mark('acknowledgementTimestamp'); }, markReload() { mark('reloadTimestamp'); } });
 }
 
-module.exports = { MAX_EVENTS, classifyUrl, safeOperationName, requestMetadata, classifyResponse, createFacebookSubmitTransportObserver };
+module.exports = { MAX_EVENTS, classifyUrl, safeOperationName, safeDocumentId, requestMetadata, classifyResponse, createdObjectVerificationReference, createFacebookSubmitTransportObserver };

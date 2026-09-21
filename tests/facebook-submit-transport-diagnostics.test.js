@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-const { createFacebookSubmitTransportObserver, safeOperationName, classifyResponse } = require('../app/facebook/submitTransportDiagnostics');
+const { createFacebookSubmitTransportObserver, safeOperationName, safeDocumentId, classifyResponse } = require('../app/facebook/submitTransportDiagnostics');
 const { POST_SUBMIT_OUTCOME, classifyPostSubmitOutcome } = require('../app/facebook/verifyPost');
 const { submitScopedPublishControl } = require('../app/local-agent/RealFacebookPublisherAdapter');
 const { createComposerAcquisitionDiagnosticSink } = require('../app/local-agent/ComposerAcquisitionDiagnostics');
@@ -41,7 +41,8 @@ async function observedTransport({ status = 200, body = '{"data":{"story_create"
 
 test('2xx transport never promotes success without an existing acknowledgement or exact reload proof', async () => {
   const { summary } = await observedTransport({});
-  assert.equal(summary.transportClassification, 'MUTATION_ACKNOWLEDGEMENT');
+  assert.equal(summary.transportClassification, 'TRANSPORT_RESPONSE_OBSERVED');
+  assert.equal(summary.responses[0].responseClassification, 'CREATE_RESULT_WITH_STORY_ID');
   assert.equal(classifyPostSubmitOutcome({ composerPassed: true, acknowledgementPassed: true, transportSummary: summary }).outcomeClassification, POST_SUBMIT_OUTCOME.PUBLISHED_ACKNOWLEDGED);
   assert.equal(classifyPostSubmitOutcome({ composerPassed: true, targetReload: { resultClass: 'VERIFIED_EXACT_TARGET_POST', postReloadExactTrustedPostCount: 1 }, transportSummary: summary }).outcomeClassification, POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT);
   assert.deepEqual(classifyPostSubmitOutcome({ composerPassed: true, targetReload: { resultClass: 'NOT_FOUND' }, transportSummary: summary }), { outcomeClassification: POST_SUBMIT_OUTCOME.UNCONFIRMED, outcomeEvidenceSource: 'NO_AUTHORITATIVE_EVIDENCE', matchingImmutableBodyCount: 0, matchingTokenCount: 0 });
@@ -96,6 +97,8 @@ test('console, page error, navigation, and frame detach evidence is bounded and 
 
 test('safe GraphQL operation extraction keeps only a strict operation name', () => {
   assert.equal(safeOperationName('fb_api_req_friendly_name=ComposerStoryCreateMutation&variables=%7B%22body%22%3A%22PRIVATE%22%7D'), 'ComposerStoryCreateMutation');
+  assert.equal(safeOperationName('{"operationName":"ComposerStoryCreateMutation","variables":{"body":"PRIVATE"}}'), 'ComposerStoryCreateMutation');
+  assert.equal(safeDocumentId('{"doc_id":"123456789"}'), '123456789');
   assert.equal(safeOperationName('operationName=bad-name&cookie=SECRET'), null);
 });
 
