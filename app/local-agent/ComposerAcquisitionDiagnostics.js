@@ -439,7 +439,11 @@ const SAFE_TRANSPORT_OPERATION_NAME = /^(?=[A-Za-z][A-Za-z0-9_]{0,79}$)(?=[A-Za-
 const SAFE_TRANSPORT_OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/;
 const SAFE_TRANSPORT_TYPENAME = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
 const TRANSPORT_RESULT_STATUSES = new Set(['PENDING', 'PENDING_APPROVAL', 'PENDING_REVIEW', 'AWAITING_APPROVAL', 'AWAITING_REVIEW', 'SUBMITTED_FOR_APPROVAL', 'IN_REVIEW', 'FAILED', 'FAILURE', 'ERROR', 'REJECTED', 'DENIED', 'BLOCKED', 'NOT_AUTHORIZED', 'PERMISSION_DENIED', 'POLICY_VIOLATION', 'SUCCESS', 'SUCCEEDED', 'OK', 'CREATED', 'PUBLISHED', 'ACCEPTED']);
-const TRANSPORT_CORRELATIONS = new Set(['PRIMARY_CREATE_RESPONSE', 'PROVEN_SAME_OPERATION', 'PROVEN_SAME_DOCUMENT', 'PROVEN_SHARED_OBJECT_ID', 'UNPROVEN']);
+const TRANSPORT_CORRELATIONS = new Set(['PRIMARY_CREATE_RESPONSE', 'PROVEN_SHARED_ID', 'PROVEN_REQUEST_CHAIN', 'LIKELY_TEMPORAL_ONLY', 'UNPROVEN']);
+const TRANSPORT_CONSOLE_CATEGORIES = new Set(['NETWORK', 'GRAPHQL', 'PERMISSION', 'REACT_UI', 'EXTENSION_NOISE', 'PLATFORM_TELEMETRY', 'UNKNOWN']);
+const TRANSPORT_SHARED_ID_TYPES = new Set(['STORY', 'POST', 'FEEDBACK', 'PENDINGPOST', 'SUBMISSION']);
+const TRANSPORT_FINGERPRINT_KINDS = new Set(['NULL', 'ARRAY_EMPTY', 'ARRAY_ONE', 'ARRAY_FEW', 'ARRAY_MANY', 'OBJECT', 'STRING', 'BOOLEAN', 'NUMBER', 'OTHER']);
+const TRANSPORT_FINGERPRINT_REASONS = new Set(['BODY_UNAVAILABLE', 'RESPONSE_TOO_LARGE', 'MALFORMED_JSON', 'UNRECOGNIZED_STRUCTURE']);
 const safeTransportTimestamp = (value) => typeof value === 'string' && value.length <= 32 && Number.isFinite(Date.parse(value)) ? value : null;
 const safeTransportRelative = (value) => value === null ? null : Math.max(-1000, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
 
@@ -452,10 +456,26 @@ function sanitizeTransportRequest(value = {}) {
     pathClass: TRANSPORT_PATH_CLASSES.has(value.pathClass) ? value.pathClass : 'OTHER_FACEBOOK',
     operationName: SAFE_TRANSPORT_OPERATION_NAME.test(value.operationName || '') ? value.operationName : null,
     documentId: /^\d{1,32}$/.test(value.documentId || '') ? value.documentId : null,
+    requestCorrelationId: /^REQ_[1-8]$/.test(value.requestCorrelationId || '') ? value.requestCorrelationId : null,
   };
 }
 
 const safeTransportOpaqueId = (value) => SAFE_TRANSPORT_OPAQUE_ID.test(String(value || '')) ? String(value) : null;
+function sanitizeStructuralFingerprint(value) {
+  if (!value || value.version !== 1 || !/^[a-f0-9]{64}$/.test(value.sha256 || '')) return null;
+  return {
+    version: 1,
+    topLevelKind: TRANSPORT_FINGERPRINT_KINDS.has(value.topLevelKind) ? value.topLevelKind : 'OTHER',
+    pathCount: Math.min(32, boundedInteger(value.pathCount) || 0),
+    maxDepthObserved: Math.min(5, boundedInteger(value.maxDepthObserved) || 0),
+    depthLimitReached: value.depthLimitReached === true,
+    pathLimitReached: value.pathLimitReached === true,
+    keyLimitReached: value.keyLimitReached === true,
+    paths: Array.isArray(value.paths) ? value.paths.slice(0, 8).filter((item) => typeof item === 'string' && item.length <= 192 && /^\$[A-Za-z0-9_$.[\]]*:[A-Z_]+$/.test(item)) : [],
+    sha256: value.sha256,
+  };
+}
+
 function sanitizeTransportResponse(value = {}) {
   return {
     ...sanitizeTransportRequest(value), status: Math.max(0, Math.min(599, boundedInteger(value.status) || 0)),
@@ -474,6 +494,30 @@ function sanitizeTransportResponse(value = {}) {
     pendingStateObserved: value.pendingStateObserved === true,
     embeddedSemanticFailureObserved: value.embeddedSemanticFailureObserved === true,
     correlation: TRANSPORT_CORRELATIONS.has(value.correlation) ? value.correlation : null,
+    sharedOpaqueIdTypes: Array.isArray(value.sharedOpaqueIdTypes) ? value.sharedOpaqueIdTypes.filter((item) => TRANSPORT_SHARED_ID_TYPES.has(item)).slice(0, 5) : [],
+    structuralFingerprint: sanitizeStructuralFingerprint(value.structuralFingerprint),
+    structuralFingerprintReason: TRANSPORT_FINGERPRINT_REASONS.has(value.structuralFingerprintReason) ? value.structuralFingerprintReason : null,
+  };
+}
+
+function sanitizeProtectedResponseSummary(value) {
+  if (!value || typeof value !== 'object') return null;
+  const response = sanitizeTransportResponse(value);
+  return {
+    responseIndex: Math.min(7, boundedInteger(value.responseIndex) || 0),
+    timestamp: response.timestamp,
+    relativeToClickMs: response.relativeToClickMs,
+    requestCorrelationId: response.requestCorrelationId,
+    operationName: response.operationName,
+    documentId: response.documentId,
+    status: response.status,
+    statusClass: response.statusClass,
+    responseClassification: response.responseClassification,
+    graphqlErrorsPresent: response.graphqlErrorsPresent,
+    correlation: response.correlation,
+    sharedOpaqueIdTypes: response.sharedOpaqueIdTypes,
+    structuralFingerprint: response.structuralFingerprint,
+    structuralFingerprintReason: response.structuralFingerprintReason,
   };
 }
 
@@ -491,10 +535,13 @@ function sanitizeSubmitTransport(value = {}) {
     transportClassification: TRANSPORT_CLASSIFICATIONS.has(value.transportClassification) ? value.transportClassification : 'NO_RELEVANT_REQUEST',
     createdObjectVerificationReference: ['STORY', 'POST', 'FEEDBACK'].includes(value.createdObjectVerificationReference?.objectType) && safeTransportOpaqueId(value.createdObjectVerificationReference?.opaqueId)
       ? { objectType: value.createdObjectVerificationReference.objectType, opaqueId: safeTransportOpaqueId(value.createdObjectVerificationReference.opaqueId) } : null,
+    primaryMutationSummary: sanitizeProtectedResponseSummary(value.primaryMutationSummary),
+    secondaryAcknowledgementSummary: sanitizeProtectedResponseSummary(value.secondaryAcknowledgementSummary),
+    consoleErrorSummary: { counts: Object.fromEntries(Object.entries(value.consoleErrorSummary?.counts || {}).filter(([key]) => TRANSPORT_CONSOLE_CATEGORIES.has(key)).map(([key, count]) => [key, Math.min(8, boundedInteger(count) || 0)])) },
     requests: Array.isArray(value.requests) ? value.requests.slice(0, 8).map(sanitizeTransportRequest) : [],
     responses: Array.isArray(value.responses) ? value.responses.slice(0, 8).map(sanitizeTransportResponse) : [],
     requestFailures: Array.isArray(value.requestFailures) ? value.requestFailures.slice(0, 8).map((item) => ({ ...sanitizeTransportRequest(item), failureClass: TRANSPORT_FAILURE_CLASSES.has(item.failureClass) ? item.failureClass : 'OTHER_SAFE_FAILURE' })) : [],
-    consoleErrors: Array.isArray(value.consoleErrors) ? value.consoleErrors.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), sourceClass: TRANSPORT_SOURCE_CLASSES.has(item.sourceClass) ? item.sourceClass : 'UNCLASSIFIED' })) : [],
+    consoleErrors: Array.isArray(value.consoleErrors) ? value.consoleErrors.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), sourceClass: TRANSPORT_SOURCE_CLASSES.has(item.sourceClass) ? item.sourceClass : 'UNCLASSIFIED', category: TRANSPORT_CONSOLE_CATEGORIES.has(item.category) ? item.category : 'UNKNOWN' })) : [],
     pageErrors: Array.isArray(value.pageErrors) ? value.pageErrors.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), errorClass: TRANSPORT_ERROR_CLASSES.has(item.errorClass) ? item.errorClass : 'OTHER_ERROR' })) : [],
     navigations: Array.isArray(value.navigations) ? value.navigations.slice(0, 8).map((item) => ({ timestamp: safeTransportTimestamp(item.timestamp), relativeToClickMs: safeTransportRelative(item.relativeToClickMs), hostnameClass: TRANSPORT_HOSTNAME_CLASSES.has(item.hostnameClass) ? item.hostnameClass : 'FACEBOOK_ROOT', pathClass: TRANSPORT_PATH_CLASSES.has(item.pathClass) ? item.pathClass : 'OTHER_FACEBOOK', mainFrame: item.mainFrame === true })) : [],
   };

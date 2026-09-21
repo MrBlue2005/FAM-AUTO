@@ -80,16 +80,17 @@ async function observePair(secondRequest, secondBody) {
   return observer.stop();
 }
 
-test('second acknowledgement correlation requires same operation, document, or returned object ID', async () => {
+test('second acknowledgement correlation requires a request-chain or shared-ID signal', async () => {
   const sameDocument = await observePair(request(null, '111'), { data: { acknowledgement: true } });
   const sharedObject = await observePair(request(null, '222'), { data: { result: { story_id: 'story_1' } } });
-  assert.equal(sameDocument.responses[1].correlation, 'PROVEN_SAME_DOCUMENT');
-  assert.equal(sharedObject.responses[1].correlation, 'PROVEN_SHARED_OBJECT_ID');
+  assert.equal(sameDocument.responses[1].correlation, 'PROVEN_REQUEST_CHAIN');
+  assert.equal(sharedObject.responses[1].correlation, 'PROVEN_SHARED_ID');
+  assert.deepEqual(sharedObject.responses[1].sharedOpaqueIdTypes, ['STORY']);
 });
 
-test('uncertain second-response correlation is explicitly unproven', async () => {
+test('timing-only second-response correlation remains explicitly non-proven', async () => {
   const summary = await observePair(request('CreatePhotoMutation', '222'), { data: { acknowledgement: true } });
-  assert.equal(summary.responses[1].correlation, 'UNPROVEN');
+  assert.equal(summary.responses[1].correlation, 'LIKELY_TEMPORAL_ONLY');
 });
 
 test('created object reference is a narrow future ID-verification hook and persistence stays private', async () => {
