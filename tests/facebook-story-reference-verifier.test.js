@@ -2,11 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
 
 const {
   MAX_STORY_REFERENCE_CANDIDATES,
   MAX_STORY_REFERENCE_NODES,
   STORY_REFERENCE_RESULT,
+  captureStoryReferencePage,
+  publishedStoryBodyMatches,
+  publishedStoryTextRepresentations,
   storyReferenceUrls,
   verifyFacebookStoryReference,
 } = require('../app/facebook/storyReferenceVerifier');
@@ -43,6 +47,64 @@ const verify = async (values, overrides = {}) => {
 test('Story ID resolves to the exact intended target-bound post', async () => {
   const { result } = await verify([observation()]);
   assert.equal(result.result, STORY_REFERENCE_RESULT.VISIBLE_EXACT); assert.equal(result.targetMatched, true); assert.equal(result.bodyHashMatched, true);
+});
+
+test('exact published body matches raw innerText without transformation', () => {
+  assert.deepEqual(publishedStoryBodyMatches(body, body), { matched: true, representation: 'RAW_INNER_TEXT' });
+});
+
+test('observed Facebook paragraph blocks reconstruct the intentional blank line', () => {
+  const [first, second] = body.split('\n\n');
+  assert.deepEqual(
+    publishedStoryBodyMatches(body, `${first}\n${second}`, [first, second]),
+    { matched: true, representation: 'DIRECT_BLOCK_PARAGRAPHS' },
+  );
+});
+
+test('DOM capture selects nested paragraph spans and excludes accessibility duplication', async (context) => {
+  const browser = await chromium.launch({ headless: true });
+  context.after(() => browser.close());
+  const page = await browser.newPage();
+  const url = `${target}/posts/${storyId}/`;
+  const [first, second] = body.split('\n\n');
+  await page.route(url, (route) => route.fulfill({
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    body: `<main><div role="dialog"><a href="${url}">Story</a><div id="body"><div dir="auto"><span>${first}</span></div><div dir="auto"><span>${second}</span></div><div aria-hidden="true">${body}</div></div><button>Like</button></div></main>`,
+  }));
+  await page.goto(url);
+  const observed = await captureStoryReferencePage(page, {
+    groupId: '1102687755514047', storyId, expectedToken: token, expectedBody: body,
+    pathClass: 'GROUP_STORY_PERMALINK',
+  });
+  assert.equal(observed.routeSupported, true);
+  assert.equal(observed.storyBoundCandidateCount, 1);
+  assert.equal(observed.exactBodyCandidateCount, 1);
+  assert.equal(observed.rawBodyMatchCandidateCount, 0);
+  assert.equal(observed.structuralBodyMatchCandidateCount, 1);
+});
+
+test('paragraph reconstruction preserves nested-span text supplied by each block', () => {
+  const [first, second] = body.split('\n\n');
+  const representations = publishedStoryTextRepresentations(`${first}\n${second}`, [first, second]);
+  assert.equal(representations.structural, body);
+});
+
+test('accessibility or surrounding UI blocks cannot be ignored', () => {
+  const [first, second] = body.split('\n\n');
+  assert.equal(publishedStoryBodyMatches(body, `${first}\n${second}\nLike`, [first, second, 'Like']).matched, false);
+  assert.equal(publishedStoryBodyMatches(body, `Author\n${first}\n${second}`, ['Author', first, second]).matched, false);
+});
+
+test('published-story comparison performs no generic whitespace normalization', () => {
+  assert.equal(publishedStoryBodyMatches(body, body.replace('TEST TEHNIC', 'TEST  TEHNIC')).matched, false);
+  assert.equal(publishedStoryBodyMatches(body, `${body} `).matched, false);
+  assert.equal(publishedStoryBodyMatches(body, body.replace(' ', '\u00a0')).matched, false);
+  assert.equal(publishedStoryBodyMatches(body, body.normalize('NFD')).matched, false);
+});
+
+test('missing or extra real content still fails', () => {
+  assert.equal(publishedStoryBodyMatches(body, body.slice(0, -1)).matched, false);
+  assert.equal(publishedStoryBodyMatches(body, `${body}!`).matched, false);
 });
 
 test('Story ID resolving outside the intended target is unsupported', async () => {
@@ -91,6 +153,11 @@ test('malformed Story IDs are rejected before navigation', async () => {
 test('canonical target binding is required before URL derivation', () => {
   assert.throws(() => storyReferenceUrls('https://evil.example/groups/1102687755514047', storyId), { code: 'FACEBOOK_TARGET_INVALID' });
   assert.equal(storyReferenceUrls(target, storyId).permalinkUrl, `${target}/posts/${storyId}/`);
+});
+
+test('a different valid Story ID derives a different strictly bound URL', () => {
+  assert.equal(storyReferenceUrls(target, '1110263164756507').permalinkUrl, `${target}/posts/1110263164756507/`);
+  assert.notEqual(storyReferenceUrls(target, '1110263164756507').permalinkUrl, storyReferenceUrls(target, storyId).permalinkUrl);
 });
 
 test('verifier invokes no Facebook mutation methods', async () => {

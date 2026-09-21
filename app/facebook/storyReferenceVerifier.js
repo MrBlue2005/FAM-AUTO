@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { canonicalFacebookGroupTarget, normalizeComposerText } = require('../local-agent/FacebookLiveReadiness');
+const { canonicalFacebookGroupTarget } = require('../local-agent/FacebookLiveReadiness');
 
 const STORY_REFERENCE_RESULT = Object.freeze({
   VISIBLE_EXACT: 'VISIBLE_EXACT',
@@ -31,6 +31,28 @@ function storyReferenceUrls(expectedTarget, storyId) {
 
 function bounded(value) { return Math.max(0, Math.min(MAX_STORY_REFERENCE_NODES, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0)); }
 
+function publishedStoryTextRepresentations(rawText, directBlockTexts = []) {
+  const raw = String(rawText ?? '');
+  const blocks = Array.isArray(directBlockTexts) ? directBlockTexts.map((value) => String(value ?? '')) : [];
+  // Facebook renders authored paragraphs as sibling visible blocks. The DOM
+  // boundary is the only proven published-story transformation: it restores
+  // the intentional blank line without collapsing or trimming any text.
+  const structural = blocks.length >= 2 && blocks.every((value) => value.length > 0)
+    ? blocks.join('\n\n')
+    : null;
+  return Object.freeze({ raw, structural });
+}
+
+function publishedStoryBodyMatches(expectedBody, rawText, directBlockTexts = []) {
+  const representations = publishedStoryTextRepresentations(rawText, directBlockTexts);
+  return Object.freeze({
+    matched: representations.raw === expectedBody || representations.structural === expectedBody,
+    representation: representations.raw === expectedBody
+      ? 'RAW_INNER_TEXT'
+      : representations.structural === expectedBody ? 'DIRECT_BLOCK_PARAGRAPHS' : null,
+  });
+}
+
 function safeObservation(value = {}, pathClass) {
   return Object.freeze({
     pathClass,
@@ -41,6 +63,8 @@ function safeObservation(value = {}, pathClass) {
     visibleStoryBoundCandidateCount: Math.min(MAX_STORY_REFERENCE_CANDIDATES, bounded(value.visibleStoryBoundCandidateCount)),
     exactTokenCandidateCount: Math.min(MAX_STORY_REFERENCE_CANDIDATES, bounded(value.exactTokenCandidateCount)),
     exactBodyCandidateCount: Math.min(MAX_STORY_REFERENCE_CANDIDATES, bounded(value.exactBodyCandidateCount)),
+    rawBodyMatchCandidateCount: Math.min(MAX_STORY_REFERENCE_CANDIDATES, bounded(value.rawBodyMatchCandidateCount)),
+    structuralBodyMatchCandidateCount: Math.min(MAX_STORY_REFERENCE_CANDIDATES, bounded(value.structuralBodyMatchCandidateCount)),
     pendingSignal: value.pendingSignal === true,
     explicitNotFound: value.explicitNotFound === true,
     explicitInaccessible: value.explicitInaccessible === true,
@@ -73,7 +97,7 @@ async function captureStoryReferencePage(page, input) {
   const value = await page.evaluate(({ expectedHost, groupId, storyId, expectedToken, expectedBody, pathClass, candidateCap, nodeCap }) => {
     const normalize = (text) => String(text || '').normalize('NFC').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
     const visible = (node) => {
-      try { const style = getComputedStyle(node); const rect = node.getBoundingClientRect(); return node.isConnected && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; } catch { return false; }
+      try { const style = getComputedStyle(node); const rect = node.getBoundingClientRect(); return node.isConnected && !node.closest('[aria-hidden="true"]') && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; } catch { return false; }
     };
     const locationUrl = new URL(location.href);
     const permalinkPath = `/groups/${groupId}/posts/${storyId}/`;
@@ -94,14 +118,28 @@ async function captureStoryReferencePage(page, input) {
     roots = roots.filter((root) => !roots.some((other) => other !== root && root.contains(other)));
     const boundsExceeded = roots.length > candidateCap;
     roots = roots.slice(0, candidateCap);
-    let nodesInspected = 0; let exactBodyCandidateCount = 0; let exactTokenCandidateCount = 0; let nodeCapReached = false; let pendingSignal = false;
+    let nodesInspected = 0; let exactBodyCandidateCount = 0; let rawBodyMatchCandidateCount = 0; let structuralBodyMatchCandidateCount = 0; let exactTokenCandidateCount = 0; let nodeCapReached = false; let pendingSignal = false;
     for (const root of roots) {
       const rootText = normalize(root.innerText || root.textContent);
       if (expectedToken && rootText.includes(expectedToken)) exactTokenCandidateCount += 1;
       const descendants = [root, ...Array.from(root.querySelectorAll('div,span,p,section'))];
       if (descendants.length > nodeCap) nodeCapReached = true;
       const inspected = descendants.slice(0, nodeCap); nodesInspected += inspected.length;
-      if (inspected.some((node) => visible(node) && normalize(node.innerText || node.textContent) === expectedBody)) exactBodyCandidateCount += 1;
+      let bodyMatched = false;
+      for (const node of inspected) {
+        if (!visible(node)) continue;
+        const rawText = String(node.innerText || '');
+        const blockTexts = Array.from(node.children).filter(visible).map((child) => String(child.innerText || ''));
+        const structuralText = blockTexts.length >= 2 && blockTexts.every((text) => text.length > 0)
+          ? blockTexts.join('\n\n')
+          : null;
+        const rawMatched = rawText === expectedBody;
+        const structuralMatched = structuralText === expectedBody;
+        if (rawMatched) rawBodyMatchCandidateCount += 1;
+        if (structuralMatched) structuralBodyMatchCandidateCount += 1;
+        if (rawMatched || structuralMatched) bodyMatched = true;
+      }
+      if (bodyMatched) exactBodyCandidateCount += 1;
       const semantic = rootText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       if (/pending|awaiting|submitted for approval|in asteptare|in curs de verificare|in curs de revizuire|trimisa spre aprobare|asteapta aprobarea/.test(semantic)) pendingSignal = true;
     }
@@ -113,7 +151,7 @@ async function captureStoryReferencePage(page, input) {
     return {
       routeSupported, targetMatched, storyPathMatched,
       storyBoundCandidateCount: roots.length, visibleStoryBoundCandidateCount: roots.filter(visible).length,
-      exactTokenCandidateCount, exactBodyCandidateCount, pendingSignal,
+      exactTokenCandidateCount, exactBodyCandidateCount, rawBodyMatchCandidateCount, structuralBodyMatchCandidateCount, pendingSignal,
       explicitNotFound, explicitInaccessible, ambiguous: false,
       boundsExceeded: boundsExceeded || nodeCapReached, nodesInspected,
     };
@@ -140,7 +178,7 @@ async function verifyFacebookStoryReference(page, input = {}, options = {}) {
     return Object.freeze({ result: STORY_REFERENCE_RESULT.UNSUPPORTED, storyId: null, pathClass: 'UNSUPPORTED', targetMatched: false, visible: false, pending: false, tokenMatched: false, bodyHashMatched: false, expectedBodySha256: null, verifiedAt: new Date(options.now?.() || Date.now()).toISOString() });
   }
   const urls = storyReferenceUrls(input.expectedTarget, input.storyId);
-  const expectedBody = normalizeComposerText(input.expectedBody);
+  const expectedBody = String(input.expectedBody ?? '');
   const expectedToken = String(input.expectedToken || '');
   if (!expectedBody || !expectedToken || expectedToken.length > 128 || !expectedBody.includes(expectedToken)) throw invalid('FACEBOOK_STORY_EXPECTATION_INVALID', 'Story verification requires a bounded token contained in the exact expected body.');
   const configured = {
@@ -163,7 +201,16 @@ async function verifyFacebookStoryReference(page, input = {}, options = {}) {
     tokenMatched: decisive?.exactTokenCandidateCount === 1, bodyHashMatched: decisive?.exactBodyCandidateCount === 1,
     expectedBodySha256: crypto.createHash('sha256').update(expectedBody, 'utf8').digest('hex'),
     verifiedAt: new Date(configured.now()).toISOString(),
-    evidence: Object.freeze({ routeSupported: decisive?.routeSupported === true, storyPathMatched: decisive?.storyPathMatched === true, storyBoundCandidateCount: decisive?.storyBoundCandidateCount || 0, nodesInspected: decisive?.nodesInspected || 0, boundsExceeded: decisive?.boundsExceeded === true }),
+    evidence: Object.freeze({
+      routeSupported: decisive?.routeSupported === true,
+      storyPathMatched: decisive?.storyPathMatched === true,
+      storyBoundCandidateCount: decisive?.storyBoundCandidateCount || 0,
+      bodyMatchRepresentation: decisive?.rawBodyMatchCandidateCount === 1
+        ? 'RAW_INNER_TEXT'
+        : decisive?.structuralBodyMatchCandidateCount === 1 ? 'DIRECT_BLOCK_PARAGRAPHS' : null,
+      nodesInspected: decisive?.nodesInspected || 0,
+      boundsExceeded: decisive?.boundsExceeded === true,
+    }),
   });
 }
 
@@ -173,6 +220,8 @@ module.exports = {
   STORY_REFERENCE_RESULT,
   captureStoryReferencePage,
   classifyObservation,
+  publishedStoryBodyMatches,
+  publishedStoryTextRepresentations,
   safeObservation,
   storyReferenceUrls,
   verifyFacebookStoryReference,
