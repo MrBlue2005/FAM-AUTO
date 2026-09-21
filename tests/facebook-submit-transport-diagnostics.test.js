@@ -84,6 +84,18 @@ test('composer close, acknowledgement, reload, request, and response timestamps 
   assert.ok(summary.clickTimestamp && summary.firstRequestTimestamp && summary.firstResponseTimestamp && summary.composerHiddenTimestamp && summary.acknowledgementTimestamp && summary.reloadTimestamp);
 });
 
+test('transport snapshot drains current mutation evidence without ending later diagnostics', async () => {
+  const page = new FakePage(); let clock = Date.parse('2026-09-21T10:00:00.000Z');
+  const observer = createFacebookSubmitTransportObserver(page, { now: () => clock }); observer.start(); observer.markClickStarted();
+  const req = request(); clock += 10; page.emit('request', req); clock += 10;
+  page.emit('response', response(req, 200, '{"data":{"story_create":{"story_id":"1110263164756506"}}}'));
+  const snapshot = await observer.snapshot();
+  assert.deepEqual(snapshot.createdObjectVerificationReference, { objectType: 'STORY', opaqueId: '1110263164756506' });
+  clock += 10; observer.markReload(); page.emit('framenavigated', page.mainFrame());
+  const final = await observer.stop();
+  assert.ok(final.reloadTimestamp); assert.equal(final.navigationCount, 1);
+});
+
 test('console, page error, navigation, and frame detach evidence is bounded and text-free', async () => {
   const page = new FakePage(); const observer = createFacebookSubmitTransportObserver(page); observer.start(); observer.markClickStarted();
   for (let index = 0; index < 20; index += 1) page.emit('console', { type: () => 'error', text: () => `SECRET_${index}`, location: () => ({ url: 'https://www.facebook.com/api/graphql/?token=SECRET' }) });

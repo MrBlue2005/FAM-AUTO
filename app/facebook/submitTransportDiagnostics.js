@@ -445,13 +445,20 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
     attachedHandlers.splice(0).forEach(([event, handler]) => { try { page.off?.(event, handler); } catch { /* already closed */ } }); listening = false;
   }
   function mark(field) { if (!state[field]) state[field] = timestamp(now()); }
-  async function stop() {
-    if (stopped) return buildSummary();
-    stopped = true; detach();
+  async function drainPendingResponses() {
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, responseDrainMs);
       Promise.allSettled([...pending]).then(() => { clearTimeout(timer); resolve(); });
     });
+  }
+  async function snapshot() {
+    await drainPendingResponses();
+    return buildSummary();
+  }
+  async function stop() {
+    if (stopped) return buildSummary();
+    stopped = true; detach();
+    await drainPendingResponses();
     return buildSummary();
   }
   function buildSummary() {
@@ -472,7 +479,7 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
     return { observationWindowMs, clickTimestamp: state.clickTimestamp, clickReturnedTimestamp: state.clickReturnedTimestamp, composerHiddenTimestamp: state.composerHiddenTimestamp, acknowledgementTimestamp: state.acknowledgementTimestamp, reloadTimestamp: state.reloadTimestamp, firstRequestTimestamp: state.requests[0]?.timestamp || null, firstResponseTimestamp: state.firstResponseTimestamp, relevantRequestCount: state.requests.length, responseCount: state.responses.length, requestFailureCount: state.requestFailures.length, consoleErrorCount: state.consoleErrors.length, pageErrorCount: state.pageErrors.length, navigationCount: state.navigations.length, frameDetachCount: state.frameDetachCount, explicitFailureObserved, mutationAcknowledgementObserved: state.responses.some((item) => item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT'), transportClassification, createdObjectVerificationReference: createdObjectVerificationReference(state.responses), primaryMutationSummary: compactResponseSummary(state.responses[primaryIndex], primaryIndex), secondaryAcknowledgementSummary: compactResponseSummary(state.responses[secondaryIndex], secondaryIndex), consoleErrorSummary, requests: state.requests, responses: state.responses, requestFailures: state.requestFailures, consoleErrors: state.consoleErrors, pageErrors: state.pageErrors, navigations: state.navigations };
   }
 
-  return Object.freeze({ start, stop, markClickStarted() { if (state.clickAt === null) { state.clickAt = now(); state.clickTimestamp = timestamp(state.clickAt); state.preClickConsoleErrors.filter((item) => state.clickAt - item.observedAt <= 1000).forEach((item) => push(state.consoleErrors, { ...item, relativeToClickMs: boundedRelative(item.observedAt, state.clickAt) })); state.preClickConsoleErrors = []; } }, markClickReturned() { mark('clickReturnedTimestamp'); }, markComposerHidden() { mark('composerHiddenTimestamp'); }, markAcknowledgement() { mark('acknowledgementTimestamp'); }, markReload() { mark('reloadTimestamp'); } });
+  return Object.freeze({ start, snapshot, stop, markClickStarted() { if (state.clickAt === null) { state.clickAt = now(); state.clickTimestamp = timestamp(state.clickAt); state.preClickConsoleErrors.filter((item) => state.clickAt - item.observedAt <= 1000).forEach((item) => push(state.consoleErrors, { ...item, relativeToClickMs: boundedRelative(item.observedAt, state.clickAt) })); state.preClickConsoleErrors = []; } }, markClickReturned() { mark('clickReturnedTimestamp'); }, markComposerHidden() { mark('composerHiddenTimestamp'); }, markAcknowledgement() { mark('acknowledgementTimestamp'); }, markReload() { mark('reloadTimestamp'); } });
 }
 
 module.exports = { MAX_EVENTS, MAX_RESPONSE_INSPECTION_BYTES, MAX_TRANSIENT_RESPONSE_BYTES, MAX_STRUCTURAL_DEPTH, MAX_STRUCTURAL_PATHS, MAX_STRUCTURAL_ARRAYS, classifyUrl, safeOperationName, safeDocumentId, requestMetadata, responseSizeBucket, structuralFingerprint, classifyResponse, createdObjectVerificationReference, classifyConsoleError, consoleTimingClassification, createFacebookSubmitTransportObserver };

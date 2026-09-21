@@ -4,6 +4,7 @@ const { startBrowser } = require('../facebook/browserManager');
 const { openGroup } = require('../facebook/groupNavigation');
 const { createPost } = require('../facebook/postCreator');
 const { verifyLivePostPublished } = require('../facebook/verifyPost');
+const { verifyFacebookStoryReference } = require('../facebook/storyReferenceVerifier');
 const { createFacebookSubmitTransportObserver } = require('../facebook/submitTransportDiagnostics');
 const { verifyRefreshedTargetPost, capturePreClickBaseline, BASELINE_RESULT } = require('../facebook/targetReloadVerification');
 const { observeFacebookSession, requireNoExplicitNegativeSessionState } = require('./FacebookSessionReadinessExecutor');
@@ -81,6 +82,7 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
   const navigateGroup = options.openGroup || openGroup;
   const preparePost = options.createPost || createPost;
   const verifyPublished = options.verifyLivePostPublished || verifyLivePostPublished;
+  const verifyStory = options.verifyFacebookStoryReference || verifyFacebookStoryReference;
   const verifyRefreshedTarget = options.verifyRefreshedTargetPost || verifyRefreshedTargetPost;
   const captureBaseline = options.capturePreClickBaseline || capturePreClickBaseline;
   const canonicalTarget = options.canonicalTarget || canonicalFacebookGroupTarget;
@@ -227,6 +229,12 @@ function createRealFacebookPublisherAdapter(registry, runtimeProfiles, options =
       const verified = await verifyPublished(browser.page, composer.locator, 120000, {
         diagnostic: taskDiagnostics, clickReturned: true, canonicalTargetStillValid,
         immutableText: task?.payload?.post?.text, publishControl: publishButton,
+        targetCanonical,
+        verifyStoryReference: async (input) => {
+          const storyPage = await browser.context.newPage();
+          try { return await verifyStory(storyPage, input); }
+          finally { await storyPage.close().catch(() => {}); }
+        },
         // This post-attempt verifier owns at most one exact canonical-target
         // navigation and has no access to the publication control.
         verifyRefreshedTarget: () => verifyRefreshedTarget(browser.page, {

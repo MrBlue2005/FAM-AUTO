@@ -1,4 +1,30 @@
 const { createAcknowledgementShapeObserver } = require('./acknowledgementDiagnostics');
+const { STORY_REFERENCE_RESULT } = require('./storyReferenceVerifier');
+
+const STORY_ID_PATTERN = /^\d{1,32}$/;
+const STORY_VERIFICATION_TOKEN_PATTERN = /(?<![A-Z0-9-])RXV-[A-Z0-9]+(?:-[A-Z0-9]+){2,}(?![A-Z0-9-])/g;
+
+function exactStoryVerificationToken(value) {
+  const matches = String(value ?? '').match(STORY_VERIFICATION_TOKEN_PATTERN) || [];
+  return matches.length === 1 && matches[0].length <= 128 ? matches[0] : null;
+}
+
+function validatedStoryReference(transportSummary) {
+  const reference = transportSummary?.createdObjectVerificationReference;
+  return reference?.objectType === 'STORY' && STORY_ID_PATTERN.test(String(reference.opaqueId || ''))
+    ? Object.freeze({ objectType: 'STORY', opaqueId: String(reference.opaqueId) })
+    : null;
+}
+
+function storyVerificationExact(storyVerification, storyReference) {
+  return storyReference?.objectType === 'STORY'
+    && STORY_ID_PATTERN.test(String(storyReference.opaqueId || ''))
+    && storyVerification?.result === STORY_REFERENCE_RESULT.VISIBLE_EXACT
+    && storyVerification.targetMatched === true
+    && storyVerification.tokenMatched === true
+    && storyVerification.bodyHashMatched === true
+    && String(storyVerification.storyId || '') === String(storyReference?.opaqueId || '');
+}
 
 async function verifyPostPublished(page, composerDialog) {
   console.log('Astept confirmarea publicarii...');
@@ -93,15 +119,32 @@ const POST_SUBMIT_OUTCOME = Object.freeze({
   UNCONFIRMED: 'UNCONFIRMED',
 });
 
-function classifyPostSubmitOutcome({ composerPassed, acknowledgementPassed, targetReload, semanticSummary, transportSummary } = {}) {
+function classifyPostSubmitOutcome({ composerPassed, acknowledgementPassed, storyVerification, storyReference, targetReload, semanticSummary, transportSummary } = {}) {
   const exactCount = Math.max(0, Math.min(16, Number(targetReload?.postReloadExactTrustedPostCount) || 0));
-  const counts = { matchingImmutableBodyCount: exactCount, matchingTokenCount: exactCount };
+  const storyExact = storyVerificationExact(storyVerification, storyReference);
+  const counts = { matchingImmutableBodyCount: Math.max(exactCount, storyExact ? 1 : 0), matchingTokenCount: Math.max(exactCount, storyExact ? 1 : 0) };
   if (composerPassed === true && acknowledgementPassed === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_ACKNOWLEDGED, outcomeEvidenceSource: 'EXPLICIT_ACKNOWLEDGEMENT', ...counts };
-  if (composerPassed === true && targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST') return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'CANONICAL_TARGET_RELOAD', ...counts };
   if (semanticSummary?.semanticSubmissionPendingObserved === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.SUBMITTED_FOR_APPROVAL, outcomeEvidenceSource: 'PENDING_MODERATION_ACKNOWLEDGEMENT', ...counts };
   if ((Number(semanticSummary?.publicationFailureLikeCount) || 0) > 0 || (Number(semanticSummary?.genericErrorLikeCount) || 0) > 0) return { outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'ERROR_OR_REJECTION_ACKNOWLEDGEMENT', ...counts };
   if (transportSummary?.explicitFailureObserved === true) return { outcomeClassification: POST_SUBMIT_OUTCOME.EXPLICIT_FACEBOOK_FAILURE, outcomeEvidenceSource: 'SUBMIT_TRANSPORT_FAILURE', ...counts };
+  if (composerPassed === true && storyExact) return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'STORY_ID_VISIBLE_EXACT', ...counts };
+  if (storyReference?.objectType === 'STORY' && STORY_ID_PATTERN.test(String(storyReference.opaqueId || '')) && storyVerification?.result === STORY_REFERENCE_RESULT.PENDING && storyVerification.targetMatched === true && storyVerification.tokenMatched === true && String(storyVerification.storyId || '') === String(storyReference.opaqueId)) return { outcomeClassification: POST_SUBMIT_OUTCOME.SUBMITTED_FOR_APPROVAL, outcomeEvidenceSource: 'STORY_ID_PENDING', ...counts };
+  if (composerPassed === true && targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST') return { outcomeClassification: POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT, outcomeEvidenceSource: 'CANONICAL_TARGET_RELOAD', ...counts };
   return { outcomeClassification: POST_SUBMIT_OUTCOME.UNCONFIRMED, outcomeEvidenceSource: 'NO_AUTHORITATIVE_EVIDENCE', ...counts };
+}
+
+function explicitNegativeEvidence(semanticSummary, transportSummary) {
+  return semanticSummary?.semanticSubmissionPendingObserved === true
+    || (Number(semanticSummary?.publicationFailureLikeCount) || 0) > 0
+    || (Number(semanticSummary?.genericErrorLikeCount) || 0) > 0
+    || transportSummary?.explicitFailureObserved === true;
+}
+
+function verificationSurface(storyVerification, targetReload) {
+  if (storyVerification && targetReload) return 'ACKNOWLEDGEMENT_STORY_ID_AND_CANONICAL_TARGET_RELOAD';
+  if (storyVerification) return 'ACKNOWLEDGEMENT_AND_STORY_ID';
+  if (targetReload) return 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD';
+  return 'ACKNOWLEDGEMENT_SURFACES';
 }
 
 function classifyCurrentLocation(page, canonicalTargetStillValid) {
@@ -132,27 +175,63 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     if (composer.passed) options.submitTransportObserver?.markComposerHidden?.();
     const acknowledgement = composer.passed ? await acknowledgementWithinGrace(acknowledgementPromise, options.acknowledgementGraceMs) : await acknowledgementPromise;
     if (acknowledgement.passed) options.submitTransportObserver?.markAcknowledgement?.();
+    const acknowledgementShapeSummary = acknowledgementShapes.stop();
+    try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
+    const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
+    try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
+    let transportSummary = null;
+    if (composer.passed && !acknowledgement.passed) {
+      transportSummary = await (options.submitTransportObserver?.snapshot?.() || options.submitTransportObserver?.stop?.());
+    }
+    const storyReference = validatedStoryReference(transportSummary);
+    const expectedStoryToken = exactStoryVerificationToken(options.immutableText);
+    let storyVerification = null;
+    if (composer.passed && !acknowledgement.passed && options.clickReturned === true && options.canonicalTargetStillValid === true
+      && !explicitNegativeEvidence(acknowledgementSemanticSummary, transportSummary)
+      && storyReference && expectedStoryToken && typeof options.verifyStoryReference === 'function') {
+      try {
+        storyVerification = await options.verifyStoryReference({
+          expectedTarget: options.targetCanonical,
+          storyId: storyReference.opaqueId,
+          expectedToken: expectedStoryToken,
+          expectedBody: String(options.immutableText ?? ''),
+        });
+      } catch {
+        storyVerification = Object.freeze({ result: STORY_REFERENCE_RESULT.INACCESSIBLE, storyId: storyReference.opaqueId, targetMatched: false, tokenMatched: false, bodyHashMatched: false });
+      }
+    }
+    const storyExact = storyVerificationExact(storyVerification, storyReference);
+    const storyPending = storyVerification?.result === STORY_REFERENCE_RESULT.PENDING && storyVerification.targetMatched === true && storyVerification.tokenMatched === true && String(storyVerification.storyId || '') === String(storyReference?.opaqueId || '');
     let targetReload = null;
-    if (composer.passed && !acknowledgement.passed && options.clickReturned === true && options.canonicalTargetStillValid === true && typeof options.verifyRefreshedTarget === 'function') {
+    if (composer.passed && !acknowledgement.passed && options.clickReturned === true && options.canonicalTargetStillValid === true
+      && !explicitNegativeEvidence(acknowledgementSemanticSummary, transportSummary) && !storyExact && !storyPending
+      && typeof options.verifyRefreshedTarget === 'function') {
       options.submitTransportObserver?.markReload?.();
       targetReload = await options.verifyRefreshedTarget();
     }
     const [composerState, acknowledgementState] = await Promise.all([observeComposerState(composerDialog), observeAcknowledgement(successMessage, acknowledgement.passed)]);
     const elapsed = Math.max(0, now() - startedAt);
     const targetVerified = targetReload?.resultClass === 'VERIFIED_EXACT_TARGET_POST';
-    const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: composer.passed && (acknowledgement.passed || targetVerified) ? acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : 'TARGET_RELOAD_PROOF_PASSED' : 'NOT_SATISFIED', failurePredicate: composer.passed && targetVerified ? 'NONE' : failurePredicate(composer, acknowledgement) };
-    const acknowledgementShapeSummary = acknowledgementShapes.stop();
-    try { diagnostic?.acknowledgementShapeSummary?.(acknowledgementShapeSummary); } catch { /* observability only */ }
-    const acknowledgementSemanticSummary = acknowledgementShapes.semanticSummary();
-    try { diagnostic?.acknowledgementSemanticSummary?.(acknowledgementSemanticSummary); } catch { /* observability only */ }
-    const transportSummary = await options.submitTransportObserver?.stop?.();
+    const successful = composer.passed && (acknowledgement.passed || storyExact || targetVerified);
+    const successPredicate = acknowledgement.passed ? 'BOTH_PREDICATES_PASSED' : storyExact ? 'STORY_ID_PROOF_PASSED' : targetVerified ? 'TARGET_RELOAD_PROOF_PASSED' : 'NOT_SATISFIED';
+    const summary = { clickReturned: options.clickReturned === true, verificationStarted: true, verificationElapsedMs: elapsed, verificationElapsedBucket: elapsedBucket(elapsed), ...composerState, ...acknowledgementState, canonicalTargetStillValid: options.canonicalTargetStillValid === true, composerHiddenPredicate: composer.result, acknowledgementPredicate: acknowledgement.result, successPredicate: successful ? successPredicate : 'NOT_SATISFIED', failurePredicate: successful ? 'NONE' : failurePredicate(composer, acknowledgement) };
+    transportSummary = await options.submitTransportObserver?.stop?.() || transportSummary;
     try { if (transportSummary) diagnostic?.submitTransportSummary?.(transportSummary); } catch { /* observability only */ }
-    Object.assign(summary, classifyPostSubmitOutcome({ composerPassed: composer.passed, acknowledgementPassed: acknowledgement.passed, targetReload, semanticSummary: acknowledgementSemanticSummary, transportSummary }), {
-      verificationSurfaceSearched: targetReload ? 'ACKNOWLEDGEMENT_AND_CANONICAL_TARGET_RELOAD' : 'ACKNOWLEDGEMENT_SURFACES',
+    Object.assign(summary, classifyPostSubmitOutcome({ composerPassed: composer.passed, acknowledgementPassed: acknowledgement.passed, storyVerification, storyReference, targetReload, semanticSummary: acknowledgementSemanticSummary, transportSummary }), {
+      verificationSurfaceSearched: verificationSurface(storyVerification, targetReload),
       currentLocationClassification: classifyCurrentLocation(page, options.canonicalTargetStillValid),
+      storyVerificationResult: storyVerification?.result || null,
+      storyTargetMatched: storyVerification?.targetMatched === true,
+      storyTokenMatched: storyVerification?.tokenMatched === true,
+      storyBodyMatched: storyVerification?.bodyHashMatched === true,
       pendingModerationEvidenceObserved: acknowledgementSemanticSummary.semanticSubmissionPendingObserved === true,
       explicitErrorEvidenceObserved: acknowledgementSemanticSummary.publicationFailureLikeCount > 0 || acknowledgementSemanticSummary.genericErrorLikeCount > 0 || transportSummary?.explicitFailureObserved === true,
     });
+    const outcomeSuccessful = composer.passed && [POST_SUBMIT_OUTCOME.PUBLISHED_ACKNOWLEDGED, POST_SUBMIT_OUTCOME.PUBLISHED_VISIBLE_EXACT].includes(summary.outcomeClassification);
+    if (!outcomeSuccessful) {
+      summary.successPredicate = 'NOT_SATISFIED';
+      summary.failurePredicate = failurePredicate(composer, acknowledgement);
+    }
     try { diagnostic?.postSubmitVerificationSummary?.(summary); } catch { /* observability only */ }
     const postPublicationStructuralSummary = {
       ...acknowledgementShapes.structuralSummary(await observePostPublicationStructure(page, options.publishControl, composerState, options.canonicalTargetStillValid)),
@@ -167,7 +246,7 @@ async function verifyLivePostPublished(page, composerDialog, timeout = 120000, o
     // Bounded retained-subtree correlation is also diagnostic-only.  It runs
     // after the existing waits and cannot alter their strict success result.
     try { diagnostic?.postCandidateBodySubtreeSummary?.(acknowledgementShapes.bodySubtreeSummary()); } catch { /* observability only */ }
-    return composer.passed && (acknowledgement.passed || targetVerified);
+    return outcomeSuccessful;
   } catch (error) {
     const elapsed = Math.max(0, now() - startedAt);
     try { const transportSummary = await options.submitTransportObserver?.stop?.(); if (transportSummary) diagnostic?.submitTransportSummary?.(transportSummary); } catch { /* observability only */ }
@@ -180,6 +259,8 @@ module.exports = {
   POST_SUBMIT_OUTCOME,
   classifyPostSubmitOutcome,
   classifyCurrentLocation,
+  exactStoryVerificationToken,
+  storyVerificationExact,
   verifyPostPublished,
   verifyLivePostPublished,
 };
