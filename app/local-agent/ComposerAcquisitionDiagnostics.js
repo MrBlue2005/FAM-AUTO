@@ -443,7 +443,11 @@ const TRANSPORT_CORRELATIONS = new Set(['PRIMARY_CREATE_RESPONSE', 'PROVEN_SHARE
 const TRANSPORT_CONSOLE_CATEGORIES = new Set(['NETWORK', 'GRAPHQL', 'PERMISSION', 'REACT_UI', 'EXTENSION_NOISE', 'PLATFORM_TELEMETRY', 'UNKNOWN']);
 const TRANSPORT_SHARED_ID_TYPES = new Set(['STORY', 'POST', 'FEEDBACK', 'PENDINGPOST', 'SUBMISSION']);
 const TRANSPORT_FINGERPRINT_KINDS = new Set(['NULL', 'ARRAY_EMPTY', 'ARRAY_ONE', 'ARRAY_FEW', 'ARRAY_MANY', 'OBJECT', 'STRING', 'BOOLEAN', 'NUMBER', 'OTHER']);
-const TRANSPORT_FINGERPRINT_REASONS = new Set(['BODY_UNAVAILABLE', 'RESPONSE_TOO_LARGE', 'MALFORMED_JSON', 'UNRECOGNIZED_STRUCTURE']);
+const TRANSPORT_FINGERPRINT_REASONS = new Set(['BODY_UNAVAILABLE', 'MALFORMED_JSON', 'STRUCTURE_EXTRACTED_FULL', 'STRUCTURE_EXTRACTED_BOUNDED', 'STRUCTURE_PARTIAL', 'STRUCTURE_UNAVAILABLE_HARD_LIMIT']);
+const TRANSPORT_FINGERPRINT_COMPLETENESS = new Set(['FULL', 'BOUNDED_COMPLETE', 'PARTIAL', 'UNAVAILABLE']);
+const TRANSPORT_RESPONSE_SIZE_BUCKETS = new Set(['UP_TO_64_KIB', '64_TO_256_KIB', '256_KIB_TO_1_MIB', 'OVER_1_MIB', 'UNKNOWN']);
+const TRANSPORT_CONSOLE_TIMING_CLASSES = new Set(['PRE_CLICK', 'IMMEDIATE_POST_CLICK', 'POST_RESPONSE', 'UNRELATED_WINDOW', 'TIMING_UNKNOWN']);
+const TRANSPORT_CONSOLE_WINDOW_BUCKETS = new Set(['WITHIN_1_SECOND', 'WITHIN_5_SECONDS', 'WITHIN_30_SECONDS', 'OVER_30_SECONDS', 'UNKNOWN']);
 const safeTransportTimestamp = (value) => typeof value === 'string' && value.length <= 32 && Number.isFinite(Date.parse(value)) ? value : null;
 const safeTransportRelative = (value) => value === null ? null : Math.max(-1000, Math.min(120000, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0));
 
@@ -462,15 +466,23 @@ function sanitizeTransportRequest(value = {}) {
 
 const safeTransportOpaqueId = (value) => SAFE_TRANSPORT_OPAQUE_ID.test(String(value || '')) ? String(value) : null;
 function sanitizeStructuralFingerprint(value) {
-  if (!value || value.version !== 1 || !/^[a-f0-9]{64}$/.test(value.sha256 || '')) return null;
+  if (!value || value.version !== 2 || !/^[a-f0-9]{64}$/.test(value.sha256 || '')) return null;
   return {
-    version: 1,
+    version: 2,
+    completeness: TRANSPORT_FINGERPRINT_COMPLETENESS.has(value.completeness) ? value.completeness : 'UNAVAILABLE',
+    partial: value.partial === true,
+    responseSizeBucket: TRANSPORT_RESPONSE_SIZE_BUCKETS.has(value.responseSizeBucket) ? value.responseSizeBucket : 'UNKNOWN',
     topLevelKind: TRANSPORT_FINGERPRINT_KINDS.has(value.topLevelKind) ? value.topLevelKind : 'OTHER',
+    topLevelKeys: Array.isArray(value.topLevelKeys) ? value.topLevelKeys.filter((item) => typeof item === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,47}$/.test(item)).slice(0, 8) : [],
+    dataKeys: Array.isArray(value.dataKeys) ? value.dataKeys.filter((item) => typeof item === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,47}$/.test(item)).slice(0, 8) : [],
+    hasData: value.hasData === true, hasErrors: value.hasErrors === true, hasExtensions: value.hasExtensions === true,
     pathCount: Math.min(32, boundedInteger(value.pathCount) || 0),
     maxDepthObserved: Math.min(5, boundedInteger(value.maxDepthObserved) || 0),
     depthLimitReached: value.depthLimitReached === true,
     pathLimitReached: value.pathLimitReached === true,
     keyLimitReached: value.keyLimitReached === true,
+    arraysInspected: Math.min(8, boundedInteger(value.arraysInspected) || 0),
+    arrayLimitReached: value.arrayLimitReached === true,
     paths: Array.isArray(value.paths) ? value.paths.slice(0, 8).filter((item) => typeof item === 'string' && item.length <= 192 && /^\$[A-Za-z0-9_$.[\]]*:[A-Z_]+$/.test(item)) : [],
     sha256: value.sha256,
   };
@@ -497,6 +509,8 @@ function sanitizeTransportResponse(value = {}) {
     sharedOpaqueIdTypes: Array.isArray(value.sharedOpaqueIdTypes) ? value.sharedOpaqueIdTypes.filter((item) => TRANSPORT_SHARED_ID_TYPES.has(item)).slice(0, 5) : [],
     structuralFingerprint: sanitizeStructuralFingerprint(value.structuralFingerprint),
     structuralFingerprintReason: TRANSPORT_FINGERPRINT_REASONS.has(value.structuralFingerprintReason) ? value.structuralFingerprintReason : null,
+    responseCompleteness: TRANSPORT_FINGERPRINT_COMPLETENESS.has(value.responseCompleteness) ? value.responseCompleteness : null,
+    responseSizeBucket: TRANSPORT_RESPONSE_SIZE_BUCKETS.has(value.responseSizeBucket) ? value.responseSizeBucket : null,
   };
 }
 
@@ -518,6 +532,22 @@ function sanitizeProtectedResponseSummary(value) {
     sharedOpaqueIdTypes: response.sharedOpaqueIdTypes,
     structuralFingerprint: response.structuralFingerprint,
     structuralFingerprintReason: response.structuralFingerprintReason,
+    responseCompleteness: response.responseCompleteness,
+    responseSizeBucket: response.responseSizeBucket,
+  };
+}
+
+function sanitizeConsoleErrorSummary(value = {}) {
+  const relative = (field) => value[field] === null ? null : safeTransportRelative(value[field]);
+  return {
+    errorCount: Math.min(8, boundedInteger(value.errorCount) || 0),
+    firstTimestamp: safeTransportTimestamp(value.firstTimestamp), lastTimestamp: safeTransportTimestamp(value.lastTimestamp), nearestTimestamp: safeTransportTimestamp(value.nearestTimestamp),
+    firstRelativeToClickMs: relative('firstRelativeToClickMs'), lastRelativeToClickMs: relative('lastRelativeToClickMs'), nearestRelativeToClickMs: relative('nearestRelativeToClickMs'),
+    counts: Object.fromEntries(Object.entries(value.counts || {}).filter(([key]) => TRANSPORT_CONSOLE_CATEGORIES.has(key)).map(([key, count]) => [key, Math.min(8, boundedInteger(count) || 0)])),
+    dominantClassification: TRANSPORT_CONSOLE_CATEGORIES.has(value.dominantClassification) ? value.dominantClassification : null,
+    timingClassification: TRANSPORT_CONSOLE_TIMING_CLASSES.has(value.timingClassification) ? value.timingClassification : 'TIMING_UNKNOWN',
+    correlationWindowBucket: TRANSPORT_CONSOLE_WINDOW_BUCKETS.has(value.correlationWindowBucket) ? value.correlationWindowBucket : 'UNKNOWN',
+    anyBeforeClick: value.anyBeforeClick === true, anyAfterClick: value.anyAfterClick === true,
   };
 }
 
@@ -537,7 +567,7 @@ function sanitizeSubmitTransport(value = {}) {
       ? { objectType: value.createdObjectVerificationReference.objectType, opaqueId: safeTransportOpaqueId(value.createdObjectVerificationReference.opaqueId) } : null,
     primaryMutationSummary: sanitizeProtectedResponseSummary(value.primaryMutationSummary),
     secondaryAcknowledgementSummary: sanitizeProtectedResponseSummary(value.secondaryAcknowledgementSummary),
-    consoleErrorSummary: { counts: Object.fromEntries(Object.entries(value.consoleErrorSummary?.counts || {}).filter(([key]) => TRANSPORT_CONSOLE_CATEGORIES.has(key)).map(([key, count]) => [key, Math.min(8, boundedInteger(count) || 0)])) },
+    consoleErrorSummary: sanitizeConsoleErrorSummary(value.consoleErrorSummary),
     requests: Array.isArray(value.requests) ? value.requests.slice(0, 8).map(sanitizeTransportRequest) : [],
     responses: Array.isArray(value.responses) ? value.responses.slice(0, 8).map(sanitizeTransportResponse) : [],
     requestFailures: Array.isArray(value.requestFailures) ? value.requestFailures.slice(0, 8).map((item) => ({ ...sanitizeTransportRequest(item), failureClass: TRANSPORT_FAILURE_CLASSES.has(item.failureClass) ? item.failureClass : 'OTHER_SAFE_FAILURE' })) : [],
@@ -1174,6 +1204,34 @@ function compactRequiredCriticalRecord(record, maxBytes) {
     for (const limit of [4, 2, 1, 0]) {
       if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
       arrays.forEach((name) => { compacted.submitTransport[name] = compacted.submitTransport[name].slice(0, limit); });
+    }
+    for (const limit of [4, 2, 0]) {
+      if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') <= maxBytes) break;
+      for (const name of ['primaryMutationSummary', 'secondaryAcknowledgementSummary']) {
+        const fingerprint = compacted.submitTransport[name]?.structuralFingerprint;
+        if (!fingerprint) continue;
+        fingerprint.paths = fingerprint.paths.slice(0, limit);
+        fingerprint.topLevelKeys = fingerprint.topLevelKeys.slice(0, limit);
+        fingerprint.dataKeys = fingerprint.dataKeys.slice(0, limit);
+      }
+    }
+    if (Buffer.byteLength(JSON.stringify(compacted), 'utf8') > maxBytes) {
+      for (const name of ['primaryMutationSummary', 'secondaryAcknowledgementSummary']) {
+        const summary = compacted.submitTransport[name];
+        if (!summary) continue;
+        Object.keys(summary).forEach((field) => {
+          if (summary[field] === null || Array.isArray(summary[field]) && summary[field].length === 0) delete summary[field];
+        });
+        const fingerprint = summary.structuralFingerprint;
+        if (fingerprint) Object.keys(fingerprint).forEach((field) => {
+          if (Array.isArray(fingerprint[field]) && fingerprint[field].length === 0) delete fingerprint[field];
+          if (field === 'arraysInspected' && fingerprint[field] === 0) delete fingerprint[field];
+        });
+      }
+      // These aggregates are duplicated by the protected summaries above.
+      delete compacted.submitTransport.firstRequestTimestamp;
+      delete compacted.submitTransport.firstResponseTimestamp;
+      delete compacted.submitTransport.consoleErrorCount;
     }
     compacted.submitTransport.detailTruncated = true;
     return compacted;

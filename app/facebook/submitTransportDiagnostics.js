@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const MAX_EVENTS = 8;
 const MAX_PENDING_RESPONSES = 8;
 const MAX_RESPONSE_INSPECTION_BYTES = 64 * 1024;
+const MAX_TRANSIENT_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_WINDOW_MS = 30000;
 const SAFE_OPERATION_NAME = /^(?=[A-Za-z][A-Za-z0-9_]{0,79}$)(?=[A-Za-z0-9_]*(?:Composer|Story|Post|Publish|Create)[A-Za-z0-9_]*Mutation$)[A-Za-z0-9_]+$/;
 const FACEBOOK_HOSTS = new Set(['facebook.com', 'www.facebook.com', 'web.facebook.com']);
@@ -19,8 +20,10 @@ const MAX_STRUCTURAL_DEPTH = 5;
 const MAX_STRUCTURAL_PATHS = 32;
 const MAX_STRUCTURAL_KEYS_PER_OBJECT = 16;
 const MAX_STRUCTURAL_ARRAY_ITEMS = 3;
+const MAX_STRUCTURAL_ARRAYS = 8;
 const SAFE_STRUCTURAL_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,47}$/;
 const PRIVATE_STRUCTURAL_KEY = /(?:message|body|text|content|caption|description|actor|author|user|profile|name|token|session|auth|cookie|header|comment|attachment|media|image|video|url|uri|email|phone|password|secret)/i;
+const STRUCTURAL_COMPLETENESS = new Set(['FULL', 'BOUNDED_COMPLETE', 'PARTIAL', 'UNAVAILABLE']);
 
 function timestamp(value) { return new Date(value).toISOString(); }
 function boundedRelative(now, clickAt) { return clickAt === null ? null : Math.max(-1000, Math.min(120000, Math.trunc(now - clickAt))); }
@@ -89,9 +92,23 @@ function structuralValueKind(value) {
   return 'OTHER';
 }
 
-function structuralFingerprint(value) {
+function responseSizeBucket(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'UNKNOWN';
+  if (bytes <= MAX_RESPONSE_INSPECTION_BYTES) return 'UP_TO_64_KIB';
+  if (bytes <= 256 * 1024) return '64_TO_256_KIB';
+  if (bytes <= MAX_TRANSIENT_RESPONSE_BYTES) return '256_KIB_TO_1_MIB';
+  return 'OVER_1_MIB';
+}
+
+function safeStructuralKeys(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.keys(value).filter((key) => SAFE_STRUCTURAL_KEY.test(key) && !PRIVATE_STRUCTURAL_KEY.test(key)).sort();
+}
+
+function structuralFingerprint(value, options = {}) {
   const paths = [];
   let maxDepthObserved = 0; let depthLimitReached = false; let pathLimitReached = false; let keyLimitReached = false;
+  let arraysInspected = 0; let arrayLimitReached = false;
   const add = (path, kind) => {
     if (paths.length >= MAX_STRUCTURAL_PATHS) { pathLimitReached = true; return false; }
     paths.push(`${path || '$'}:${kind}`); return true;
@@ -102,27 +119,69 @@ function structuralFingerprint(value) {
     if (!node || typeof node !== 'object') return;
     if (depth >= MAX_STRUCTURAL_DEPTH) { depthLimitReached = true; return; }
     if (Array.isArray(node)) {
+      if (arraysInspected >= MAX_STRUCTURAL_ARRAYS) { arrayLimitReached = true; return; }
+      arraysInspected += 1;
       node.slice(0, MAX_STRUCTURAL_ARRAY_ITEMS).forEach((item) => visit(item, `${path || '$'}[]`, depth + 1));
       if (node.length > MAX_STRUCTURAL_ARRAY_ITEMS) keyLimitReached = true;
       return;
     }
-    const keys = Object.keys(node).filter((key) => SAFE_STRUCTURAL_KEY.test(key) && !PRIVATE_STRUCTURAL_KEY.test(key)).sort();
+    const keys = safeStructuralKeys(node);
     if (keys.length > MAX_STRUCTURAL_KEYS_PER_OBJECT) keyLimitReached = true;
     keys.slice(0, MAX_STRUCTURAL_KEYS_PER_OBJECT).forEach((key) => visit(node[key], `${path || '$'}.${key}`, depth + 1));
   }
   visit(value, '$', 0);
-  const normalized = paths.join('\n');
+  const requestedCompleteness = STRUCTURAL_COMPLETENESS.has(options.completeness) ? options.completeness : 'FULL';
+  const completeness = depthLimitReached || pathLimitReached || keyLimitReached || arrayLimitReached ? 'PARTIAL' : requestedCompleteness;
+  const sizeBucket = typeof options.responseSizeBucket === 'string' ? options.responseSizeBucket : 'UP_TO_64_KIB';
+  const topLevelKeys = safeStructuralKeys(value).slice(0, MAX_STRUCTURAL_KEYS_PER_OBJECT);
+  const dataKeys = safeStructuralKeys(value?.data).slice(0, MAX_STRUCTURAL_KEYS_PER_OBJECT);
+  const normalized = [`v2`, completeness, sizeBucket, ...paths].join('\n');
   return {
-    version: 1,
+    version: 2,
+    completeness,
+    partial: completeness === 'PARTIAL',
+    responseSizeBucket: sizeBucket,
     topLevelKind: structuralValueKind(value),
+    topLevelKeys,
+    dataKeys,
+    hasData: Object.hasOwn(value && typeof value === 'object' ? value : {}, 'data'),
+    hasErrors: Object.hasOwn(value && typeof value === 'object' ? value : {}, 'errors'),
+    hasExtensions: Object.hasOwn(value && typeof value === 'object' ? value : {}, 'extensions'),
     pathCount: paths.length,
     maxDepthObserved: Math.min(MAX_STRUCTURAL_DEPTH, maxDepthObserved),
     depthLimitReached,
     pathLimitReached,
     keyLimitReached,
+    arraysInspected,
+    arrayLimitReached,
     paths,
     sha256: crypto.createHash('sha256').update(normalized, 'utf8').digest('hex'),
   };
+}
+
+async function declaredResponseLength(response) {
+  try {
+    const header = typeof response?.headerValue === 'function' ? await response.headerValue('content-length') : response?.headers?.()?.['content-length'];
+    return /^\d{1,12}$/.test(String(header || '')) ? Number(header) : null;
+  } catch { return null; }
+}
+
+async function readResponseBodyBounded(response) {
+  const declaredLength = await declaredResponseLength(response);
+  if (declaredLength !== null && declaredLength > MAX_TRANSIENT_RESPONSE_BYTES) {
+    return { text: null, bytes: declaredLength, sizeBucket: responseSizeBucket(declaredLength), hardLimitExceeded: true };
+  }
+  if (typeof response?.body === 'function') {
+    const body = await response.body();
+    if (!Buffer.isBuffer(body)) return { text: null, bytes: null, sizeBucket: 'UNKNOWN', unavailable: true };
+    if (body.length > MAX_TRANSIENT_RESPONSE_BYTES) return { text: null, bytes: body.length, sizeBucket: responseSizeBucket(body.length), hardLimitExceeded: true };
+    return { text: body.toString('utf8'), bytes: body.length, sizeBucket: responseSizeBucket(body.length), hardLimitExceeded: false };
+  }
+  const text = await response?.text?.();
+  if (typeof text !== 'string') return { text: null, bytes: null, sizeBucket: 'UNKNOWN', unavailable: true };
+  const bytes = Buffer.byteLength(text, 'utf8');
+  if (bytes > MAX_TRANSIENT_RESPONSE_BYTES) return { text: null, bytes, sizeBucket: responseSizeBucket(bytes), hardLimitExceeded: true };
+  return { text, bytes, sizeBucket: responseSizeBucket(bytes), hardLimitExceeded: false };
 }
 
 function inspectEnvelope(value, operationName) {
@@ -202,24 +261,39 @@ async function classifyResponse(response, metadata = {}) {
   if (status >= 500) return { status, statusClass: 'HTTP_5XX', responseClassification: 'SERVER_REJECTION' };
   if (status >= 400) return { status, statusClass: 'HTTP_4XX', responseClassification: 'CLIENT_REJECTION' };
   const statusClass = status >= 200 && status < 300 ? 'HTTP_2XX' : 'HTTP_OTHER';
+  let body = null;
   try {
-    const text = await response.text();
-    if (typeof text !== 'string') return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'BODY_UNAVAILABLE' };
-    if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_INSPECTION_BYTES) return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'RESPONSE_TOO_LARGE' };
+    body = await readResponseBodyBounded(response);
+    if (body.unavailable) return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'BODY_UNAVAILABLE', responseCompleteness: 'UNAVAILABLE', responseSizeBucket: body.sizeBucket };
+    if (body.hardLimitExceeded) return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'STRUCTURE_UNAVAILABLE_HARD_LIMIT', responseCompleteness: 'UNAVAILABLE', responseSizeBucket: body.sizeBucket };
     const operationName = metadata.operationName || safeOperationName(response?.request?.()?.postData?.());
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(body.text);
+    const oversized = body.bytes > MAX_RESPONSE_INSPECTION_BYTES;
+    const fingerprint = structuralFingerprint(parsed, { completeness: oversized ? 'BOUNDED_COMPLETE' : 'FULL', responseSizeBucket: body.sizeBucket });
+    const structural = oversized ? {
+      responseCompleteness: fingerprint.completeness,
+      responseSizeBucket: body.sizeBucket,
+      structuralFingerprintReason: fingerprint.completeness === 'PARTIAL' ? 'STRUCTURE_PARTIAL' : 'STRUCTURE_EXTRACTED_BOUNDED',
+      structuralFingerprint: fingerprint,
+    } : {};
     const envelope = inspectEnvelope(parsed, operationName);
-    if (envelope.permissionOrModerationFailure && envelope.errorsPresent) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: true };
-    if (envelope.errorsPresent) return { status, statusClass, responseClassification: 'GRAPHQL_ERRORS_PRESENT', graphqlErrorsPresent: true };
+    if (envelope.permissionOrModerationFailure && envelope.errorsPresent) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: true, ...structural };
+    if (envelope.errorsPresent) return { status, statusClass, responseClassification: 'GRAPHQL_ERRORS_PRESENT', graphqlErrorsPresent: true, ...structural };
     if (operationName === COMPOSER_CREATE_OPERATION) {
       const result = { status, statusClass, responseClassification: envelope.responseClassification, ...safeResponseEvidence(envelope) };
-      if (envelope.responseClassification === 'CREATE_RESULT_UNKNOWN') result.structuralFingerprint = structuralFingerprint(parsed);
+      Object.assign(result, structural);
+      if (envelope.responseClassification === 'CREATE_RESULT_UNKNOWN' && !result.structuralFingerprint) {
+        result.structuralFingerprint = fingerprint;
+        result.responseCompleteness = fingerprint.completeness;
+        result.responseSizeBucket = body.sizeBucket;
+        result.structuralFingerprintReason = fingerprint.completeness === 'PARTIAL' ? 'STRUCTURE_PARTIAL' : 'STRUCTURE_EXTRACTED_FULL';
+      }
       return result;
     }
-    if (envelope.permissionOrModerationFailure) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: false };
-    if (envelope.mutationAcknowledgement) return { status, statusClass, responseClassification: 'MUTATION_ACKNOWLEDGEMENT', ...safeResponseEvidence(envelope) };
-    return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', graphqlErrorsPresent: false, structuralFingerprintReason: 'UNRECOGNIZED_STRUCTURE', structuralFingerprint: structuralFingerprint(parsed) };
-  } catch { return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'MALFORMED_JSON' }; }
+    if (envelope.permissionOrModerationFailure) return { status, statusClass, responseClassification: 'PERMISSION_OR_MODERATION_FAILURE', graphqlErrorsPresent: false, ...structural };
+    if (envelope.mutationAcknowledgement) return { status, statusClass, responseClassification: 'MUTATION_ACKNOWLEDGEMENT', ...safeResponseEvidence(envelope), ...structural };
+    return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', graphqlErrorsPresent: false, responseCompleteness: fingerprint.completeness, responseSizeBucket: body.sizeBucket, structuralFingerprintReason: fingerprint.completeness === 'PARTIAL' ? 'STRUCTURE_PARTIAL' : oversized ? 'STRUCTURE_EXTRACTED_BOUNDED' : 'STRUCTURE_EXTRACTED_FULL', structuralFingerprint: fingerprint };
+  } catch { return { status, statusClass, responseClassification: 'UNKNOWN_RESPONSE_SHAPE', structuralFingerprintReason: 'MALFORMED_JSON', responseCompleteness: 'UNAVAILABLE', responseSizeBucket: body?.sizeBucket || 'UNKNOWN' }; }
 }
 
 const OPAQUE_ID_FIELDS = ['storyId', 'postId', 'feedbackId', 'pendingPostId', 'submissionId'];
@@ -256,6 +330,8 @@ function compactResponseSummary(item, responseIndex) {
     sharedOpaqueIdTypes: item.sharedOpaqueIdTypes || [],
     structuralFingerprint: item.structuralFingerprint || null,
     structuralFingerprintReason: item.structuralFingerprintReason || null,
+    responseCompleteness: item.responseCompleteness || null,
+    responseSizeBucket: item.responseSizeBucket || null,
   };
 }
 
@@ -268,6 +344,29 @@ function classifyConsoleError(text) {
   if (/react|hydration|component|render/i.test(value)) return 'REACT_UI';
   if (/telemetry|logging|analytics|pixel/i.test(value)) return 'PLATFORM_TELEMETRY';
   return 'UNKNOWN';
+}
+
+function consoleTimingClassification(relative, firstResponseRelative) {
+  if (!Number.isFinite(relative)) return 'TIMING_UNKNOWN';
+  if (relative < 0) return 'PRE_CLICK';
+  if (Number.isFinite(firstResponseRelative) && relative >= firstResponseRelative) return 'POST_RESPONSE';
+  if (relative <= 1000) return 'IMMEDIATE_POST_CLICK';
+  return 'UNRELATED_WINDOW';
+}
+
+function consoleWindowBucket(relative) {
+  if (!Number.isFinite(relative)) return 'UNKNOWN';
+  const distance = Math.abs(relative);
+  return distance <= 1000 ? 'WITHIN_1_SECOND' : distance <= 5000 ? 'WITHIN_5_SECONDS' : distance <= 30000 ? 'WITHIN_30_SECONDS' : 'OVER_30_SECONDS';
+}
+
+function summarizeConsoleErrors(errors, firstResponseRelative) {
+  const counts = {};
+  errors.forEach((item) => { counts[item.category] = (counts[item.category] || 0) + 1; });
+  if (!errors.length) return { errorCount: 0, firstTimestamp: null, lastTimestamp: null, nearestTimestamp: null, firstRelativeToClickMs: null, lastRelativeToClickMs: null, nearestRelativeToClickMs: null, counts, dominantClassification: null, timingClassification: 'TIMING_UNKNOWN', correlationWindowBucket: 'UNKNOWN', anyBeforeClick: false, anyAfterClick: false };
+  const nearest = errors.reduce((best, item) => Math.abs(item.relativeToClickMs ?? Infinity) < Math.abs(best.relativeToClickMs ?? Infinity) ? item : best, errors[0]);
+  const dominantClassification = Object.entries(counts).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0][0];
+  return { errorCount: errors.length, firstTimestamp: errors[0].timestamp, lastTimestamp: errors[errors.length - 1].timestamp, nearestTimestamp: nearest.timestamp, firstRelativeToClickMs: errors[0].relativeToClickMs, lastRelativeToClickMs: errors[errors.length - 1].relativeToClickMs, nearestRelativeToClickMs: nearest.relativeToClickMs, counts, dominantClassification, timingClassification: consoleTimingClassification(nearest.relativeToClickMs, firstResponseRelative), correlationWindowBucket: consoleWindowBucket(nearest.relativeToClickMs), anyBeforeClick: errors.some((item) => item.relativeToClickMs < 0), anyAfterClick: errors.some((item) => item.relativeToClickMs >= 0) };
 }
 
 function createdObjectVerificationReference(responses) {
@@ -283,7 +382,7 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   const observationWindowMs = Math.max(1000, Math.min(30000, Number(options.observationWindowMs) || DEFAULT_WINDOW_MS));
   const responseDrainMs = Math.max(10, Math.min(2000, Number(options.responseDrainMs) || 1000));
-  const state = { clickAt: null, clickTimestamp: null, clickReturnedTimestamp: null, composerHiddenTimestamp: null, acknowledgementTimestamp: null, reloadTimestamp: null, firstResponseTimestamp: null, requests: [], responses: [], requestFailures: [], consoleErrors: [], pageErrors: [], navigations: [], frameDetachCount: 0 };
+  const state = { clickAt: null, clickTimestamp: null, clickReturnedTimestamp: null, composerHiddenTimestamp: null, acknowledgementTimestamp: null, reloadTimestamp: null, firstResponseTimestamp: null, requests: [], responses: [], requestFailures: [], consoleErrors: [], preClickConsoleErrors: [], pageErrors: [], navigations: [], frameDetachCount: 0 };
   const relevantRequests = new WeakMap(); const pending = new Set(); const attachedHandlers = []; let listening = false; let stopped = false; let requestSequence = 0;
   const withinWindow = () => state.clickAt !== null && now() - state.clickAt <= observationWindowMs;
   const timed = () => ({ timestamp: timestamp(now()), relativeToClickMs: boundedRelative(now(), state.clickAt) });
@@ -315,9 +414,12 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
       push(state.requestFailures, { ...timed(), ...metadata, failureClass });
     },
     console(message) {
-      if (!withinWindow() || message?.type?.() !== 'error') return;
+      if (message?.type?.() !== 'error') return;
       const location = classifyUrl(message?.location?.()?.url);
-      push(state.consoleErrors, { ...timed(), sourceClass: location?.pathClass || 'UNCLASSIFIED', category: classifyConsoleError(message?.text?.()) });
+      const observedAt = now(); const safe = { observedAt, timestamp: timestamp(observedAt), sourceClass: location?.pathClass || 'UNCLASSIFIED', category: classifyConsoleError(message?.text?.()) };
+      if (state.clickAt === null) { push(state.preClickConsoleErrors, safe); return; }
+      if (!withinWindow()) return;
+      push(state.consoleErrors, { ...safe, relativeToClickMs: boundedRelative(observedAt, state.clickAt) });
     },
     pageerror(error) {
       if (!withinWindow()) return;
@@ -356,7 +458,8 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
     correlateResponses(state.responses);
     const primaryIndex = state.responses.findIndex((item) => item.operationName === COMPOSER_CREATE_OPERATION);
     const secondaryIndex = primaryIndex < 0 ? -1 : state.responses.findIndex((item, index) => index > primaryIndex && item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT');
-    const consoleErrorSummary = state.consoleErrors.reduce((summary, item) => { summary.counts[item.category] = (summary.counts[item.category] || 0) + 1; return summary; }, { counts: {} });
+    const primaryRelative = state.responses.find((item) => item.operationName === COMPOSER_CREATE_OPERATION)?.relativeToClickMs;
+    const consoleErrorSummary = summarizeConsoleErrors(state.consoleErrors, primaryRelative);
     const explicitFailureObserved = state.requestFailures.length > 0 || state.responses.some((item) => ['HTTP_4XX', 'HTTP_5XX'].includes(item.statusClass) || ['GRAPHQL_ERRORS_PRESENT', 'PERMISSION_OR_MODERATION_FAILURE', 'CREATE_RESULT_EXPLICIT_FAILURE', 'SERVER_REJECTION', 'CLIENT_REJECTION'].includes(item.responseClassification));
     const transportClassification = state.requestFailures.length ? 'REQUEST_FAILED'
       : state.responses.some((item) => item.responseClassification === 'PERMISSION_OR_MODERATION_FAILURE') ? 'PERMISSION_OR_MODERATION_FAILURE'
@@ -369,7 +472,7 @@ function createFacebookSubmitTransportObserver(page, options = {}) {
     return { observationWindowMs, clickTimestamp: state.clickTimestamp, clickReturnedTimestamp: state.clickReturnedTimestamp, composerHiddenTimestamp: state.composerHiddenTimestamp, acknowledgementTimestamp: state.acknowledgementTimestamp, reloadTimestamp: state.reloadTimestamp, firstRequestTimestamp: state.requests[0]?.timestamp || null, firstResponseTimestamp: state.firstResponseTimestamp, relevantRequestCount: state.requests.length, responseCount: state.responses.length, requestFailureCount: state.requestFailures.length, consoleErrorCount: state.consoleErrors.length, pageErrorCount: state.pageErrors.length, navigationCount: state.navigations.length, frameDetachCount: state.frameDetachCount, explicitFailureObserved, mutationAcknowledgementObserved: state.responses.some((item) => item.responseClassification === 'MUTATION_ACKNOWLEDGEMENT'), transportClassification, createdObjectVerificationReference: createdObjectVerificationReference(state.responses), primaryMutationSummary: compactResponseSummary(state.responses[primaryIndex], primaryIndex), secondaryAcknowledgementSummary: compactResponseSummary(state.responses[secondaryIndex], secondaryIndex), consoleErrorSummary, requests: state.requests, responses: state.responses, requestFailures: state.requestFailures, consoleErrors: state.consoleErrors, pageErrors: state.pageErrors, navigations: state.navigations };
   }
 
-  return Object.freeze({ start, stop, markClickStarted() { if (state.clickAt === null) { state.clickAt = now(); state.clickTimestamp = timestamp(state.clickAt); } }, markClickReturned() { mark('clickReturnedTimestamp'); }, markComposerHidden() { mark('composerHiddenTimestamp'); }, markAcknowledgement() { mark('acknowledgementTimestamp'); }, markReload() { mark('reloadTimestamp'); } });
+  return Object.freeze({ start, stop, markClickStarted() { if (state.clickAt === null) { state.clickAt = now(); state.clickTimestamp = timestamp(state.clickAt); state.preClickConsoleErrors.filter((item) => state.clickAt - item.observedAt <= 1000).forEach((item) => push(state.consoleErrors, { ...item, relativeToClickMs: boundedRelative(item.observedAt, state.clickAt) })); state.preClickConsoleErrors = []; } }, markClickReturned() { mark('clickReturnedTimestamp'); }, markComposerHidden() { mark('composerHiddenTimestamp'); }, markAcknowledgement() { mark('acknowledgementTimestamp'); }, markReload() { mark('reloadTimestamp'); } });
 }
 
-module.exports = { MAX_EVENTS, MAX_STRUCTURAL_DEPTH, MAX_STRUCTURAL_PATHS, classifyUrl, safeOperationName, safeDocumentId, requestMetadata, structuralFingerprint, classifyResponse, createdObjectVerificationReference, classifyConsoleError, createFacebookSubmitTransportObserver };
+module.exports = { MAX_EVENTS, MAX_RESPONSE_INSPECTION_BYTES, MAX_TRANSIENT_RESPONSE_BYTES, MAX_STRUCTURAL_DEPTH, MAX_STRUCTURAL_PATHS, MAX_STRUCTURAL_ARRAYS, classifyUrl, safeOperationName, safeDocumentId, requestMetadata, responseSizeBucket, structuralFingerprint, classifyResponse, createdObjectVerificationReference, classifyConsoleError, consoleTimingClassification, createFacebookSubmitTransportObserver };

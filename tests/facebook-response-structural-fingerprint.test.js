@@ -24,7 +24,7 @@ test('unknown non-acknowledgement response retains only structural types and saf
   const response = { status: () => 200, text: async () => JSON.stringify({ result: { novel_key: 7 } }) };
   const classified = await classifyResponse(response, { operationName: 'CreatePhotoMutation' });
   assert.equal(classified.responseClassification, 'UNKNOWN_RESPONSE_SHAPE');
-  assert.equal(classified.structuralFingerprintReason, 'UNRECOGNIZED_STRUCTURE');
+  assert.equal(classified.structuralFingerprintReason, 'STRUCTURE_EXTRACTED_FULL');
   assert.match(classified.structuralFingerprint.paths.join('|'), /novel_key:NUMBER/);
 });
 
@@ -66,12 +66,12 @@ test('unsafe and malformed keys are omitted from normalized paths', () => {
   assert.doesNotMatch(result.paths.join('|'), /bad-key|oversized_|password|session_token/);
 });
 
-test('oversized and malformed responses fail closed without hashing raw content', async () => {
+test('bounded oversized responses are fingerprinted while malformed responses fail closed', async () => {
   const oversized = await classifyResponse({ status: () => 200, text: async () => `{"data":"${'S'.repeat(70000)}"}` }, { operationName: 'CreatePhotoMutation' });
   const malformed = await classifyResponse({ status: () => 200, text: async () => '{SECRET malformed' }, { operationName: 'CreatePhotoMutation' });
-  assert.equal(oversized.structuralFingerprintReason, 'RESPONSE_TOO_LARGE');
+  assert.equal(oversized.structuralFingerprintReason, 'STRUCTURE_EXTRACTED_BOUNDED');
   assert.equal(malformed.structuralFingerprintReason, 'MALFORMED_JSON');
-  assert.equal(oversized.structuralFingerprint, undefined);
+  assert.match(oversized.structuralFingerprint.sha256, /^[a-f0-9]{64}$/);
   assert.equal(malformed.structuralFingerprint, undefined);
   assert.doesNotMatch(JSON.stringify([oversized, malformed]), /SECRET|S{20}/);
 });

@@ -70,7 +70,8 @@ test('protected acknowledgement evidence survives required-record pressure', asy
     const persistedText = fs.readFileSync(path.join(directory, 'live_execution_ack_pressure.json'), 'utf8');
     const persistedRecord = JSON.parse(persistedText).records.find((record) => record.stage === 'SUBMIT_TRANSPORT_DIAGNOSTIC_SUMMARY');
     const persisted = persistedRecord.submitTransport;
-    assert.ok(Buffer.byteLength(JSON.stringify(persistedRecord), 'utf8') <= 2500);
+    const persistedBytes = Buffer.byteLength(JSON.stringify(persistedRecord), 'utf8');
+    assert.ok(persistedBytes <= 2500, `submit transport record exceeded its 2500-byte bound: ${persistedBytes}`);
     assert.equal(persisted.detailTruncated, true);
     assert.equal(persisted.primaryMutationSummary.requestCorrelationId, 'REQ_1');
     assert.match(persisted.primaryMutationSummary.structuralFingerprint.sha256, /^[a-f0-9]{64}$/);
